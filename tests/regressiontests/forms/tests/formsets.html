@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › forms › tests › formsets.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>formsets.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.forms</span> <span class="kn">import</span> <span class="n">Form</span><span class="p">,</span> <span class="n">CharField</span><span class="p">,</span> <span class="n">IntegerField</span><span class="p">,</span> <span class="n">ValidationError</span><span class="p">,</span> <span class="n">DateField</span>
+<span class="kn">from</span> <span class="nn">django.forms.formsets</span> <span class="kn">import</span> <span class="n">formset_factory</span><span class="p">,</span> <span class="n">BaseFormSet</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+
+<span class="k">class</span> <span class="nc">Choice</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">choice</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+    <span class="n">votes</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>FormSet allows us to use multiple instance of the same form on 1 page. For now,
+the best way to create a FormSet is by using the formset_factory function.</p></td><td class="code"><div class="highlight"><pre><span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">FavoriteDrinkForm</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">BaseFavoriteDrinksFormSet</span><span class="p">(</span><span class="n">BaseFormSet</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">seen_drinks</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">drink</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">drink</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">seen_drinks</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s">&#39;You may only specify a drink once.&#39;</span><span class="p">)</span>
+
+            <span class="n">seen_drinks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">drink</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">EmptyFsetWontValidate</span><span class="p">(</span><span class="n">BaseFormSet</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s">&quot;Clean method called&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Let's define a FormSet that takes a list of favorite drinks, but raises an
+error if there are any duplicates. Used in <code>test_clean_hook</code>,
+<code>test_regression_6926</code> &amp; <code>test_regression_12878</code>.</p></td><td class="code"><div class="highlight"><pre><span class="n">FavoriteDrinksFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span>
+    <span class="n">formset</span><span class="o">=</span><span class="n">BaseFavoriteDrinksFormSet</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">FormsFormsetTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_basic_formset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>A FormSet constructor takes the same arguments as Form. Let's create a FormSet
+for adding data. By default, it displays 1 blank form. It can display more,
+but we'll look at how to do so later.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">formset</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;input type=&quot;hidden&quot; name=&quot;choices-TOTAL_FORMS&quot; value=&quot;1&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-INITIAL_FORMS&quot; value=&quot;0&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-MAX_NUM_FORMS&quot; /&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;Choice:&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;Votes:&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>On thing to note is that there needs to be a special value in the data. This
+value tells the FormSet how many forms were displayed so it can tell how
+many forms it needs to clean and validate. You could use javascript to create
+new forms on the client side, but they won't get validated unless you increment
+the TOTAL_FORMS field appropriately.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+        <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>We treat FormSet pretty much like we would treat a normal Form. FormSet has an
+is<em>valid method, and a cleaned</em>data or errors attribute depending on whether all
+the forms passed validation. However, unlike a Form instance, cleaned_data and
+errors will be a list of dicts rather than just a single dict.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">}])</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>If a FormSet was not passed any data, its is<em>valid and has</em>changed
+methods should return False.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">has_changed</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>FormSet instances can also have an error attribute if validation failed for
+any of the forms.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">]}])</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_has_changed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>FormSet instances has_changed method will be True if any data is
+passed to his forms, even if the formset didn't validate</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">blank_formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">blank_formset</span><span class="o">.</span><span class="n">has_changed</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>invalid formset test</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span><span class="p">[</span><span class="s">&#39;choices-0-choice&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Calexico&#39;</span>
+        <span class="n">invalid_formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">invalid_formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">invalid_formset</span><span class="o">.</span><span class="n">has_changed</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>valid formset test</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span><span class="p">[</span><span class="s">&#39;choices-0-votes&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;100&#39;</span>
+        <span class="n">valid_formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">valid_formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">valid_formset</span><span class="o">.</span><span class="n">has_changed</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_initial_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>We can also prefill a FormSet with existing data by providing an <code>initial</code>
+argument to the constructor. <code>initial</code> should be a list of dicts. By default,
+an extra blank form is included.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">initial</span> <span class="o">=</span> <span class="p">[{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">}]</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Let's simulate what would happen if we submitted this form.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span> <span class="p">{}])</span>
+
+    <span class="k">def</span> <span class="nf">test_second_form_partially_filled</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>But the second form was blank! Shouldn't we get some errors? No. If we display
+a form as blank, it's ok for it to be submitted as blank. If we fill out even
+one of the fields of a blank form though, it will be validated. We may want to
+required that at least x number of forms are completed, but we'll show how to
+handle that later.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># missing value</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">[{},</span> <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">]}])</span>
+
+    <span class="k">def</span> <span class="nf">test_delete_prefilled_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>If we delete data that was pre-filled, we should get an error. Simply removing
+data from form fields isn't the proper way to delete it. We'll see how to
+handle that case later.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># deleted value</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># deleted value</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">],</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">]},</span> <span class="p">{}])</span>
+
+    <span class="k">def</span> <span class="nf">test_displaying_more_than_one_blank_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Displaying more than 1 blank form ###########################################
+We can also display more than 1 empty form at a time. To do so, pass a
+extra argument to formset_factory.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-2-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-2-votes&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Since we displayed every form as blank, we will also accept them back as blank.
+This may seem a little strange, but later we will show how to require a minimum
+number of forms to be completed.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">],</span> <span class="p">[{},</span> <span class="p">{},</span> <span class="p">{}])</span>
+
+    <span class="k">def</span> <span class="nf">test_single_form_completed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>We can just fill out one of the forms.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span> <span class="p">{},</span> <span class="p">{}])</span>
+
+    <span class="k">def</span> <span class="nf">test_second_form_partially_filled_2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>And once again, if we try to partially complete a form, validation will fail.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># missing value</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">[{},</span> <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">]},</span> <span class="p">{}])</span>
+
+    <span class="k">def</span> <span class="nf">test_more_initial_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>The extra argument also works when the formset is pre-filled with initial
+data.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># missing value</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">initial</span> <span class="o">=</span> <span class="p">[{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">}]</span>
+        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-2-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-2-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-3-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-3-votes&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Make sure retrieving an empty form works, and it shows up in the form list</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">empty_form</span><span class="o">.</span><span class="n">empty_permitted</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">empty_form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">(),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-__prefix__-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-__prefix__-votes&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_with_deletion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>FormSets with deletion ######################################################
+We can easily add deletion ability to a FormSet with an argument to
+formset<em>factory. This will add a boolean field to each form instance. When
+that boolean field is True, the form will be in formset.deleted</em>forms</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">initial</span> <span class="o">=</span> <span class="p">[{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span> <span class="p">{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">}]</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-0-DELETE&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; value=&quot;Fergie&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; value=&quot;900&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-1-DELETE&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-2-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-2-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-2-DELETE&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>To delete something, we just need to set that form's special delete field to
+'on'. Let's go ahead and delete Fergie.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;900&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;on&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span> <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">},</span> <span class="p">{}])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">deleted_forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">}])</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>If we fill a form with something and then we check the can_delete checkbox for
+that form, that form's errors should not make the entire formset invalid since
+it's going to be deleted.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">CheckForm</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+           <span class="n">field</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">(</span><span class="n">min_value</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;check-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;check-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;check-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;check-0-field&#39;</span><span class="p">:</span> <span class="s">&#39;200&#39;</span><span class="p">,</span>
+            <span class="s">&#39;check-0-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;check-1-field&#39;</span><span class="p">:</span> <span class="s">&#39;50&#39;</span><span class="p">,</span>
+            <span class="s">&#39;check-1-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;on&#39;</span><span class="p">,</span>
+            <span class="s">&#39;check-2-field&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;check-2-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">CheckFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">CheckForm</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">CheckFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;check&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>If we remove the deletion flag now we will have our validation back.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span><span class="p">[</span><span class="s">&#39;check-1-DELETE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">CheckFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;check&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Should be able to get deleted_forms from a valid formset even if a
+deleted form would have been invalid.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">Person</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+
+        <span class="n">PeopleForm</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span>
+            <span class="n">form</span><span class="o">=</span><span class="n">Person</span><span class="p">,</span>
+            <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">p</span> <span class="o">=</span> <span class="n">PeopleForm</span><span class="p">(</span>
+            <span class="p">{</span><span class="s">&#39;form-0-name&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;form-0-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;on&#39;</span><span class="p">,</span> <span class="c"># no name!</span>
+             <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+             <span class="s">&#39;form-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">deleted_forms</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_formsets_with_ordering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>FormSets with ordering ######################################################
+We can also add ordering ability to a FormSet with an argument to
+formset<em>factory. This will add a integer field to each form instance. When
+form validation succeeds, [form.cleaned</em>data for form in formset.forms] will have the data in the correct
+order specified by the ordering fields. If a number is duplicated in the set
+of ordering fields, for instance form 0 and form 3 are both marked as 1, then
+the form index used as a secondary ordering criteria. In order to put
+something at the front of the list, you'd need to set it's order to 0.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">initial</span> <span class="o">=</span> <span class="p">[{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span> <span class="p">{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">}]</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-0-ORDER&quot; value=&quot;1&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; value=&quot;Fergie&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; value=&quot;900&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-1-ORDER&quot; value=&quot;2&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-2-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-2-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-2-ORDER&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;900&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;500&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">ordered_forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form_output</span><span class="p">,</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">},</span>
+        <span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_ordered_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Ordering fields are allowed to be left blank, and if they <em>are</em> left blank,
+they will be sorted below everything else.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;4&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;900&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;500&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Basia Bulat&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-votes&#39;</span><span class="p">:</span> <span class="s">&#39;50&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">ordered_forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form_output</span><span class="p">,</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">50</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Basia Bulat&#39;</span><span class="p">},</span>
+        <span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_ordering_blank_fieldsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Ordering should work with blank fieldsets.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+        <span class="p">}</span>
+
+        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">ordered_forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form_output</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_with_ordering_and_deletion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>FormSets with ordering + deletion ###########################################
+Let's try throwing ordering and deletion into the same form.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">initial</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span> <span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-0-ORDER&quot; value=&quot;1&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-0-DELETE&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-1-choice&quot; value=&quot;Fergie&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-1-votes&quot; value=&quot;900&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-1-ORDER&quot; value=&quot;2&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-1-DELETE&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-2-choice&quot; value=&quot;The Decemberists&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-2-votes&quot; value=&quot;500&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-2-ORDER&quot; value=&quot;3&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-2-DELETE&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-3-choice&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-3-votes&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Order: &lt;input type=&quot;text&quot; name=&quot;choices-3-ORDER&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Delete: &lt;input type=&quot;checkbox&quot; name=&quot;choices-3-DELETE&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Let's delete Fergie, and put The Decemberists ahead of Calexico.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;4&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-0-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-votes&#39;</span><span class="p">:</span> <span class="s">&#39;900&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-1-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;on&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-votes&#39;</span><span class="p">:</span> <span class="s">&#39;500&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-2-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-choice&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-votes&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-ORDER&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;choices-3-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">ordered_forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form_output</span><span class="p">,</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;The Decemberists&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">},</span>
+        <span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">deleted_forms</span><span class="p">],</span> <span class="p">[{</span><span class="s">&#39;votes&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;ORDER&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;choice&#39;</span><span class="p">:</span> <span class="s">&#39;Fergie&#39;</span><span class="p">}])</span>
+
+    <span class="k">def</span> <span class="nf">test_invalid_deleted_form_with_ordering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Should be able to get ordered forms from a valid formset even if a
+deleted form would have been invalid.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">Person</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+
+        <span class="n">PeopleForm</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">form</span><span class="o">=</span><span class="n">Person</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">p</span> <span class="o">=</span> <span class="n">PeopleForm</span><span class="p">({</span>
+            <span class="s">&#39;form-0-name&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-0-DELETE&#39;</span><span class="p">:</span> <span class="s">&#39;on&#39;</span><span class="p">,</span> <span class="c"># no name!</span>
+            <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="s">&#39;form-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="mi">1</span>
+        <span class="p">})</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">ordered_forms</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_clean_hook</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>FormSet clean hook ##########################################################
+FormSets have a hook for doing extra validation that shouldn't be tied to any
+particular form. It follows the same pattern as the clean hook on Forms.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>We start out with a some duplicate data.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;drinks-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;drinks-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;drinks-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;drinks-0-name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin and Tonic&#39;</span><span class="p">,</span>
+            <span class="s">&#39;drinks-1-name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin and Tonic&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;drinks&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Any errors raised by formset.clean() are available via the
+formset.non<em>form</em>errors() method.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">non_form_errors</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">error</span><span class="p">),</span> <span class="s">&#39;You may only specify a drink once.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Make sure we didn't break the valid case.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;drinks-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;drinks-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;drinks-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;drinks-0-name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin and Tonic&#39;</span><span class="p">,</span>
+            <span class="s">&#39;drinks-1-name&#39;</span><span class="p">:</span> <span class="s">&#39;Bloody Mary&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;drinks&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">non_form_errors</span><span class="p">(),</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_limiting_max_forms</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Limiting the maximum number of forms ########################################
+Base case for max_num.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>When not passed, max_num will take its default value of None, i.e. unlimited
+number of forms, only controlled by the value of the extra parameter.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">()</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-1-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-1-name&quot; id=&quot;id_form-1-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-2-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-2-name&quot; id=&quot;id_form-2-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>If max_num is 0 then no form is rendered at all.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">()</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">()</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-1-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-1-name&quot; id=&quot;id_form-1-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Ensure that max<em>num has no effect when extra is less than max</em>num.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">()</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_max_num_with_initial_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>max_num with initial data</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>When not passed, max_num will take its default value of None, i.e. unlimited
+number of forms, only controlled by the values of the initial and extra
+parameters.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">initial</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Fernet and Coke&#39;</span><span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; value=&quot;Fernet and Coke&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-1-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-1-name&quot; id=&quot;id_form-1-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_max_num_zero</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>If max_num is 0 then no form is rendered at all, even if extra and initial
+are specified.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">initial</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Fernet and Coke&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Bloody Mary&#39;</span><span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_more_initial_than_max_num</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>More initial forms than max<em>num will result in only the first max</em>num of
+them to be displayed with no extra forms.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">initial</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin Tonic&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Bloody Mary&#39;</span><span class="p">},</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Jack and Coke&#39;</span><span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; value=&quot;Gin Tonic&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-1-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-1-name&quot; value=&quot;Bloody Mary&quot; id=&quot;id_form-1-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>One form from initial and extra=3 with max_num=2 should result in the one
+initial form and one extra.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">initial</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin Tonic&#39;</span><span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">LimitedFavoriteDrinkFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">LimitedFavoriteDrinkFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="n">initial</span><span class="p">)</span>
+        <span class="n">form_output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="n">form_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">form_output</span><span class="p">),</span> <span class="s">&quot;&quot;&quot;&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-0-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-0-name&quot; value=&quot;Gin Tonic&quot; id=&quot;id_form-0-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;&lt;label for=&quot;id_form-1-name&quot;&gt;Name:&lt;/label&gt;&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;form-1-name&quot; id=&quot;id_form-1-name&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_regression_6926</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Regression test for #6926 ##################################################
+Make sure the management form has the correct prefix.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">management_form</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;form&#39;</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">management_form</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;form&#39;</span><span class="p">)</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">management_form</span><span class="o">.</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;form&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_regression_12878</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>Regression test for #12878 #################################################</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;drinks-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+            <span class="s">&#39;drinks-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+            <span class="s">&#39;drinks-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+            <span class="s">&#39;drinks-0-name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin and Tonic&#39;</span><span class="p">,</span>
+            <span class="s">&#39;drinks-1-name&#39;</span><span class="p">:</span> <span class="s">&#39;Gin and Tonic&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">FavoriteDrinksFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;drinks&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">non_form_errors</span><span class="p">(),</span> <span class="p">[</span><span class="s">&#39;You may only specify a drink once.&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_iteration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>Regression tests for #16455 -- formset instances are iterable</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ChoiceFormset</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormset</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>confirm iterated formset yields formset.forms</p></td><td class="code"><div class="highlight"><pre>        <span class="n">forms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">formset</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">forms</span><span class="p">,</span> <span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">formset</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">forms</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>confirm indexing of formset</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">formset</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">formset</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;Requesting an invalid formset index should raise an exception&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Formets can override the default iteration order</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BaseReverseFormSet</span><span class="p">(</span><span class="n">BaseFormSet</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="nb">reversed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">forms</span><span class="p">)</span>
+
+            <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseReverseFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__getitem__</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-</span> <span class="n">idx</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">ReverseChoiceFormset</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">BaseReverseFormSet</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">reverse_formset</span> <span class="o">=</span> <span class="n">ReverseChoiceFormset</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>confirm that <strong>iter</strong> modifies rendering order
+compare forms from "reverse" formset with forms from original formset</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">reverse_formset</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">str</span><span class="p">(</span><span class="n">forms</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">reverse_formset</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">str</span><span class="p">(</span><span class="n">forms</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">reverse_formset</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">forms</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_nonzero</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Formsets with no forms should still evaluate as true.</span>
+<span class="sd">        Regression test for #15722</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ChoiceFormset</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormset</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="p">)</span>
+
+
+<span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;choices-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="c"># the number of forms rendered</span>
+    <span class="s">&#39;choices-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># the number of forms with initial data</span>
+    <span class="s">&#39;choices-MAX_NUM_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="c"># max number of forms</span>
+    <span class="s">&#39;choices-0-choice&#39;</span><span class="p">:</span> <span class="s">&#39;Calexico&#39;</span><span class="p">,</span>
+    <span class="s">&#39;choices-0-votes&#39;</span><span class="p">:</span> <span class="s">&#39;100&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">class</span> <span class="nc">Choice</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">choice</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+    <span class="n">votes</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">()</span>
+
+<span class="n">ChoiceFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">Choice</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">FormsetAsFooTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_as_table</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">as_table</span><span class="p">(),</span><span class="s">&quot;&quot;&quot;&lt;input type=&quot;hidden&quot; name=&quot;choices-TOTAL_FORMS&quot; value=&quot;1&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-INITIAL_FORMS&quot; value=&quot;0&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-MAX_NUM_FORMS&quot; value=&quot;0&quot; /&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;Choice:&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;</span>
+<span class="s">&lt;tr&gt;&lt;th&gt;Votes:&lt;/th&gt;&lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/td&gt;&lt;/tr&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_as_p</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">as_p</span><span class="p">(),</span><span class="s">&quot;&quot;&quot;&lt;input type=&quot;hidden&quot; name=&quot;choices-TOTAL_FORMS&quot; value=&quot;1&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-INITIAL_FORMS&quot; value=&quot;0&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-MAX_NUM_FORMS&quot; value=&quot;0&quot; /&gt;</span>
+<span class="s">&lt;p&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/p&gt;</span>
+<span class="s">&lt;p&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/p&gt;&quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_as_ul</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ChoiceFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s">&#39;choices&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">as_ul</span><span class="p">(),</span><span class="s">&quot;&quot;&quot;&lt;input type=&quot;hidden&quot; name=&quot;choices-TOTAL_FORMS&quot; value=&quot;1&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-INITIAL_FORMS&quot; value=&quot;0&quot; /&gt;&lt;input type=&quot;hidden&quot; name=&quot;choices-MAX_NUM_FORMS&quot; value=&quot;0&quot; /&gt;</span>
+<span class="s">&lt;li&gt;Choice: &lt;input type=&quot;text&quot; name=&quot;choices-0-choice&quot; value=&quot;Calexico&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;Votes: &lt;input type=&quot;text&quot; name=&quot;choices-0-votes&quot; value=&quot;100&quot; /&gt;&lt;/li&gt;&quot;&quot;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>Regression test for #11418 #################################################</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">ArticleForm</span><span class="p">(</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">title</span> <span class="o">=</span> <span class="n">CharField</span><span class="p">()</span>
+    <span class="n">pub_date</span> <span class="o">=</span> <span class="n">DateField</span><span class="p">()</span>
+
+<span class="n">ArticleFormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">ArticleForm</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">TestIsBoundBehavior</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_no_data_raises_validation_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">ArticleFormSet</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_with_management_data_attrs_work_fine</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ArticleFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">formset</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">formset</span><span class="o">.</span><span class="n">total_form_count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_bound</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">is_bound</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([{}],</span> <span class="n">formset</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="nf">test_form_errors_are_cought_by_formset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-0-title&#39;</span><span class="p">:</span> <span class="s">&#39;Test&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-0-pub_date&#39;</span><span class="p">:</span> <span class="s">&#39;1904-06-16&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-1-title&#39;</span><span class="p">:</span> <span class="s">&#39;Test&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-1-pub_date&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="c"># &lt;-- this date is missing but required</span>
+        <span class="p">}</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">ArticleFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([{},</span> <span class="p">{</span><span class="s">&#39;pub_date&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;This field is required.&#39;</span><span class="p">]}],</span> <span class="n">formset</span><span class="o">.</span><span class="n">errors</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_forms_are_unbound</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-0-title&#39;</span><span class="p">:</span> <span class="s">&#39;Test&#39;</span><span class="p">,</span>
+            <span class="s">&#39;form-0-pub_date&#39;</span><span class="p">:</span> <span class="s">&#39;1904-06-16&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">unbound_formset</span> <span class="o">=</span> <span class="n">ArticleFormSet</span><span class="p">()</span>
+        <span class="n">bound_formset</span> <span class="o">=</span> <span class="n">ArticleFormSet</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="n">empty_forms</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">empty_forms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">unbound_formset</span><span class="o">.</span><span class="n">empty_form</span><span class="p">)</span>
+        <span class="n">empty_forms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bound_formset</span><span class="o">.</span><span class="n">empty_form</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-54"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-54">&#182;</a></div><p>Empty forms should be unbound</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">empty_forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">is_bound</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">empty_forms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">is_bound</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-55"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-55">&#182;</a></div><p>The empty forms should be equal.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">empty_forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">as_p</span><span class="p">(),</span> <span class="n">empty_forms</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">as_p</span><span class="p">())</span>
+
+<span class="k">class</span> <span class="nc">TestEmptyFormSet</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="s">&quot;Test that an empty formset still calls clean()&quot;</span>
+    <span class="k">def</span> <span class="nf">test_empty_formset_is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">EmptyFsetWontValidateFormset</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">FavoriteDrinkForm</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">formset</span><span class="o">=</span><span class="n">EmptyFsetWontValidate</span><span class="p">)</span>
+        <span class="n">formset</span> <span class="o">=</span> <span class="n">EmptyFsetWontValidateFormset</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span><span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span><span class="s">&#39;0&#39;</span><span class="p">},</span><span class="n">prefix</span><span class="o">=</span><span class="s">&quot;form&quot;</span><span class="p">)</span>
+        <span class="n">formset2</span> <span class="o">=</span> <span class="n">EmptyFsetWontValidateFormset</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;form-INITIAL_FORMS&#39;</span><span class="p">:</span><span class="s">&#39;0&#39;</span><span class="p">,</span> <span class="s">&#39;form-TOTAL_FORMS&#39;</span><span class="p">:</span><span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="s">&#39;form-0-name&#39;</span><span class="p">:</span><span class="s">&#39;bah&#39;</span> <span class="p">},</span><span class="n">prefix</span><span class="o">=</span><span class="s">&quot;form&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">formset2</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

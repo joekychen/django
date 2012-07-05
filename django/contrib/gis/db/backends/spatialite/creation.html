@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › backends › spatialite › creation.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../../index.html"></a><h1>creation.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.cache</span> <span class="kn">import</span> <span class="n">get_cache</span>
+<span class="kn">from</span> <span class="nn">django.core.cache.backends.db</span> <span class="kn">import</span> <span class="n">BaseDatabaseCache</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.sqlite3.creation</span> <span class="kn">import</span> <span class="n">DatabaseCreation</span>
+
+<span class="k">class</span> <span class="nc">SpatiaLiteCreation</span><span class="p">(</span><span class="n">DatabaseCreation</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">create_test_db</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbosity</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">autoclobber</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a test database, prompting the user for confirmation if the</span>
+<span class="sd">        database already exists. Returns the name of the test database created.</span>
+
+<span class="sd">        This method is overloaded to load up the SpatiaLite initialization</span>
+<span class="sd">        SQL prior to calling the `syncdb` command.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Don't import django.core.management if it isn't needed.</p></td><td class="code"><div class="highlight"><pre>        <span class="kn">from</span> <span class="nn">django.core.management</span> <span class="kn">import</span> <span class="n">call_command</span>
+
+        <span class="n">test_database_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_test_db_name</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">test_db_repr</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+            <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">test_db_repr</span> <span class="o">=</span> <span class="s">&quot; (&#39;</span><span class="si">%s</span><span class="s">&#39;)&quot;</span> <span class="o">%</span> <span class="n">test_database_name</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;Creating test database for alias &#39;</span><span class="si">%s</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">...&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">test_db_repr</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_create_test_db</span><span class="p">(</span><span class="n">verbosity</span><span class="p">,</span> <span class="n">autoclobber</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&quot;NAME&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">test_database_name</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Need to load the SpatiaLite initialization SQL before running <code>syncdb</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">load_spatialite_sql</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Report syncdb messages at one level lower than that requested.
+This ensures we don't get flooded with messages during testing
+(unless you really ask to be flooded)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;syncdb&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">verbosity</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">interactive</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">database</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span>
+            <span class="n">load_initial_data</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>We need to then do a flush to ensure that any data installed by
+custom SQL has been removed. The only test data should come from
+test fixtures, or autogenerated from post_syncdb triggers.
+This has the side effect of loading initial data (which was
+intentionally skipped in the syncdb).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;flush&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">verbosity</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="n">interactive</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">database</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span>
+
+        <span class="kn">from</span> <span class="nn">django.core.cache</span> <span class="kn">import</span> <span class="n">get_cache</span>
+        <span class="kn">from</span> <span class="nn">django.core.cache.backends.db</span> <span class="kn">import</span> <span class="n">BaseDatabaseCache</span>
+        <span class="k">for</span> <span class="n">cache_alias</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">CACHES</span><span class="p">:</span>
+            <span class="n">cache</span> <span class="o">=</span> <span class="n">get_cache</span><span class="p">(</span><span class="n">cache_alias</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cache</span><span class="p">,</span> <span class="n">BaseDatabaseCache</span><span class="p">):</span>
+                <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;createcachetable&#39;</span><span class="p">,</span> <span class="n">cache</span><span class="o">.</span><span class="n">_table</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Get a cursor (even though we don't need one yet). This has
+the side effect of initializing the test database.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">test_database_name</span>
+
+    <span class="k">def</span> <span class="nf">sql_indexes_for_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">style</span><span class="p">):</span>
+        <span class="s">&quot;Return any spatial index creation SQL for the field.&quot;</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.db.models.fields</span> <span class="kn">import</span> <span class="n">GeometryField</span>
+
+        <span class="n">output</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">SpatiaLiteCreation</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">sql_indexes_for_field</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">style</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">GeometryField</span><span class="p">):</span>
+            <span class="n">gqn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geo_quote_name</span>
+            <span class="n">qn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span>
+            <span class="n">db_table</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span>
+
+            <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="s">&#39;SELECT &#39;</span><span class="p">)</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_TABLE</span><span class="p">(</span><span class="s">&#39;AddGeometryColumn&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;(&#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_TABLE</span><span class="p">(</span><span class="n">gqn</span><span class="p">(</span><span class="n">db_table</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_FIELD</span><span class="p">(</span><span class="n">gqn</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">column</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_FIELD</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_COLTYPE</span><span class="p">(</span><span class="n">gqn</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">geom_type</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">dim</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                          <span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">null</span><span class="p">)))</span> <span class="o">+</span>
+                          <span class="s">&#39;);&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">spatial_index</span><span class="p">:</span>
+                <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="s">&#39;SELECT &#39;</span><span class="p">)</span> <span class="o">+</span>
+                              <span class="n">style</span><span class="o">.</span><span class="n">SQL_TABLE</span><span class="p">(</span><span class="s">&#39;CreateSpatialIndex&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;(&#39;</span> <span class="o">+</span>
+                              <span class="n">style</span><span class="o">.</span><span class="n">SQL_TABLE</span><span class="p">(</span><span class="n">gqn</span><span class="p">(</span><span class="n">db_table</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;, &#39;</span> <span class="o">+</span>
+                              <span class="n">style</span><span class="o">.</span><span class="n">SQL_FIELD</span><span class="p">(</span><span class="n">gqn</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">column</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;);&#39;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="k">def</span> <span class="nf">load_spatialite_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This routine loads up the SpatiaLite SQL file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatial_version</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Spatialite >= 3.0.x -- No need to load any SQL file, calling
+InitSpatialMetaData() transparently creates the spatial metadata
+tables</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">_cursor</span><span class="p">()</span>
+            <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT InitSpatialMetaData()&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Spatialite &lt; 3.0.x -- Load the initial SQL</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Getting the location of the SpatiaLite SQL file, and confirming
+it exists.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">spatialite_sql</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spatialite_init_file</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">spatialite_sql</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Could not find the required SpatiaLite initialization &#39;</span>
+                                        <span class="s">&#39;SQL file (necessary for testing): </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">spatialite_sql</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Opening up the SpatiaLite SQL initialization file and executing
+as a script.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">spatialite_sql</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">sql_fh</span><span class="p">:</span>
+                <span class="n">cur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">_cursor</span><span class="p">()</span>
+                <span class="n">cur</span><span class="o">.</span><span class="n">executescript</span><span class="p">(</span><span class="n">sql_fh</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">spatialite_init_file</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>SPATIALITE_SQL may be placed in settings to tell GeoDjango
+to use a specific path to the SpatiaLite initilization SQL.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;SPATIALITE_SQL&#39;</span><span class="p">,</span>
+                       <span class="s">&#39;init_spatialite-</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">.sql&#39;</span> <span class="o">%</span>
+                       <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatial_version</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:6}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../../javascript/docco.min.js"></script>
+</html>

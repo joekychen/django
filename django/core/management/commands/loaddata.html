@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › core › management › commands › loaddata.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>loaddata.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">gzip</span>
+<span class="kn">import</span> <span class="nn">zipfile</span>
+<span class="kn">from</span> <span class="nn">optparse</span> <span class="kn">import</span> <span class="n">make_option</span>
+<span class="kn">import</span> <span class="nn">traceback</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">serializers</span>
+<span class="kn">from</span> <span class="nn">django.core.management.base</span> <span class="kn">import</span> <span class="n">BaseCommand</span><span class="p">,</span> <span class="n">CommandError</span>
+<span class="kn">from</span> <span class="nn">django.core.management.color</span> <span class="kn">import</span> <span class="n">no_style</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="p">(</span><span class="n">connections</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span>
+      <span class="n">IntegrityError</span><span class="p">,</span> <span class="n">DatabaseError</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">get_apps</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">product</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">bz2</span>
+    <span class="n">has_bz2</span> <span class="o">=</span> <span class="bp">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">has_bz2</span> <span class="o">=</span> <span class="bp">False</span>
+
+<span class="k">class</span> <span class="nc">Command</span><span class="p">(</span><span class="n">BaseCommand</span><span class="p">):</span>
+    <span class="n">help</span> <span class="o">=</span> <span class="s">&#39;Installs the named fixture(s) in the database.&#39;</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="s">&quot;fixture [fixture ...]&quot;</span>
+
+    <span class="n">option_list</span> <span class="o">=</span> <span class="n">BaseCommand</span><span class="o">.</span><span class="n">option_list</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="n">make_option</span><span class="p">(</span><span class="s">&#39;--database&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&#39;store&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;database&#39;</span><span class="p">,</span>
+            <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">&#39;Nominates a specific database to load &#39;</span>
+                <span class="s">&#39;fixtures into. Defaults to the &quot;default&quot; database.&#39;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fixture_labels</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="n">using</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;database&#39;</span><span class="p">)</span>
+
+        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="n">using</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">fixture_labels</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span>
+                <span class="s">&quot;No database fixture specified. Please provide the path of at &quot;</span>
+                <span class="s">&quot;least one fixture in the command line.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">verbosity</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;verbosity&#39;</span><span class="p">))</span>
+        <span class="n">show_traceback</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;traceback&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>commit is a stealth option - it isn't really useful as
+a command line option, but it can be useful when invoking
+loaddata from within another script.
+If commit=True, loaddata will use its own transaction;
+if commit=False, the data load SQL will become part of
+the transaction in place when loaddata was invoked.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">commit</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;commit&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Keep a count of the installed objects and fixtures</p></td><td class="code"><div class="highlight"><pre>        <span class="n">fixture_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">loaded_object_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">fixture_object_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="n">humanize</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">dirname</span><span class="p">:</span> <span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="n">dirname</span> <span class="k">if</span> <span class="n">dirname</span> <span class="k">else</span> <span class="s">&#39;absolute path&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Get a cursor (even though we don't need one yet). This has
+the side effect of initializing the test database (if
+it isn't already initialized).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Start transaction management. All fixtures are installed in a
+single transaction to ensure that all references are resolved.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">commit</span><span class="p">:</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit_unless_managed</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">SingleZipReader</span><span class="p">(</span><span class="n">zipfile</span><span class="o">.</span><span class="n">ZipFile</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="n">zipfile</span><span class="o">.</span><span class="n">ZipFile</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">:</span>
+                    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">namelist</span><span class="p">())</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&quot;Zip-compressed fixtures must contain only one file.&quot;</span>
+            <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">zipfile</span><span class="o">.</span><span class="n">ZipFile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">namelist</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="n">compression_types</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="bp">None</span><span class="p">:</span>   <span class="nb">open</span><span class="p">,</span>
+            <span class="s">&#39;gz&#39;</span><span class="p">:</span>   <span class="n">gzip</span><span class="o">.</span><span class="n">GzipFile</span><span class="p">,</span>
+            <span class="s">&#39;zip&#39;</span><span class="p">:</span>  <span class="n">SingleZipReader</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">has_bz2</span><span class="p">:</span>
+            <span class="n">compression_types</span><span class="p">[</span><span class="s">&#39;bz2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bz2</span><span class="o">.</span><span class="n">BZ2File</span>
+
+        <span class="n">app_module_paths</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">app</span> <span class="ow">in</span> <span class="n">get_apps</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="s">&#39;__path__&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>It's a 'models/' subpackage</p></td><td class="code"><div class="highlight"><pre>                <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">app</span><span class="o">.</span><span class="n">__path__</span><span class="p">:</span>
+                    <span class="n">app_module_paths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>It's a models.py module</p></td><td class="code"><div class="highlight"><pre>                <span class="n">app_module_paths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">app</span><span class="o">.</span><span class="n">__file__</span><span class="p">)</span>
+
+        <span class="n">app_fixtures</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="s">&#39;fixtures&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">app_module_paths</span><span class="p">]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">connection</span><span class="o">.</span><span class="n">constraint_checks_disabled</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">fixture_label</span> <span class="ow">in</span> <span class="n">fixture_labels</span><span class="p">:</span>
+                    <span class="n">parts</span> <span class="o">=</span> <span class="n">fixture_label</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">compression_types</span><span class="p">:</span>
+                        <span class="n">compression_formats</span> <span class="o">=</span> <span class="p">[</span><span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+                        <span class="n">parts</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">compression_formats</span> <span class="o">=</span> <span class="n">compression_types</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">fixture_name</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="n">formats</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">get_public_serializer_formats</span><span class="p">()</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">fixture_name</span><span class="p">,</span> <span class="n">format</span> <span class="o">=</span> <span class="s">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="n">format</span> <span class="ow">in</span> <span class="n">serializers</span><span class="o">.</span><span class="n">get_public_serializer_formats</span><span class="p">():</span>
+                            <span class="n">formats</span> <span class="o">=</span> <span class="p">[</span><span class="n">format</span><span class="p">]</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">formats</span> <span class="o">=</span> <span class="p">[]</span>
+
+                    <span class="k">if</span> <span class="n">formats</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Loading &#39;</span><span class="si">%s</span><span class="s">&#39; fixtures...&quot;</span> <span class="o">%</span> <span class="n">fixture_name</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span>
+                            <span class="s">&quot;Problem installing fixture &#39;</span><span class="si">%s</span><span class="s">&#39;: </span><span class="si">%s</span><span class="s"> is not a known serialization format.&quot;</span> <span class="o">%</span>
+                                <span class="p">(</span><span class="n">fixture_name</span><span class="p">,</span> <span class="n">format</span><span class="p">))</span>
+
+                    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isabs</span><span class="p">(</span><span class="n">fixture_name</span><span class="p">):</span>
+                        <span class="n">fixture_dirs</span> <span class="o">=</span> <span class="p">[</span><span class="n">fixture_name</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">fixture_dirs</span> <span class="o">=</span> <span class="n">app_fixtures</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">FIXTURE_DIRS</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s">&#39;&#39;</span><span class="p">]</span>
+
+                    <span class="k">for</span> <span class="n">fixture_dir</span> <span class="ow">in</span> <span class="n">fixture_dirs</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Checking </span><span class="si">%s</span><span class="s"> for fixtures...&quot;</span> <span class="o">%</span> <span class="n">humanize</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">))</span>
+
+                        <span class="n">label_found</span> <span class="o">=</span> <span class="bp">False</span>
+                        <span class="k">for</span> <span class="n">combo</span> <span class="ow">in</span> <span class="n">product</span><span class="p">([</span><span class="n">using</span><span class="p">,</span> <span class="bp">None</span><span class="p">],</span> <span class="n">formats</span><span class="p">,</span> <span class="n">compression_formats</span><span class="p">):</span>
+                            <span class="n">database</span><span class="p">,</span> <span class="n">format</span><span class="p">,</span> <span class="n">compression_format</span> <span class="o">=</span> <span class="n">combo</span>
+                            <span class="n">file_name</span> <span class="o">=</span> <span class="s">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                                <span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[</span>
+                                    <span class="n">fixture_name</span><span class="p">,</span> <span class="n">database</span><span class="p">,</span> <span class="n">format</span><span class="p">,</span> <span class="n">compression_format</span>
+                                <span class="p">]</span>
+                                <span class="k">if</span> <span class="n">p</span>
+                            <span class="p">)</span>
+
+                            <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+                                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Trying </span><span class="si">%s</span><span class="s"> for </span><span class="si">%s</span><span class="s"> fixture &#39;</span><span class="si">%s</span><span class="s">&#39;...&quot;</span> <span class="o">%</span> \
+                                    <span class="p">(</span><span class="n">humanize</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">),</span> <span class="n">file_name</span><span class="p">,</span> <span class="n">fixture_name</span><span class="p">))</span>
+                            <span class="n">full_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">,</span> <span class="n">file_name</span><span class="p">)</span>
+                            <span class="n">open_method</span> <span class="o">=</span> <span class="n">compression_types</span><span class="p">[</span><span class="n">compression_format</span><span class="p">]</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">fixture</span> <span class="o">=</span> <span class="n">open_method</span><span class="p">(</span><span class="n">full_path</span><span class="p">,</span> <span class="s">&#39;r&#39;</span><span class="p">)</span>
+                            <span class="k">except</span> <span class="ne">IOError</span><span class="p">:</span>
+                                <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                                    <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;No </span><span class="si">%s</span><span class="s"> fixture &#39;</span><span class="si">%s</span><span class="s">&#39; in </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span> \
+                                        <span class="p">(</span><span class="n">format</span><span class="p">,</span> <span class="n">fixture_name</span><span class="p">,</span> <span class="n">humanize</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">)))</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="k">try</span><span class="p">:</span>
+                                    <span class="k">if</span> <span class="n">label_found</span><span class="p">:</span>
+                                        <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span><span class="s">&quot;Multiple fixtures named &#39;</span><span class="si">%s</span><span class="s">&#39; in </span><span class="si">%s</span><span class="s">. Aborting.&quot;</span> <span class="o">%</span>
+                                            <span class="p">(</span><span class="n">fixture_name</span><span class="p">,</span> <span class="n">humanize</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">)))</span>
+
+                                    <span class="n">fixture_count</span> <span class="o">+=</span> <span class="mi">1</span>
+                                    <span class="n">objects_in_fixture</span> <span class="o">=</span> <span class="mi">0</span>
+                                    <span class="n">loaded_objects_in_fixture</span> <span class="o">=</span> <span class="mi">0</span>
+                                    <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                                        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Installing </span><span class="si">%s</span><span class="s"> fixture &#39;</span><span class="si">%s</span><span class="s">&#39; from </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span> \
+                                            <span class="p">(</span><span class="n">format</span><span class="p">,</span> <span class="n">fixture_name</span><span class="p">,</span> <span class="n">humanize</span><span class="p">(</span><span class="n">fixture_dir</span><span class="p">)))</span>
+
+                                    <span class="n">objects</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="n">format</span><span class="p">,</span> <span class="n">fixture</span><span class="p">,</span> <span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+
+                                    <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objects</span><span class="p">:</span>
+                                        <span class="n">objects_in_fixture</span> <span class="o">+=</span> <span class="mi">1</span>
+                                        <span class="k">if</span> <span class="n">router</span><span class="o">.</span><span class="n">allow_syncdb</span><span class="p">(</span><span class="n">using</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">__class__</span><span class="p">):</span>
+                                            <span class="n">loaded_objects_in_fixture</span> <span class="o">+=</span> <span class="mi">1</span>
+                                            <span class="n">models</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">__class__</span><span class="p">)</span>
+                                            <span class="k">try</span><span class="p">:</span>
+                                                <span class="n">obj</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+                                            <span class="k">except</span> <span class="p">(</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">IntegrityError</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                                                <span class="n">e</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Could not load </span><span class="si">%(app_label)s</span><span class="s">.</span><span class="si">%(object_name)s</span><span class="s">(pk=</span><span class="si">%(pk)s</span><span class="s">): </span><span class="si">%(error_msg)s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">{</span>
+                                                        <span class="s">&#39;app_label&#39;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">app_label</span><span class="p">,</span>
+                                                        <span class="s">&#39;object_name&#39;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">object_name</span><span class="p">,</span>
+                                                        <span class="s">&#39;pk&#39;</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span>
+                                                        <span class="s">&#39;error_msg&#39;</span><span class="p">:</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                                                    <span class="p">},)</span>
+                                                <span class="k">raise</span>
+
+                                    <span class="n">loaded_object_count</span> <span class="o">+=</span> <span class="n">loaded_objects_in_fixture</span>
+                                    <span class="n">fixture_object_count</span> <span class="o">+=</span> <span class="n">objects_in_fixture</span>
+                                    <span class="n">label_found</span> <span class="o">=</span> <span class="bp">True</span>
+                                <span class="k">finally</span><span class="p">:</span>
+                                    <span class="n">fixture</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If the fixture we loaded contains 0 objects, assume that an
+error was encountered during fixture loading.</p></td><td class="code"><div class="highlight"><pre>                                <span class="k">if</span> <span class="n">objects_in_fixture</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                                    <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span>
+                                        <span class="s">&quot;No fixture data found for &#39;</span><span class="si">%s</span><span class="s">&#39;. (File format may be invalid.)&quot;</span> <span class="o">%</span>
+                                            <span class="p">(</span><span class="n">fixture_name</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Since we disabled constraint checks, we must manually check for
+any invalid keys that might have been added</p></td><td class="code"><div class="highlight"><pre>            <span class="n">table_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span> <span class="k">for</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">models</span><span class="p">]</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">check_constraints</span><span class="p">(</span><span class="n">table_names</span><span class="o">=</span><span class="n">table_names</span><span class="p">)</span>
+
+        <span class="k">except</span> <span class="p">(</span><span class="ne">SystemExit</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">):</span>
+            <span class="k">raise</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">commit</span><span class="p">:</span>
+                <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+                <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">CommandError</span><span class="p">):</span>
+                <span class="n">e</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;Problem installing fixture &#39;</span><span class="si">%s</span><span class="s">&#39;: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">full_path</span><span class="p">,</span> <span class="n">e</span><span class="p">),)</span>
+            <span class="k">raise</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>If we found even one object in a fixture, we need to reset the
+database sequences.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">loaded_object_count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">sequence_sql</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">sequence_reset_sql</span><span class="p">(</span><span class="n">no_style</span><span class="p">(),</span> <span class="n">models</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">sequence_sql</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Resetting sequences</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">sequence_sql</span><span class="p">:</span>
+                    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">commit</span><span class="p">:</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">fixture_object_count</span> <span class="o">==</span> <span class="n">loaded_object_count</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Installed </span><span class="si">%d</span><span class="s"> object(s) from </span><span class="si">%d</span><span class="s"> fixture(s)&quot;</span> <span class="o">%</span> <span class="p">(</span>
+                    <span class="n">loaded_object_count</span><span class="p">,</span> <span class="n">fixture_count</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;Installed </span><span class="si">%d</span><span class="s"> object(s) (of </span><span class="si">%d</span><span class="s">) from </span><span class="si">%d</span><span class="s"> fixture(s)&quot;</span> <span class="o">%</span> <span class="p">(</span>
+                    <span class="n">loaded_object_count</span><span class="p">,</span> <span class="n">fixture_object_count</span><span class="p">,</span> <span class="n">fixture_count</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Close the DB connection. This is required as a workaround for an
+edge case in MySQL: if the same connection is used to
+create tables, load data, and query, the query can return
+incorrect results. See Django #7572, MySQL #37735.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">commit</span><span class="p">:</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

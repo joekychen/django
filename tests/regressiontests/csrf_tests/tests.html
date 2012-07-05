@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › csrf_tests › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.context_processors</span> <span class="kn">import</span> <span class="n">csrf</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">HttpResponse</span>
+<span class="kn">from</span> <span class="nn">django.middleware.csrf</span> <span class="kn">import</span> <span class="n">CsrfViewMiddleware</span><span class="p">,</span> <span class="n">CSRF_KEY_LENGTH</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">RequestContext</span><span class="p">,</span> <span class="n">Template</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.views.decorators.csrf</span> <span class="kn">import</span> <span class="n">csrf_exempt</span><span class="p">,</span> <span class="n">requires_csrf_token</span><span class="p">,</span> <span class="n">ensure_csrf_cookie</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Response/views used for CsrfResponseMiddleware and CsrfViewMiddleware tests</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">post_form_response</span><span class="p">():</span>
+    <span class="n">resp</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">&lt;html&gt;&lt;body&gt;&lt;h1&gt;</span><span class="se">\u00a1</span><span class="s">Unicode!&lt;form method=&quot;post&quot;&gt;&lt;input type=&quot;text&quot; /&gt;&lt;/form&gt;&lt;/body&gt;&lt;/html&gt;</span>
+<span class="s">&quot;&quot;&quot;</span><span class="p">,</span> <span class="n">mimetype</span><span class="o">=</span><span class="s">&quot;text/html&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">resp</span>
+
+<span class="k">def</span> <span class="nf">post_form_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A view that returns a POST form (without a token)&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">post_form_response</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Response/views used for template tag tests</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">token_view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A view that uses {% csrf_token %}&quot;&quot;&quot;</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">processors</span><span class="o">=</span><span class="p">[</span><span class="n">csrf</span><span class="p">])</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="n">Template</span><span class="p">(</span><span class="s">&quot;{</span><span class="si">% c</span><span class="s">srf_token %}&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">template</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">non_token_view_using_request_processor</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A view that doesn&#39;t use the token, but does use the csrf view processor.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">context</span> <span class="o">=</span> <span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">processors</span><span class="o">=</span><span class="p">[</span><span class="n">csrf</span><span class="p">])</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="n">Template</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">template</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">))</span>
+
+<span class="k">class</span> <span class="nc">TestingHttpRequest</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A version of HttpRequest that allows us to change some things</span>
+<span class="sd">    more easily</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">is_secure</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_is_secure_override&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">CsrfViewMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The csrf token is potentially from an untrusted source, so could have
+characters that need dealing with.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">_csrf_id_cookie</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&lt;1&gt;</span><span class="se">\xc2\xa1</span><span class="s">&quot;</span>
+    <span class="n">_csrf_id</span> <span class="o">=</span> <span class="s">&quot;1&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_get_GET_no_csrf_cookie_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">TestingHttpRequest</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_get_GET_csrf_cookie_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">TestingHttpRequest</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">COOKIES</span><span class="p">[</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id_cookie</span>
+        <span class="k">return</span> <span class="n">req</span>
+
+    <span class="k">def</span> <span class="nf">_get_POST_csrf_cookie_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&quot;POST&quot;</span>
+        <span class="k">return</span> <span class="n">req</span>
+
+    <span class="k">def</span> <span class="nf">_get_POST_no_csrf_cookie_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&quot;POST&quot;</span>
+        <span class="k">return</span> <span class="n">req</span>
+
+    <span class="k">def</span> <span class="nf">_get_POST_request_with_token</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">POST</span><span class="p">[</span><span class="s">&#39;csrfmiddlewaretoken&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id</span>
+        <span class="k">return</span> <span class="n">req</span>
+
+    <span class="k">def</span> <span class="nf">_check_token_present</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">,</span> <span class="n">csrf_id</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;name=&#39;csrfmiddlewaretoken&#39; value=&#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">csrf_id</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_process_view_token_too_long</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span> 
+        <span class="sd">&quot;&quot;&quot; </span>
+<span class="sd">        Check that if the token is longer than expected, it is ignored and </span>
+<span class="sd">        a new token is created. </span>
+<span class="sd">        &quot;&quot;&quot;</span> 
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span> 
+        <span class="n">req</span><span class="o">.</span><span class="n">COOKIES</span><span class="p">[</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;x&#39;</span> <span class="o">*</span> <span class="mi">10000000</span> 
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">token_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span> 
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span> 
+        <span class="n">resp2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span> 
+        <span class="n">csrf_cookie</span> <span class="o">=</span> <span class="n">resp2</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span> 
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="o">.</span><span class="n">value</span><span class="p">),</span> <span class="n">CSRF_KEY_LENGTH</span><span class="p">)</span> 
+
+    <span class="k">def</span> <span class="nf">test_process_response_get_token_used</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When get_token is used, check that the cookie is created and headers</span>
+<span class="sd">        patched.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Put tests for CSRF<em>COOKIE</em>* settings here</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">CSRF_COOKIE_NAME</span><span class="o">=</span><span class="s">&#39;myname&#39;</span><span class="p">,</span>
+                           <span class="n">CSRF_COOKIE_DOMAIN</span><span class="o">=</span><span class="s">&#39;.example.com&#39;</span><span class="p">,</span>
+                           <span class="n">CSRF_COOKIE_PATH</span><span class="o">=</span><span class="s">&#39;/test/&#39;</span><span class="p">,</span>
+                           <span class="n">CSRF_COOKIE_SECURE</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>token<em>view calls get</em>token() indirectly</p></td><td class="code"><div class="highlight"><pre>            <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">token_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+            <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+            <span class="n">resp2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span>
+        <span class="n">csrf_cookie</span> <span class="o">=</span> <span class="n">resp2</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;myname&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="p">[</span><span class="s">&#39;domain&#39;</span><span class="p">],</span> <span class="s">&#39;.example.com&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="p">[</span><span class="s">&#39;secure&#39;</span><span class="p">],</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="p">[</span><span class="s">&#39;path&#39;</span><span class="p">],</span> <span class="s">&#39;/test/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;Cookie&#39;</span> <span class="ow">in</span> <span class="n">resp2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Vary&#39;</span><span class="p">,</span><span class="s">&#39;&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_process_response_get_token_not_used</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that if get_token() is not called, the view middleware does not</span>
+<span class="sd">        add a cookie.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>This is important to make pages cacheable.  Pages which do call
+get_token(), assuming they use the token, are not cacheable because
+the token is specific to the user</p></td><td class="code"><div class="highlight"><pre>        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>non<em>token</em>view<em>using</em>request<em>processor does not call get</em>token(), but
+does use the csrf request processor.  By using this, we are testing
+that the view processor is properly lazy and doesn't call get_token()
+until needed.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">non_token_view_using_request_processor</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">non_token_view_using_request_processor</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="n">resp2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span>
+
+        <span class="n">csrf_cookie</span> <span class="o">=</span> <span class="n">resp2</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">csrf_cookie</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Check the request processing</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_process_request_no_csrf_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that if no CSRF cookies is present, the middleware rejects the</span>
+<span class="sd">        incoming request.  This will stop login CSRF.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">403</span><span class="p">,</span> <span class="n">req2</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_process_request_csrf_cookie_no_token</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that if a CSRF cookie is present but no token, the middleware</span>
+<span class="sd">        rejects the incoming request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">403</span><span class="p">,</span> <span class="n">req2</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_process_request_csrf_cookie_and_token</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that if both a cookie and a token is present, the middleware lets it through.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_request_with_token</span><span class="p">()</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_process_request_csrf_cookie_no_token_exempt_view</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that if a CSRF cookie is present and no token, but the csrf_exempt</span>
+<span class="sd">        decorator has been applied to the view, the middleware lets it through</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">post_form_view</span><span class="p">),</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_csrf_token_in_header</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that we can pass in the token in a header instead of in the form</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_X_CSRFTOKEN&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_put_and_delete_rejected</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that HTTP PUT and DELETE methods have protection</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="n">TestingHttpRequest</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;PUT&#39;</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">403</span><span class="p">,</span> <span class="n">req2</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="n">TestingHttpRequest</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;DELETE&#39;</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">403</span><span class="p">,</span> <span class="n">req2</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_put_and_delete_allowed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that HTTP PUT and DELETE methods can get through with</span>
+<span class="sd">        X-CSRFToken and a cookie</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;PUT&#39;</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_X_CSRFTOKEN&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;DELETE&#39;</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_X_CSRFTOKEN&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_csrf_id</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Tests for the template tag method</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_token_node_no_csrf_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that CsrfTokenNode works when no CSRF cookie is set</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="n">resp</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_token_node_empty_csrf_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that we get a new token if the csrf_cookie is the empty string</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">COOKIES</span><span class="p">[</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">]</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;</span>
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">token_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="n">resp</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_token_node_with_csrf_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that CsrfTokenNode works when a CSRF cookie is set</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">token_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_token_present</span><span class="p">(</span><span class="n">resp</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_token_for_exempt_view</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that get_token still works for a view decorated with &#39;csrf_exempt&#39;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">token_view</span><span class="p">),</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_token_present</span><span class="p">(</span><span class="n">resp</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_token_for_requires_csrf_token_view</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that get_token works for a view decorated solely with requires_csrf_token</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">requires_csrf_token</span><span class="p">(</span><span class="n">token_view</span><span class="p">)(</span><span class="n">req</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_token_present</span><span class="p">(</span><span class="n">resp</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_token_node_with_new_csrf_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that CsrfTokenNode works when a CSRF cookie is created by</span>
+<span class="sd">        the middleware (when one was not already present)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">token_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">token_view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="n">resp2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span>
+        <span class="n">csrf_cookie</span> <span class="o">=</span> <span class="n">resp2</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check_token_present</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="n">csrf_id</span><span class="o">=</span><span class="n">csrf_cookie</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_https_bad_referer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that a POST HTTPS request with a bad referer is rejected</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_request_with_token</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">_is_secure_override</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_HOST&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;www.example.com&#39;</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_REFERER&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;https://www.evil.org/somepage&#39;</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">403</span><span class="p">,</span> <span class="n">req2</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_https_good_referer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that a POST HTTPS request with a good referer is accepted</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_request_with_token</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">_is_secure_override</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_HOST&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;www.example.com&#39;</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_REFERER&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;https://www.example.com/somepage&#39;</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_https_good_referer_2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that a POST HTTPS request with a good referer is accepted</span>
+<span class="sd">        where the referer contains no trailing slash</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>See ticket #15617</p></td><td class="code"><div class="highlight"><pre>        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_POST_request_with_token</span><span class="p">()</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">_is_secure_override</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_HOST&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;www.example.com&#39;</span>
+        <span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_REFERER&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;https://www.example.com&#39;</span>
+        <span class="n">req2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">post_form_view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">req2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_ensures_csrf_cookie_no_middleware</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that ensures_csrf_cookie decorator fulfils its promise</span>
+<span class="sd">        with no middleware</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@ensure_csrf_cookie</span>
+        <span class="k">def</span> <span class="nf">view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Doesn't insert a token or anything</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s">&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">,</span> <span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;Cookie&#39;</span> <span class="ow">in</span> <span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Vary&#39;</span><span class="p">,</span><span class="s">&#39;&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_ensures_csrf_cookie_with_middleware</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that ensures_csrf_cookie decorator fulfils its promise</span>
+<span class="sd">        with the middleware enabled.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@ensure_csrf_cookie</span>
+        <span class="k">def</span> <span class="nf">view</span><span class="p">(</span><span class="n">request</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Doesn't insert a token or anything</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s">&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">req</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_GET_no_csrf_cookie_request</span><span class="p">()</span>
+        <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+        <span class="n">resp2</span> <span class="o">=</span> <span class="n">CsrfViewMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">resp2</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">CSRF_COOKIE_NAME</span><span class="p">,</span> <span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;Cookie&#39;</span> <span class="ow">in</span> <span class="n">resp2</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Vary&#39;</span><span class="p">,</span><span class="s">&#39;&#39;</span><span class="p">))</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

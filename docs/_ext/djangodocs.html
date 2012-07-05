@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » docs › _ext › djangodocs.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>djangodocs.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Sphinx plugins for Django documentation.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="kn">from</span> <span class="nn">docutils</span> <span class="kn">import</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">transforms</span>
+
+<span class="kn">from</span> <span class="nn">sphinx</span> <span class="kn">import</span> <span class="n">addnodes</span><span class="p">,</span> <span class="n">roles</span><span class="p">,</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">sphinx_ver</span>
+<span class="kn">from</span> <span class="nn">sphinx.builders.html</span> <span class="kn">import</span> <span class="n">StandaloneHTMLBuilder</span>
+<span class="kn">from</span> <span class="nn">sphinx.writers.html</span> <span class="kn">import</span> <span class="n">SmartyPantsHTMLTranslator</span>
+<span class="kn">from</span> <span class="nn">sphinx.util.console</span> <span class="kn">import</span> <span class="n">bold</span>
+<span class="kn">from</span> <span class="nn">sphinx.util.compat</span> <span class="kn">import</span> <span class="n">Directive</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>RE for option descriptions without a '--' prefix</p></td><td class="code"><div class="highlight"><pre><span class="n">simple_option_desc_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="s">r&#39;([-_a-zA-Z0-9]+)(\s*.*?)(?=,\s+(?:/|-|--)|$)&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">setup</span><span class="p">(</span><span class="n">app</span><span class="p">):</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_crossref_type</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;setting&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;setting&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; setting&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_crossref_type</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;templatetag&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;ttag&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; template tag&quot;</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_crossref_type</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;templatefilter&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;tfilter&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; template filter&quot;</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_crossref_type</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;fieldlookup&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;lookup&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; field lookup type&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_description_unit</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;django-admin&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;djadmin&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; django-admin command&quot;</span><span class="p">,</span>
+        <span class="n">parse_node</span>    <span class="o">=</span> <span class="n">parse_django_admin_node</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_description_unit</span><span class="p">(</span>
+        <span class="n">directivename</span> <span class="o">=</span> <span class="s">&quot;django-admin-option&quot;</span><span class="p">,</span>
+        <span class="n">rolename</span>      <span class="o">=</span> <span class="s">&quot;djadminopt&quot;</span><span class="p">,</span>
+        <span class="n">indextemplate</span> <span class="o">=</span> <span class="s">&quot;pair: </span><span class="si">%s</span><span class="s">; django-admin command-line option&quot;</span><span class="p">,</span>
+        <span class="n">parse_node</span>    <span class="o">=</span> <span class="n">parse_django_adminopt_node</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_config_value</span><span class="p">(</span><span class="s">&#39;django_next_version&#39;</span><span class="p">,</span> <span class="s">&#39;0.0&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_directive</span><span class="p">(</span><span class="s">&#39;versionadded&#39;</span><span class="p">,</span> <span class="n">VersionDirective</span><span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_directive</span><span class="p">(</span><span class="s">&#39;versionchanged&#39;</span><span class="p">,</span> <span class="n">VersionDirective</span><span class="p">)</span>
+    <span class="n">app</span><span class="o">.</span><span class="n">add_builder</span><span class="p">(</span><span class="n">DjangoStandaloneHTMLBuilder</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">VersionDirective</span><span class="p">(</span><span class="n">Directive</span><span class="p">):</span>
+    <span class="n">has_content</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">required_arguments</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">optional_arguments</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">final_argument_whitespace</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">option_spec</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">document</span><span class="o">.</span><span class="n">settings</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">arg0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">is_nextversion</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">django_next_version</span> <span class="o">==</span> <span class="n">arg0</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">versionmodified</span><span class="p">()</span>
+        <span class="n">ret</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_nextversion</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">arguments</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">linktext</span> <span class="o">=</span> <span class="s">&#39;Please see the release notes &lt;/releases/</span><span class="si">%s</span><span class="s">&gt;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">arg0</span><span class="p">)</span>
+                <span class="n">xrefs</span> <span class="o">=</span> <span class="n">roles</span><span class="o">.</span><span class="n">XRefRole</span><span class="p">()(</span><span class="s">&#39;doc&#39;</span><span class="p">,</span> <span class="n">linktext</span><span class="p">,</span> <span class="n">linktext</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">xrefs</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">node</span><span class="p">[</span><span class="s">&#39;version&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">arg0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">node</span><span class="p">[</span><span class="s">&#39;version&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&quot;Development version&quot;</span>
+        <span class="n">node</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">arguments</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">inodes</span><span class="p">,</span> <span class="n">messages</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">inline_text</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">arguments</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">lineno</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">inodes</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">nested_parse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content_offset</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="n">ret</span> <span class="o">+</span> <span class="n">messages</span>
+        <span class="n">env</span><span class="o">.</span><span class="n">note_versionchange</span><span class="p">(</span><span class="n">node</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">],</span> <span class="n">node</span><span class="p">[</span><span class="s">&#39;version&#39;</span><span class="p">],</span> <span class="n">node</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lineno</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ret</span>
+
+
+<span class="k">class</span> <span class="nc">DjangoHTMLTranslator</span><span class="p">(</span><span class="n">SmartyPantsHTMLTranslator</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Django-specific reST to HTML tweaks.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Don't use border=1, which docutils does by default.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">visit_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_table_row_index</span> <span class="o">=</span> <span class="mi">0</span> <span class="c"># Needed by Sphinx</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">starttag</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="s">&#39;table&#39;</span><span class="p">,</span> <span class="n">CLASS</span><span class="o">=</span><span class="s">&#39;docutils&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p><big>? Really?</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">visit_desc_parameterlist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">first_param</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_separator</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">child_text_separator</span>
+
+    <span class="k">def</span> <span class="nf">depart_desc_parameterlist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">sphinx_ver</span> <span class="o">&lt;</span> <span class="s">&#39;1.0.8&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Don't apply smartypants to literal blocks</p></td><td class="code"><div class="highlight"><pre>        <span class="k">def</span> <span class="nf">visit_literal_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">no_smarty</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">SmartyPantsHTMLTranslator</span><span class="o">.</span><span class="n">visit_literal_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">depart_literal_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+            <span class="n">SmartyPantsHTMLTranslator</span><span class="o">.</span><span class="n">depart_literal_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">no_smarty</span> <span class="o">-=</span> <span class="mi">1</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Turn the "new in version" stuff (versionadded/versionchanged) into a
+better callout -- the Sphinx default is just a little span,
+which is a bit less obvious that I'd like.</p>
+
+<p>FIXME: these messages are all hardcoded in English. We need to change
+that to accomodate other language docs, but I can't work out how to make
+that work.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">version_text</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;deprecated&#39;</span><span class="p">:</span>       <span class="s">&#39;Deprecated in Django </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;versionchanged&#39;</span><span class="p">:</span>   <span class="s">&#39;Changed in Django </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;versionadded&#39;</span><span class="p">:</span>     <span class="s">&#39;New in Django </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">visit_versionmodified</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">starttag</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="s">&#39;div&#39;</span><span class="p">,</span> <span class="n">CLASS</span><span class="o">=</span><span class="n">node</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">])</span>
+        <span class="p">)</span>
+        <span class="n">title</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">version_text</span><span class="p">[</span><span class="n">node</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">]]</span> <span class="o">%</span> <span class="n">node</span><span class="p">[</span><span class="s">&#39;version&#39;</span><span class="p">],</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="ow">and</span> <span class="s">&quot;:&quot;</span> <span class="ow">or</span> <span class="s">&quot;.&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;&lt;span class=&quot;title&quot;&gt;</span><span class="si">%s</span><span class="s">&lt;/span&gt; &#39;</span> <span class="o">%</span> <span class="n">title</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">depart_versionmodified</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;&lt;/div&gt;</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Give each section a unique ID -- nice for custom CSS hooks</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">visit_section</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="n">old_ids</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;ids&#39;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">node</span><span class="p">[</span><span class="s">&#39;ids&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;s-&#39;</span> <span class="o">+</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">old_ids</span><span class="p">]</span>
+        <span class="n">node</span><span class="p">[</span><span class="s">&#39;ids&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">old_ids</span><span class="p">)</span>
+        <span class="n">SmartyPantsHTMLTranslator</span><span class="o">.</span><span class="n">visit_section</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+        <span class="n">node</span><span class="p">[</span><span class="s">&#39;ids&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_ids</span>
+
+<span class="k">def</span> <span class="nf">parse_django_admin_node</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">signode</span><span class="p">):</span>
+    <span class="n">command</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">env</span><span class="o">.</span><span class="n">_django_curr_admin_command</span> <span class="o">=</span> <span class="n">command</span>
+    <span class="n">title</span> <span class="o">=</span> <span class="s">&quot;django-admin.py </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">sig</span>
+    <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_name</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">title</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sig</span>
+
+<span class="k">def</span> <span class="nf">parse_django_adminopt_node</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">signode</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A copy of sphinx.directives.CmdoptionDesc.parse_signature()&quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">sphinx.domains.std</span> <span class="kn">import</span> <span class="n">option_desc_re</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">firstname</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+    <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">option_desc_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">sig</span><span class="p">):</span>
+        <span class="n">optname</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
+            <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_addname</span><span class="p">(</span><span class="s">&#39;, &#39;</span><span class="p">,</span> <span class="s">&#39;, &#39;</span><span class="p">)</span>
+        <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_name</span><span class="p">(</span><span class="n">optname</span><span class="p">,</span> <span class="n">optname</span><span class="p">)</span>
+        <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_addname</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">count</span><span class="p">:</span>
+            <span class="n">firstname</span> <span class="o">=</span> <span class="n">optname</span>
+        <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">count</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">simple_option_desc_re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">sig</span><span class="p">):</span>
+            <span class="n">optname</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
+                <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_addname</span><span class="p">(</span><span class="s">&#39;, &#39;</span><span class="p">,</span> <span class="s">&#39;, &#39;</span><span class="p">)</span>
+            <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_name</span><span class="p">(</span><span class="n">optname</span><span class="p">,</span> <span class="n">optname</span><span class="p">)</span>
+            <span class="n">signode</span> <span class="o">+=</span> <span class="n">addnodes</span><span class="o">.</span><span class="n">desc_addname</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">count</span><span class="p">:</span>
+                <span class="n">firstname</span> <span class="o">=</span> <span class="n">optname</span>
+            <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">firstname</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span>
+    <span class="k">return</span> <span class="n">firstname</span>
+
+
+<span class="k">class</span> <span class="nc">DjangoStandaloneHTMLBuilder</span><span class="p">(</span><span class="n">StandaloneHTMLBuilder</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Subclass to add some extra things we need.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;djangohtml&#39;</span>
+
+    <span class="k">def</span> <span class="nf">finish</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">DjangoStandaloneHTMLBuilder</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">finish</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">bold</span><span class="p">(</span><span class="s">&quot;writing templatebuiltins.js...&quot;</span><span class="p">))</span>
+        <span class="n">xrefs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">domaindata</span><span class="p">[</span><span class="s">&quot;std&quot;</span><span class="p">][</span><span class="s">&quot;objects&quot;</span><span class="p">]</span>
+        <span class="n">templatebuiltins</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;ttags&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">n</span> <span class="k">for</span> <span class="p">((</span><span class="n">t</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span> <span class="p">(</span><span class="n">l</span><span class="p">,</span> <span class="n">a</span><span class="p">))</span> <span class="ow">in</span> <span class="n">xrefs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">t</span> <span class="o">==</span> <span class="s">&quot;templatetag&quot;</span> <span class="ow">and</span> <span class="n">l</span> <span class="o">==</span> <span class="s">&quot;ref/templates/builtins&quot;</span><span class="p">],</span>
+            <span class="s">&quot;tfilters&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">n</span> <span class="k">for</span> <span class="p">((</span><span class="n">t</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span> <span class="p">(</span><span class="n">l</span><span class="p">,</span> <span class="n">a</span><span class="p">))</span> <span class="ow">in</span> <span class="n">xrefs</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">t</span> <span class="o">==</span> <span class="s">&quot;templatefilter&quot;</span> <span class="ow">and</span> <span class="n">l</span> <span class="o">==</span> <span class="s">&quot;ref/templates/builtins&quot;</span><span class="p">],</span>
+        <span class="p">}</span>
+        <span class="n">outfilename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">outdir</span><span class="p">,</span> <span class="s">&quot;templatebuiltins.js&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">outfilename</span><span class="p">,</span> <span class="s">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+            <span class="n">fp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;var django_template_builtins = &#39;</span><span class="p">)</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">templatebuiltins</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span>
+            <span class="n">fp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;;</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

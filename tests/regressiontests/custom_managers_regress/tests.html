@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › custom_managers_regress › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">RelatedModel</span><span class="p">,</span> <span class="n">RestrictedModel</span><span class="p">,</span> <span class="n">OneToOneRestrictedModel</span>
+
+
+<span class="k">class</span> <span class="nc">CustomManagersRegressTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_filtered_default_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Even though the default manager filters out some records,</span>
+<span class="sd">        we must still be able to save (particularly, save by updating</span>
+<span class="sd">        existing records) those filtered instances. This is a</span>
+<span class="sd">        regression test for #8990, #9527&quot;&quot;&quot;</span>
+        <span class="n">related</span> <span class="o">=</span> <span class="n">RelatedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;xyzzy&quot;</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">RestrictedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;hidden&quot;</span><span class="p">,</span> <span class="n">related</span><span class="o">=</span><span class="n">related</span><span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;still hidden&quot;</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>If the hidden object wasn't seen during the save process,
+there would now be two objects in the database.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">RestrictedModel</span><span class="o">.</span><span class="n">plain_manager</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_delete_related_on_filtered_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Deleting related objects should also not be distracted by a</span>
+<span class="sd">        restricted manager on the related object. This is a regression</span>
+<span class="sd">        test for #2698.&quot;&quot;&quot;</span>
+        <span class="n">related</span> <span class="o">=</span> <span class="n">RelatedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;xyzzy&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">public</span> <span class="ow">in</span> <span class="p">((</span><span class="s">&#39;one&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;two&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;three&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)):</span>
+            <span class="n">RestrictedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">is_public</span><span class="o">=</span><span class="n">public</span><span class="p">,</span> <span class="n">related</span><span class="o">=</span><span class="n">related</span><span class="p">)</span>
+
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">RelatedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;xyzzy&quot;</span><span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>All of the RestrictedModel instances should have been
+deleted, since they <em>all</em> pointed to the RelatedModel. If
+the default manager is used, only the public one will be
+deleted.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">RestrictedModel</span><span class="o">.</span><span class="n">plain_manager</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_delete_one_to_one_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The same test case as the last one, but for one-to-one
+models, which are implemented slightly different internally,
+so it's a different code path.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">obj</span> <span class="o">=</span> <span class="n">RelatedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;xyzzy&quot;</span><span class="p">)</span>
+        <span class="n">OneToOneRestrictedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;foo&quot;</span><span class="p">,</span> <span class="n">is_public</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">related</span><span class="o">=</span><span class="n">obj</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">RelatedModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;xyzzy&quot;</span><span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">OneToOneRestrictedModel</span><span class="o">.</span><span class="n">plain_manager</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">0</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

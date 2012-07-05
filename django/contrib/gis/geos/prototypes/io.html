@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › prototypes › io.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>io.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">byref</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_char</span><span class="p">,</span> <span class="n">c_size_t</span><span class="p">,</span> <span class="n">Structure</span><span class="p">,</span> <span class="n">POINTER</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.base</span> <span class="kn">import</span> <span class="n">GEOSBase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.libgeos</span> <span class="kn">import</span> <span class="n">GEOM_PTR</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.errcheck</span> <span class="kn">import</span> <span class="n">check_geom</span><span class="p">,</span> <span class="n">check_string</span><span class="p">,</span> <span class="n">check_sized_string</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.geom</span> <span class="kn">import</span> <span class="n">c_uchar_p</span><span class="p">,</span> <span class="n">geos_char_p</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.threadsafe</span> <span class="kn">import</span> <span class="n">GEOSFunc</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><h2>The WKB/WKT Reader/Writer structures and pointers</h2></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">WKTReader_st</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">WKTWriter_st</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">WKBReader_st</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">WKBWriter_st</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+
+<span class="n">WKT_READ_PTR</span>  <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">WKTReader_st</span><span class="p">)</span>
+<span class="n">WKT_WRITE_PTR</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">WKTWriter_st</span><span class="p">)</span>
+<span class="n">WKB_READ_PTR</span>  <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">WKBReader_st</span><span class="p">)</span>
+<span class="n">WKB_WRITE_PTR</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">WKBReader_st</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h2>WKTReader routines</h2></td><td class="code"><div class="highlight"><pre><span class="n">wkt_reader_create</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTReader_create&#39;</span><span class="p">)</span>
+<span class="n">wkt_reader_create</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">WKT_READ_PTR</span>
+
+<span class="n">wkt_reader_destroy</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTReader_destroy&#39;</span><span class="p">)</span>
+<span class="n">wkt_reader_destroy</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKT_READ_PTR</span><span class="p">]</span>
+
+<span class="n">wkt_reader_read</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTReader_read&#39;</span><span class="p">)</span>
+<span class="n">wkt_reader_read</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKT_READ_PTR</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">]</span>
+<span class="n">wkt_reader_read</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">GEOM_PTR</span>
+<span class="n">wkt_reader_read</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_geom</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><h2>WKTWriter routines</h2></td><td class="code"><div class="highlight"><pre><span class="n">wkt_writer_create</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTWriter_create&#39;</span><span class="p">)</span>
+<span class="n">wkt_writer_create</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">WKT_WRITE_PTR</span>
+
+<span class="n">wkt_writer_destroy</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTWriter_destroy&#39;</span><span class="p">)</span>
+<span class="n">wkt_writer_destroy</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKT_WRITE_PTR</span><span class="p">]</span>
+
+<span class="n">wkt_writer_write</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKTWriter_write&#39;</span><span class="p">)</span>
+<span class="n">wkt_writer_write</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKT_WRITE_PTR</span><span class="p">,</span> <span class="n">GEOM_PTR</span><span class="p">]</span>
+<span class="n">wkt_writer_write</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">geos_char_p</span>
+<span class="n">wkt_writer_write</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_string</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><h2>WKBReader routines</h2></td><td class="code"><div class="highlight"><pre><span class="n">wkb_reader_create</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBReader_create&#39;</span><span class="p">)</span>
+<span class="n">wkb_reader_create</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">WKB_READ_PTR</span>
+
+<span class="n">wkb_reader_destroy</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBReader_destroy&#39;</span><span class="p">)</span>
+<span class="n">wkb_reader_destroy</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_READ_PTR</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="nf">wkb_read_func</span><span class="p">(</span><span class="n">func</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Although the function definitions take <code>const unsigned char *</code>
+as their parameter, we use c<em>char</em>p here so the function may
+take Python strings directly as parameters.  Inside Python there
+is not a difference between signed and unsigned characters, so
+it is not a problem.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_READ_PTR</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_size_t</span><span class="p">]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">GEOM_PTR</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_geom</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="n">wkb_reader_read</span> <span class="o">=</span> <span class="n">wkb_read_func</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBReader_read&#39;</span><span class="p">))</span>
+<span class="n">wkb_reader_read_hex</span> <span class="o">=</span> <span class="n">wkb_read_func</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBReader_readHEX&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><h2>WKBWriter routines</h2></td><td class="code"><div class="highlight"><pre><span class="n">wkb_writer_create</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_create&#39;</span><span class="p">)</span>
+<span class="n">wkb_writer_create</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">WKB_WRITE_PTR</span>
+
+<span class="n">wkb_writer_destroy</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_destroy&#39;</span><span class="p">)</span>
+<span class="n">wkb_writer_destroy</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_WRITE_PTR</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>WKB Writing prototypes.</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">wkb_write_func</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_WRITE_PTR</span><span class="p">,</span> <span class="n">GEOM_PTR</span><span class="p">,</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">c_size_t</span><span class="p">)]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">c_uchar_p</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_sized_string</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="n">wkb_writer_write</span> <span class="o">=</span> <span class="n">wkb_write_func</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_write&#39;</span><span class="p">))</span>
+<span class="n">wkb_writer_write_hex</span> <span class="o">=</span> <span class="n">wkb_write_func</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_writeHEX&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>WKBWriter property getter/setter prototypes.</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">wkb_writer_get</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">restype</span><span class="o">=</span><span class="n">c_int</span><span class="p">):</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_WRITE_PTR</span><span class="p">]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">restype</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="k">def</span> <span class="nf">wkb_writer_set</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">argtype</span><span class="o">=</span><span class="n">c_int</span><span class="p">):</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">WKB_WRITE_PTR</span><span class="p">,</span> <span class="n">argtype</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="n">wkb_writer_get_byteorder</span> <span class="o">=</span> <span class="n">wkb_writer_get</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_getByteOrder&#39;</span><span class="p">))</span>
+<span class="n">wkb_writer_set_byteorder</span> <span class="o">=</span> <span class="n">wkb_writer_set</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_setByteOrder&#39;</span><span class="p">))</span>
+<span class="n">wkb_writer_get_outdim</span>    <span class="o">=</span> <span class="n">wkb_writer_get</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_getOutputDimension&#39;</span><span class="p">))</span>
+<span class="n">wkb_writer_set_outdim</span>    <span class="o">=</span> <span class="n">wkb_writer_set</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_setOutputDimension&#39;</span><span class="p">))</span>
+<span class="n">wkb_writer_get_include_srid</span> <span class="o">=</span> <span class="n">wkb_writer_get</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_getIncludeSRID&#39;</span><span class="p">),</span> <span class="n">restype</span><span class="o">=</span><span class="n">c_char</span><span class="p">)</span>
+<span class="n">wkb_writer_set_include_srid</span> <span class="o">=</span> <span class="n">wkb_writer_set</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSWKBWriter_setIncludeSRID&#39;</span><span class="p">),</span> <span class="n">argtype</span><span class="o">=</span><span class="n">c_char</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><h2>Base I/O Class</h2></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">IOBase</span><span class="p">(</span><span class="n">GEOSBase</span><span class="p">):</span>
+    <span class="s">&quot;Base class for GEOS I/O objects.&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Getting the pointer with the constructor.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_constructor</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Cleaning up with the appropriate destructor.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_destructor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><h2>Base WKB/WKT Reading and Writing objects</h2></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Non-public WKB/WKT reader classes for internal use because
+their <code>read</code> methods return <em>pointers</em> instead of GEOSGeometry
+objects.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">_WKTReader</span><span class="p">(</span><span class="n">IOBase</span><span class="p">):</span>
+    <span class="n">_constructor</span> <span class="o">=</span> <span class="n">wkt_reader_create</span>
+    <span class="n">_destructor</span> <span class="o">=</span> <span class="n">wkt_reader_destroy</span>
+    <span class="n">ptr_type</span> <span class="o">=</span> <span class="n">WKT_READ_PTR</span>
+
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wkt</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">wkt</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span> <span class="k">raise</span> <span class="ne">TypeError</span>
+        <span class="k">return</span> <span class="n">wkt_reader_read</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">wkt</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">_WKBReader</span><span class="p">(</span><span class="n">IOBase</span><span class="p">):</span>
+    <span class="n">_constructor</span> <span class="o">=</span> <span class="n">wkb_reader_create</span>
+    <span class="n">_destructor</span> <span class="o">=</span> <span class="n">wkb_reader_destroy</span>
+    <span class="n">ptr_type</span> <span class="o">=</span> <span class="n">WKB_READ_PTR</span>
+
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wkb</span><span class="p">):</span>
+        <span class="s">&quot;Returns a _pointer_ to C GEOS Geometry object from the given WKB.&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">wkb</span><span class="p">,</span> <span class="nb">buffer</span><span class="p">):</span>
+            <span class="n">wkb_s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">wkb</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">wkb_reader_read</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">wkb_s</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">wkb_s</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">wkb</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">wkb_reader_read_hex</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">wkb</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">wkb</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><h2>WKB/WKT Writer Classes</h2></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">WKTWriter</span><span class="p">(</span><span class="n">IOBase</span><span class="p">):</span>
+    <span class="n">_constructor</span> <span class="o">=</span> <span class="n">wkt_writer_create</span>
+    <span class="n">_destructor</span> <span class="o">=</span> <span class="n">wkt_writer_destroy</span>
+    <span class="n">ptr_type</span> <span class="o">=</span> <span class="n">WKT_WRITE_PTR</span>
+
+    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">):</span>
+        <span class="s">&quot;Returns the WKT representation of the given geometry.&quot;</span>
+        <span class="k">return</span> <span class="n">wkt_writer_write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">WKBWriter</span><span class="p">(</span><span class="n">IOBase</span><span class="p">):</span>
+    <span class="n">_constructor</span> <span class="o">=</span> <span class="n">wkb_writer_create</span>
+    <span class="n">_destructor</span> <span class="o">=</span> <span class="n">wkb_writer_destroy</span>
+    <span class="n">ptr_type</span> <span class="o">=</span> <span class="n">WKB_WRITE_PTR</span>
+
+    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">):</span>
+        <span class="s">&quot;Returns the WKB representation of the given geometry.&quot;</span>
+        <span class="k">return</span> <span class="nb">buffer</span><span class="p">(</span><span class="n">wkb_writer_write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_size_t</span><span class="p">())))</span>
+
+    <span class="k">def</span> <span class="nf">write_hex</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">):</span>
+        <span class="s">&quot;Returns the HEXEWKB representation of the given geometry.&quot;</span>
+        <span class="k">return</span> <span class="n">wkb_writer_write_hex</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">geom</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_size_t</span><span class="p">()))</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><h2>WKBWriter Properties</h2></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Property for getting/setting the byteorder.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_byteorder</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">wkb_writer_get_byteorder</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_set_byteorder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">order</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">order</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Byte order parameter must be 0 (Big Endian) or 1 (Little Endian).&#39;</span><span class="p">)</span>
+        <span class="n">wkb_writer_set_byteorder</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">order</span><span class="p">)</span>
+
+    <span class="n">byteorder</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_byteorder</span><span class="p">,</span> <span class="n">_set_byteorder</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Property for getting/setting the output dimension.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_outdim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">wkb_writer_get_outdim</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_set_outdim</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_dim</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">new_dim</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span> <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;WKB output dimension must be 2 or 3&#39;</span><span class="p">)</span>
+        <span class="n">wkb_writer_set_outdim</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">new_dim</span><span class="p">)</span>
+
+    <span class="n">outdim</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_outdim</span><span class="p">,</span> <span class="n">_set_outdim</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Property for getting/setting the include srid flag.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_include_srid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">ord</span><span class="p">(</span><span class="n">wkb_writer_get_include_srid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">_set_include_srid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">include</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">bool</span><span class="p">(</span><span class="n">include</span><span class="p">):</span> <span class="n">flag</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">flag</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">wkb_writer_set_include_srid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">flag</span><span class="p">)</span>
+
+    <span class="n">srid</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_include_srid</span><span class="p">,</span> <span class="n">_set_include_srid</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p><code>ThreadLocalIO</code> object holds instances of the WKT and WKB reader/writer
+objects that are local to the thread.  The <code>GEOSGeometry</code> internals
+access these instances by calling the module-level functions, defined
+below. </p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">ThreadLocalIO</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">):</span>
+    <span class="n">wkt_r</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">wkt_w</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">wkb_r</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">wkb_w</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">ewkb_w</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">ewkb_w3d</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="n">thread_context</span> <span class="o">=</span> <span class="n">ThreadLocalIO</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>These module-level routines return the I/O object that is local to the
+thread. If the I/O object does not exist yet it will be initialized.</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">wkt_r</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_r</span><span class="p">:</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_r</span> <span class="o">=</span> <span class="n">_WKTReader</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_r</span>
+
+<span class="k">def</span> <span class="nf">wkt_w</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_w</span><span class="p">:</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_w</span> <span class="o">=</span> <span class="n">WKTWriter</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkt_w</span>
+
+<span class="k">def</span> <span class="nf">wkb_r</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_r</span><span class="p">:</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_r</span> <span class="o">=</span> <span class="n">_WKBReader</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_r</span>
+
+<span class="k">def</span> <span class="nf">wkb_w</span><span class="p">():</span>
+   <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_w</span><span class="p">:</span>
+       <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_w</span> <span class="o">=</span> <span class="n">WKBWriter</span><span class="p">()</span>
+   <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">wkb_w</span>
+
+<span class="k">def</span> <span class="nf">ewkb_w</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w</span><span class="p">:</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w</span> <span class="o">=</span> <span class="n">WKBWriter</span><span class="p">()</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w</span><span class="o">.</span><span class="n">srid</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w</span>
+
+<span class="k">def</span> <span class="nf">ewkb_w3d</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w3d</span><span class="p">:</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w3d</span> <span class="o">=</span> <span class="n">WKBWriter</span><span class="p">()</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w3d</span><span class="o">.</span><span class="n">srid</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w3d</span><span class="o">.</span><span class="n">outdim</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="k">return</span> <span class="n">thread_context</span><span class="o">.</span><span class="n">ewkb_w3d</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

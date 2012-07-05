@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › staticfiles › storage.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>storage.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">posixpath</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">urllib</span> <span class="kn">import</span> <span class="n">unquote</span>
+<span class="kn">from</span> <span class="nn">urlparse</span> <span class="kn">import</span> <span class="n">urlsplit</span><span class="p">,</span> <span class="n">urlunsplit</span><span class="p">,</span> <span class="n">urldefrag</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.cache</span> <span class="kn">import</span> <span class="p">(</span><span class="n">get_cache</span><span class="p">,</span> <span class="n">InvalidCacheBackendError</span><span class="p">,</span>
+                               <span class="n">cache</span> <span class="k">as</span> <span class="n">default_cache</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.core.files.base</span> <span class="kn">import</span> <span class="n">ContentFile</span>
+<span class="kn">from</span> <span class="nn">django.core.files.storage</span> <span class="kn">import</span> <span class="n">FileSystemStorage</span><span class="p">,</span> <span class="n">get_storage_class</span>
+<span class="kn">from</span> <span class="nn">django.utils.datastructures</span> <span class="kn">import</span> <span class="n">SortedDict</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span><span class="p">,</span> <span class="n">smart_str</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="kn">import</span> <span class="n">LazyObject</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.staticfiles.utils</span> <span class="kn">import</span> <span class="n">check_settings</span><span class="p">,</span> <span class="n">matches_patterns</span>
+
+
+<span class="k">class</span> <span class="nc">StaticFilesStorage</span><span class="p">(</span><span class="n">FileSystemStorage</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Standard file system storage for static files.</span>
+
+<span class="sd">    The defaults for ``location`` and ``base_url`` are</span>
+<span class="sd">    ``STATIC_ROOT`` and ``STATIC_URL``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">location</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">base_url</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">location</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span>
+        <span class="k">if</span> <span class="n">base_url</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">base_url</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span>
+        <span class="n">check_settings</span><span class="p">(</span><span class="n">base_url</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">StaticFilesStorage</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">base_url</span><span class="p">,</span>
+                                                 <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">location</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;You&#39;re using the staticfiles app &quot;</span>
+                                       <span class="s">&quot;without having set the STATIC_ROOT &quot;</span>
+                                       <span class="s">&quot;setting to a filesystem path.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">StaticFilesStorage</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CachedFilesMixin</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="n">patterns</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="s">&quot;*.css&quot;</span><span class="p">,</span> <span class="p">(</span>
+            <span class="n">br</span><span class="s">&quot;&quot;&quot;(url\([&#39;&quot;]{0,1}\s*(.*?)[&quot;&#39;]{0,1}\))&quot;&quot;&quot;</span><span class="p">,</span>
+            <span class="n">br</span><span class="s">&quot;&quot;&quot;(@import\s*[&quot;&#39;]\s*(.*?)[&quot;&#39;])&quot;&quot;&quot;</span><span class="p">,</span>
+        <span class="p">)),</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">CachedFilesMixin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="n">get_cache</span><span class="p">(</span><span class="s">&#39;staticfiles&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">InvalidCacheBackendError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Use the default backend</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="n">default_cache</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span> <span class="o">=</span> <span class="n">SortedDict</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">extension</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">patterns</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">pattern</span> <span class="ow">in</span> <span class="n">patterns</span><span class="p">:</span>
+                <span class="n">compiled</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">extension</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">compiled</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">file_hash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retuns a hash of the file with the given name and optional content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">content</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="n">md5</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">content</span><span class="o">.</span><span class="n">chunks</span><span class="p">():</span>
+            <span class="n">md5</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">md5</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">12</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">hashed_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">parsed_name</span> <span class="o">=</span> <span class="n">urlsplit</span><span class="p">(</span><span class="n">unquote</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+        <span class="n">clean_name</span> <span class="o">=</span> <span class="n">parsed_name</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">content</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">clean_name</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;The file &#39;</span><span class="si">%s</span><span class="s">&#39; could not be found with </span><span class="si">%r</span><span class="s">.&quot;</span> <span class="o">%</span>
+                                 <span class="p">(</span><span class="n">clean_name</span><span class="p">,</span> <span class="bp">self</span><span class="p">))</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">clean_name</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">IOError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Handle directory paths and fragments</p></td><td class="code"><div class="highlight"><pre>                <span class="k">return</span> <span class="n">name</span>
+        <span class="n">path</span><span class="p">,</span> <span class="n">filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">clean_name</span><span class="p">)</span>
+        <span class="n">root</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+        <span class="n">file_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_hash</span><span class="p">(</span><span class="n">clean_name</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">file_hash</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">file_hash</span> <span class="o">=</span> <span class="s">&quot;.</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">file_hash</span>
+        <span class="n">hashed_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s">&quot;</span><span class="si">%s%s%s</span><span class="s">&quot;</span> <span class="o">%</span>
+                                   <span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">file_hash</span><span class="p">,</span> <span class="n">ext</span><span class="p">))</span>
+        <span class="n">unparsed_name</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">parsed_name</span><span class="p">)</span>
+        <span class="n">unparsed_name</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="n">hashed_name</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Special casing for a @font-face hack, like url(myfont.eot?#iefix")
+http://www.fontspring.com/blog/the-new-bulletproof-font-face-syntax</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="s">&#39;?#&#39;</span> <span class="ow">in</span> <span class="n">name</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">unparsed_name</span><span class="p">[</span><span class="mi">3</span><span class="p">]:</span>
+            <span class="n">unparsed_name</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+=</span> <span class="s">&#39;?&#39;</span>
+        <span class="k">return</span> <span class="n">urlunsplit</span><span class="p">(</span><span class="n">unparsed_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">cache_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;staticfiles:</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="n">smart_str</span><span class="p">(</span><span class="n">name</span><span class="p">))</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the real URL in DEBUG mode.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">force</span><span class="p">:</span>
+            <span class="n">hashed_name</span><span class="p">,</span> <span class="n">fragment</span> <span class="o">=</span> <span class="n">name</span><span class="p">,</span> <span class="s">&#39;&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">clean_name</span><span class="p">,</span> <span class="n">fragment</span> <span class="o">=</span> <span class="n">urldefrag</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">urlsplit</span><span class="p">(</span><span class="n">clean_name</span><span class="p">)</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>  <span class="c"># don&#39;t hash paths</span>
+                <span class="n">hashed_name</span> <span class="o">=</span> <span class="n">name</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cache_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_key</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">hashed_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">hashed_name</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">hashed_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hashed_name</span><span class="p">(</span><span class="n">clean_name</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\\</span><span class="s">&#39;</span><span class="p">,</span> <span class="s">&#39;/&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>set the cache if there was a miss
+(e.g. if cache server goes down)</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="n">hashed_name</span><span class="p">)</span>
+
+        <span class="n">final_url</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">CachedFilesMixin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">url</span><span class="p">(</span><span class="n">hashed_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Special casing for a @font-face hack, like url(myfont.eot?#iefix")
+http://www.fontspring.com/blog/the-new-bulletproof-font-face-syntax</p></td><td class="code"><div class="highlight"><pre>        <span class="n">query_fragment</span> <span class="o">=</span> <span class="s">&#39;?#&#39;</span> <span class="ow">in</span> <span class="n">name</span>  <span class="c"># [sic!]</span>
+        <span class="k">if</span> <span class="n">fragment</span> <span class="ow">or</span> <span class="n">query_fragment</span><span class="p">:</span>
+            <span class="n">urlparts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">urlsplit</span><span class="p">(</span><span class="n">final_url</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">fragment</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">urlparts</span><span class="p">[</span><span class="mi">4</span><span class="p">]:</span>
+                <span class="n">urlparts</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">=</span> <span class="n">fragment</span>
+            <span class="k">if</span> <span class="n">query_fragment</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">urlparts</span><span class="p">[</span><span class="mi">3</span><span class="p">]:</span>
+                <span class="n">urlparts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+=</span> <span class="s">&#39;?&#39;</span>
+            <span class="n">final_url</span> <span class="o">=</span> <span class="n">urlunsplit</span><span class="p">(</span><span class="n">urlparts</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">unquote</span><span class="p">(</span><span class="n">final_url</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">url_converter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the custom URL converter for the given file name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">converter</span><span class="p">(</span><span class="n">matchobj</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Converts the matched URL depending on the parent level (`..`)</span>
+<span class="sd">            and returns the normalized and hashed URL using the url method</span>
+<span class="sd">            of the storage.</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">matched</span><span class="p">,</span> <span class="n">url</span> <span class="o">=</span> <span class="n">matchobj</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Completely ignore http(s) prefixed URLs,
+fragments and data-uri URLs</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s">&#39;#&#39;</span><span class="p">,</span> <span class="s">&#39;http:&#39;</span><span class="p">,</span> <span class="s">&#39;https:&#39;</span><span class="p">,</span> <span class="s">&#39;data:&#39;</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="n">matched</span>
+            <span class="n">name_parts</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Using posix normpath here to remove duplicates</p></td><td class="code"><div class="highlight"><pre>            <span class="n">url</span> <span class="o">=</span> <span class="n">posixpath</span><span class="o">.</span><span class="n">normpath</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+            <span class="n">url_parts</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)</span>
+            <span class="n">parent_level</span><span class="p">,</span> <span class="n">sub_level</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s">&#39;..&#39;</span><span class="p">),</span> <span class="n">url</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>
+                <span class="n">sub_level</span> <span class="o">-=</span> <span class="mi">1</span>
+                <span class="n">url_parts</span> <span class="o">=</span> <span class="n">url_parts</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="k">if</span> <span class="n">parent_level</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">url</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>
+                <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">parent_level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">parent_level</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">sub_level</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">sub_level</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">parent_level</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">parent_level</span><span class="p">,</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">sub_level</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">joined_result</span> <span class="o">=</span> <span class="s">&#39;/&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">name_parts</span><span class="p">[:</span><span class="o">-</span><span class="n">start</span><span class="p">]</span> <span class="o">+</span> <span class="n">url_parts</span><span class="p">[</span><span class="n">end</span><span class="p">:])</span>
+            <span class="n">hashed_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">url</span><span class="p">(</span><span class="n">unquote</span><span class="p">(</span><span class="n">joined_result</span><span class="p">),</span> <span class="n">force</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">file_name</span> <span class="o">=</span> <span class="n">hashed_url</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="n">relative_url</span> <span class="o">=</span> <span class="s">&#39;/&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">file_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Return the hashed version to the file</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="s">&#39;url(&quot;</span><span class="si">%s</span><span class="s">&quot;)&#39;</span> <span class="o">%</span> <span class="n">unquote</span><span class="p">(</span><span class="n">relative_url</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">converter</span>
+
+    <span class="k">def</span> <span class="nf">post_process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">,</span> <span class="n">dry_run</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Post process the given list of files (called from collectstatic).</span>
+
+<span class="sd">        Processing is actually two separate operations:</span>
+
+<span class="sd">        1. renaming files to include a hash of their content for cache-busting,</span>
+<span class="sd">           and copying those files to the target storage.</span>
+<span class="sd">        2. adjusting files which contain references to other files so they</span>
+<span class="sd">           refer to the cache-busting filenames.</span>
+
+<span class="sd">        If either of these are performed on a file, then that file is considered</span>
+<span class="sd">        post-processed.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>don't even dare to process the files if we're in dry run mode</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">dry_run</span><span class="p">:</span>
+            <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>where to store the new paths</p></td><td class="code"><div class="highlight"><pre>        <span class="n">hashed_paths</span> <span class="o">=</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>build a list of adjustable files</p></td><td class="code"><div class="highlight"><pre>        <span class="n">matches</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">path</span><span class="p">:</span> <span class="n">matches_patterns</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">adjustable_paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">path</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">paths</span> <span class="k">if</span> <span class="n">matches</span><span class="p">(</span><span class="n">path</span><span class="p">)]</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>then sort the files by the directory level</p></td><td class="code"><div class="highlight"><pre>        <span class="n">path_level</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">name</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">paths</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="n">path_level</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>use the original, local file, not the copied-but-unprocessed
+file, which might be somewhere far away, like S3</p></td><td class="code"><div class="highlight"><pre>            <span class="n">storage</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="n">paths</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+            <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">original_file</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>generate the hash with the original content, even for
+adjustable files.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">hashed_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hashed_name</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">original_file</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>then get the original's file content..</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">original_file</span><span class="p">,</span> <span class="s">&#39;seek&#39;</span><span class="p">):</span>
+                    <span class="n">original_file</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+                <span class="n">hashed_file_exists</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">hashed_name</span><span class="p">)</span>
+                <span class="n">processed</span> <span class="o">=</span> <span class="bp">False</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>..to apply each replacement pattern to the content</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">adjustable_paths</span><span class="p">:</span>
+                    <span class="n">content</span> <span class="o">=</span> <span class="n">original_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+                    <span class="n">converter</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">url_converter</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                        <span class="k">for</span> <span class="n">pattern</span> <span class="ow">in</span> <span class="n">patterns</span><span class="p">:</span>
+                            <span class="n">content</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">converter</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">hashed_file_exists</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">hashed_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>then save the processed result</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">content_file</span> <span class="o">=</span> <span class="n">ContentFile</span><span class="p">(</span><span class="n">smart_str</span><span class="p">(</span><span class="n">content</span><span class="p">))</span>
+                    <span class="n">saved_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save</span><span class="p">(</span><span class="n">hashed_name</span><span class="p">,</span> <span class="n">content_file</span><span class="p">)</span>
+                    <span class="n">hashed_name</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">saved_name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\\</span><span class="s">&#39;</span><span class="p">,</span> <span class="s">&#39;/&#39;</span><span class="p">))</span>
+                    <span class="n">processed</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>or handle the case in which neither processing nor
+a change to the original file happened</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="ow">not</span> <span class="n">hashed_file_exists</span><span class="p">:</span>
+                        <span class="n">processed</span> <span class="o">=</span> <span class="bp">True</span>
+                        <span class="n">saved_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_save</span><span class="p">(</span><span class="n">hashed_name</span><span class="p">,</span> <span class="n">original_file</span><span class="p">)</span>
+                        <span class="n">hashed_name</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">saved_name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\\</span><span class="s">&#39;</span><span class="p">,</span> <span class="s">&#39;/&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>and then set the cache accordingly</p></td><td class="code"><div class="highlight"><pre>                <span class="n">hashed_paths</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cache_key</span><span class="p">(</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="n">hashed_name</span>
+                <span class="k">yield</span> <span class="n">name</span><span class="p">,</span> <span class="n">hashed_name</span><span class="p">,</span> <span class="n">processed</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Finally set the cache</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">set_many</span><span class="p">(</span><span class="n">hashed_paths</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CachedStaticFilesStorage</span><span class="p">(</span><span class="n">CachedFilesMixin</span><span class="p">,</span> <span class="n">StaticFilesStorage</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A static file system storage backend which also saves</span>
+<span class="sd">    hashed copies of the files it saves.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">AppStaticStorage</span><span class="p">(</span><span class="n">FileSystemStorage</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A file system storage backend that takes an app module and works</span>
+<span class="sd">    for the ``static`` directory of it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">source_dir</span> <span class="o">=</span> <span class="s">&#39;static&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">app</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a static file storage if available in the given app.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>app is the actual app module</p></td><td class="code"><div class="highlight"><pre>        <span class="n">mod</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">app</span><span class="p">)</span>
+        <span class="n">mod_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="n">__file__</span><span class="p">)</span>
+        <span class="n">location</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">mod_path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_dir</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">AppStaticStorage</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ConfiguredStorage</span><span class="p">(</span><span class="n">LazyObject</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">get_storage_class</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATICFILES_STORAGE</span><span class="p">)()</span>
+
+<span class="n">staticfiles_storage</span> <span class="o">=</span> <span class="n">ConfiguredStorage</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

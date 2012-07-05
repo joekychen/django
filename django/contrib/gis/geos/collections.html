@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › collections.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>collections.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd"> This module houses the Geometry Collection objects:</span>
+<span class="sd"> GeometryCollection, MultiPoint, MultiLineString, and MultiPolygon</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_uint</span><span class="p">,</span> <span class="n">byref</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.error</span> <span class="kn">import</span> <span class="n">GEOSException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.geometry</span> <span class="kn">import</span> <span class="n">GEOSGeometry</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.libgeos</span> <span class="kn">import</span> <span class="n">get_pointer_arr</span><span class="p">,</span> <span class="n">GEOS_PREPARE</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.linestring</span> <span class="kn">import</span> <span class="n">LineString</span><span class="p">,</span> <span class="n">LinearRing</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.point</span> <span class="kn">import</span> <span class="n">Point</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.polygon</span> <span class="kn">import</span> <span class="n">Polygon</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">prototypes</span> <span class="k">as</span> <span class="n">capi</span>
+
+<span class="k">class</span> <span class="nc">GeometryCollection</span><span class="p">(</span><span class="n">GEOSGeometry</span><span class="p">):</span>
+    <span class="n">_typeid</span> <span class="o">=</span> <span class="mi">7</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="s">&quot;Initializes a Geometry Collection from a sequence of Geometry objects.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Checking the arguments</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Must provide at least one Geometry to initialize </span><span class="si">%s</span><span class="s">.&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>If only one geometry provided or a list of geometries is provided
+ in the first argument.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">)):</span>
+                <span class="n">init_geoms</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">init_geoms</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">init_geoms</span> <span class="o">=</span> <span class="n">args</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Ensuring that only the permitted geometries are allowed in this collection
+this is moved to list mixin super class</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_check_allowed</span><span class="p">(</span><span class="n">init_geoms</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Creating the geometry pointer array.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_collection</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">init_geoms</span><span class="p">),</span> <span class="nb">iter</span><span class="p">(</span><span class="n">init_geoms</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">GeometryCollection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Iterates over each Geometry in the Collection.&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)):</span>
+            <span class="k">yield</span> <span class="bp">self</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the number of geometries in this Collection.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_geom</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><h2>Methods for compatibility with ListMixin</h2></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_create_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">items</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Creating the geometry pointer array.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geoms</span> <span class="o">=</span> <span class="n">get_pointer_arr</span><span class="p">(</span><span class="n">length</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">items</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>this is a little sloppy, but makes life easier
+allow GEOSGeometry types (python wrappers) or pointer types</p></td><td class="code"><div class="highlight"><pre>            <span class="n">geoms</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">geom_clone</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="s">&#39;ptr&#39;</span><span class="p">,</span> <span class="n">g</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">create_collection</span><span class="p">(</span><span class="n">c_int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_typeid</span><span class="p">),</span> <span class="n">byref</span><span class="p">(</span><span class="n">geoms</span><span class="p">),</span> <span class="n">c_uint</span><span class="p">(</span><span class="n">length</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_get_single_internal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_geomn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_single_external</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="s">&quot;Returns the Geometry from this Collection at the given index (0-based).&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Checking the index and returning the corresponding GEOS geometry.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">geom_clone</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_single_internal</span><span class="p">(</span><span class="n">index</span><span class="p">)),</span> <span class="n">srid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_set_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">items</span><span class="p">):</span>
+        <span class="s">&quot;Create a new collection, and destroy the contents of the previous pointer.&quot;</span>
+        <span class="n">prev_ptr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span>
+        <span class="n">srid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">srid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_collection</span><span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="n">items</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">srid</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">srid</span> <span class="o">=</span> <span class="n">srid</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">destroy_geom</span><span class="p">(</span><span class="n">prev_ptr</span><span class="p">)</span>
+
+    <span class="n">_set_single</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="o">.</span><span class="n">_set_single_rebuild</span>
+    <span class="n">_assign_extended_slice</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="o">.</span><span class="n">_assign_extended_slice_rebuild</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">kml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the KML for this Geometry Collection.&quot;</span>
+        <span class="k">return</span> <span class="s">&#39;&lt;MultiGeometry&gt;</span><span class="si">%s</span><span class="s">&lt;/MultiGeometry&gt;&#39;</span> <span class="o">%</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">kml</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">])</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">tuple</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns a tuple of all the coordinates in this Geometry Collection&quot;</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">g</span><span class="o">.</span><span class="n">tuple</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">])</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="nb">tuple</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>MultiPoint, MultiLineString, and MultiPolygon class definitions.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">MultiPoint</span><span class="p">(</span><span class="n">GeometryCollection</span><span class="p">):</span>
+    <span class="n">_allowed</span> <span class="o">=</span> <span class="n">Point</span>
+    <span class="n">_typeid</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="k">class</span> <span class="nc">MultiLineString</span><span class="p">(</span><span class="n">GeometryCollection</span><span class="p">):</span>
+    <span class="n">_allowed</span> <span class="o">=</span> <span class="p">(</span><span class="n">LineString</span><span class="p">,</span> <span class="n">LinearRing</span><span class="p">)</span>
+    <span class="n">_typeid</span> <span class="o">=</span> <span class="mi">5</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">merged</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; </span>
+<span class="sd">        Returns a LineString representing the line merge of this </span>
+<span class="sd">        MultiLineString.</span>
+<span class="sd">        &quot;&quot;&quot;</span> 
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_topology</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">geos_linemerge</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span>         
+
+<span class="k">class</span> <span class="nc">MultiPolygon</span><span class="p">(</span><span class="n">GeometryCollection</span><span class="p">):</span>
+    <span class="n">_allowed</span> <span class="o">=</span> <span class="n">Polygon</span>
+    <span class="n">_typeid</span> <span class="o">=</span> <span class="mi">6</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">cascaded_union</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns a cascaded union of this MultiPolygon.&quot;</span>
+        <span class="k">if</span> <span class="n">GEOS_PREPARE</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">geos_cascaded_union</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;The cascaded union operation requires GEOS 3.1+.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Setting the allowed types here since GeometryCollection is defined before
+its subclasses.</p></td><td class="code"><div class="highlight"><pre><span class="n">GeometryCollection</span><span class="o">.</span><span class="n">_allowed</span> <span class="o">=</span> <span class="p">(</span><span class="n">Point</span><span class="p">,</span> <span class="n">LineString</span><span class="p">,</span> <span class="n">LinearRing</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">,</span> <span class="n">MultiPoint</span><span class="p">,</span> <span class="n">MultiLineString</span><span class="p">,</span> <span class="n">MultiPolygon</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

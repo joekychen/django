@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › test › client.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>client.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">urllib</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">mimetypes</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span>
+<span class="kn">from</span> <span class="nn">urlparse</span> <span class="kn">import</span> <span class="n">urlparse</span><span class="p">,</span> <span class="n">urlsplit</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth</span> <span class="kn">import</span> <span class="n">authenticate</span><span class="p">,</span> <span class="n">login</span>
+<span class="kn">from</span> <span class="nn">django.core.handlers.base</span> <span class="kn">import</span> <span class="n">BaseHandler</span>
+<span class="kn">from</span> <span class="nn">django.core.handlers.wsgi</span> <span class="kn">import</span> <span class="n">WSGIRequest</span>
+<span class="kn">from</span> <span class="nn">django.core.signals</span> <span class="kn">import</span> <span class="n">got_request_exception</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">SimpleCookie</span><span class="p">,</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">QueryDict</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">TemplateDoesNotExist</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="kn">import</span> <span class="n">curry</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_str</span>
+<span class="kn">from</span> <span class="nn">django.utils.http</span> <span class="kn">import</span> <span class="n">urlencode</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span> <span class="nn">django.utils.itercompat</span> <span class="kn">import</span> <span class="n">is_iterable</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">close_connection</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">ContextList</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;Client&#39;</span><span class="p">,</span> <span class="s">&#39;RequestFactory&#39;</span><span class="p">,</span> <span class="s">&#39;encode_file&#39;</span><span class="p">,</span> <span class="s">&#39;encode_multipart&#39;</span><span class="p">)</span>
+
+
+<span class="n">BOUNDARY</span> <span class="o">=</span> <span class="s">&#39;BoUnDaRyStRiNg&#39;</span>
+<span class="n">MULTIPART_CONTENT</span> <span class="o">=</span> <span class="s">&#39;multipart/form-data; boundary=</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">BOUNDARY</span>
+<span class="n">CONTENT_TYPE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&#39;.*; charset=([\w\d-]+);?&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">FakePayload</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A wrapper around BytesIO that restricts what can be read since data from</span>
+<span class="sd">    the network can&#39;t be seeked and cannot be read outside of its content</span>
+<span class="sd">    length. This makes sure that views can&#39;t do anything under the test client</span>
+<span class="sd">    that wouldn&#39;t work in Real Life.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">content</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__content</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_bytes</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">num_bytes</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">num_bytes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__len</span> <span class="ow">or</span> <span class="mi">0</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">__len</span> <span class="o">&gt;=</span> <span class="n">num_bytes</span><span class="p">,</span> <span class="s">&quot;Cannot read more than the available bytes from the HTTP incoming data.&quot;</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__content</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">num_bytes</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__len</span> <span class="o">-=</span> <span class="n">num_bytes</span>
+        <span class="k">return</span> <span class="n">content</span>
+
+
+<span class="k">class</span> <span class="nc">ClientHandler</span><span class="p">(</span><span class="n">BaseHandler</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A HTTP Handler that can be used for testing purposes.</span>
+<span class="sd">    Uses the WSGI interface to compose requests, but returns</span>
+<span class="sd">    the raw HttpResponse object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enforce_csrf_checks</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enforce_csrf_checks</span> <span class="o">=</span> <span class="n">enforce_csrf_checks</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ClientHandler</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">environ</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+        <span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">signals</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Set up middleware if needed. We couldn't do this earlier, because
+settings weren't available.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_request_middleware</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">load_middleware</span><span class="p">()</span>
+
+        <span class="n">signals</span><span class="o">.</span><span class="n">request_started</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">(</span><span class="n">environ</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>sneaky little hack so that we can easily get round
+CsrfViewMiddleware.  This makes life easier, and is probably
+required for backwards compatibility with external tests against
+admin views.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span><span class="o">.</span><span class="n">_dont_enforce_csrf_checks</span> <span class="o">=</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enforce_csrf_checks</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_response</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">signals</span><span class="o">.</span><span class="n">request_finished</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">close_connection</span><span class="p">)</span>
+            <span class="n">signals</span><span class="o">.</span><span class="n">request_finished</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">)</span>
+            <span class="n">signals</span><span class="o">.</span><span class="n">request_finished</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">close_connection</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">response</span>
+
+<span class="k">def</span> <span class="nf">store_rendered_templates</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">signal</span><span class="p">,</span> <span class="n">sender</span><span class="p">,</span> <span class="n">template</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Stores templates and contexts that are rendered.</span>
+
+<span class="sd">    The context is copied so that it is an accurate representation at the time</span>
+<span class="sd">    of rendering.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">store</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;templates&#39;</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+    <span class="n">store</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;context&#39;</span><span class="p">,</span> <span class="n">ContextList</span><span class="p">())</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">copy</span><span class="p">(</span><span class="n">context</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">encode_multipart</span><span class="p">(</span><span class="n">boundary</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Encodes multipart POST data from a dictionary of form values.</span>
+
+<span class="sd">    The key will be used as the form data name; the value will be transmitted</span>
+<span class="sd">    as content. If the value is a file, the contents of the file will be sent</span>
+<span class="sd">    as an application/octet-stream; otherwise, str(value) will be sent.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">to_str</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Not by any means perfect, but good enough for our purposes.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">is_file</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">thing</span><span class="p">:</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">thing</span><span class="p">,</span> <span class="s">&quot;read&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">callable</span><span class="p">(</span><span class="n">thing</span><span class="o">.</span><span class="n">read</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Each bit of the multipart form data could be either a form value or a
+file, or a <em>list</em> of form values and/or files. Remember that HTTP field
+names can be duplicated!</p></td><td class="code"><div class="highlight"><pre>    <span class="k">for</span> <span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">is_file</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">encode_file</span><span class="p">(</span><span class="n">boundary</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">)</span> <span class="ow">and</span> <span class="n">is_iterable</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">is_file</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">encode_file</span><span class="p">(</span><span class="n">boundary</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
+                        <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">boundary</span><span class="p">,</span>
+                        <span class="s">&#39;Content-Disposition: form-data; name=&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">to_str</span><span class="p">(</span><span class="n">key</span><span class="p">),</span>
+                        <span class="s">&#39;&#39;</span><span class="p">,</span>
+                        <span class="n">to_str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+                    <span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
+                <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">boundary</span><span class="p">,</span>
+                <span class="s">&#39;Content-Disposition: form-data; name=&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">to_str</span><span class="p">(</span><span class="n">key</span><span class="p">),</span>
+                <span class="s">&#39;&#39;</span><span class="p">,</span>
+                <span class="n">to_str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="p">])</span>
+
+    <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
+        <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">boundary</span> <span class="o">+</span> <span class="s">&#39;--&#39;</span><span class="p">,</span>
+        <span class="s">&#39;&#39;</span><span class="p">,</span>
+    <span class="p">])</span>
+    <span class="k">return</span> <span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">encode_file</span><span class="p">(</span><span class="n">boundary</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="nb">file</span><span class="p">):</span>
+    <span class="n">to_str</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span><span class="p">)</span>
+    <span class="n">content_type</span> <span class="o">=</span> <span class="n">mimetypes</span><span class="o">.</span><span class="n">guess_type</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">name</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">content_type</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">content_type</span> <span class="o">=</span> <span class="s">&#39;application/octet-stream&#39;</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">to_str</span><span class="p">(</span><span class="n">boundary</span><span class="p">),</span>
+        <span class="s">&#39;Content-Disposition: form-data; name=&quot;</span><span class="si">%s</span><span class="s">&quot;; filename=&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> \
+            <span class="o">%</span> <span class="p">(</span><span class="n">to_str</span><span class="p">(</span><span class="n">key</span><span class="p">),</span> <span class="n">to_str</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="nb">file</span><span class="o">.</span><span class="n">name</span><span class="p">))),</span>
+        <span class="s">&#39;Content-Type: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">content_type</span><span class="p">,</span>
+        <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="nb">file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+    <span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">RequestFactory</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class that lets you create mock Request objects for use in testing.</span>
+
+<span class="sd">    Usage:</span>
+
+<span class="sd">    rf = RequestFactory()</span>
+<span class="sd">    get_request = rf.get(&#39;/hello/&#39;)</span>
+<span class="sd">    post_request = rf.post(&#39;/submit/&#39;, {&#39;foo&#39;: &#39;bar&#39;})</span>
+
+<span class="sd">    Once you have a request object you can pass it to any view function,</span>
+<span class="sd">    just as if that view had been hooked up using a URLconf.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">defaults</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">defaults</span> <span class="o">=</span> <span class="n">defaults</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span> <span class="o">=</span> <span class="n">SimpleCookie</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_base_environ</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">request</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The base environment for a request.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>This is a minimal valid WSGI environ dictionary, plus:
+- HTTP<em>COOKIE: for cookie support,
+- REMOTE</em>ADDR: often useful, see #8551.
+See http://www.python.org/dev/peps/pep-3333/#environ-variables</p></td><td class="code"><div class="highlight"><pre>        <span class="n">environ</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;HTTP_COOKIE&#39;</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">header</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s">&#39;; &#39;</span><span class="p">),</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>         <span class="s">&#39;/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;REMOTE_ADDR&#39;</span><span class="p">:</span>       <span class="s">&#39;127.0.0.1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span>    <span class="s">&#39;GET&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SCRIPT_NAME&#39;</span><span class="p">:</span>       <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span>       <span class="s">&#39;testserver&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span>       <span class="s">&#39;80&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_PROTOCOL&#39;</span><span class="p">:</span>   <span class="s">&#39;HTTP/1.1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.version&#39;</span><span class="p">:</span>      <span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">),</span>
+            <span class="s">&#39;wsgi.url_scheme&#39;</span><span class="p">:</span>   <span class="s">&#39;http&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>        <span class="n">FakePayload</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">),</span>
+            <span class="s">&#39;wsgi.errors&#39;</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.multiprocess&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.multithread&#39;</span><span class="p">:</span>  <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.run_once&#39;</span><span class="p">:</span>     <span class="bp">False</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">defaults</span><span class="p">)</span>
+        <span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">environ</span>
+
+    <span class="k">def</span> <span class="nf">request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">request</span><span class="p">):</span>
+        <span class="s">&quot;Construct a generic request object.&quot;</span>
+        <span class="k">return</span> <span class="n">WSGIRequest</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_base_environ</span><span class="p">(</span><span class="o">**</span><span class="n">request</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_encode_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="p">):</span>
+        <span class="k">if</span> <span class="n">content_type</span> <span class="ow">is</span> <span class="n">MULTIPART_CONTENT</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">encode_multipart</span><span class="p">(</span><span class="n">BOUNDARY</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Encode the content so that the byte representation is correct.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">match</span> <span class="o">=</span> <span class="n">CONTENT_TYPE_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">content_type</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
+                <span class="n">charset</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">charset</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span>
+            <span class="k">return</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">charset</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parsed</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If there are parameters, add them</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">parsed</span><span class="p">[</span><span class="mi">3</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="n">urllib</span><span class="o">.</span><span class="n">unquote</span><span class="p">(</span><span class="n">parsed</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="s">&quot;;&quot;</span> <span class="o">+</span> <span class="n">parsed</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">urllib</span><span class="o">.</span><span class="n">unquote</span><span class="p">(</span><span class="n">parsed</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct a GET request.&quot;</span>
+
+        <span class="n">parsed</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>    <span class="s">&#39;text/html; charset=utf-8&#39;</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">_get_path</span><span class="p">(</span><span class="n">parsed</span><span class="p">),</span>
+            <span class="s">&#39;QUERY_STRING&#39;</span><span class="p">:</span>    <span class="n">urlencode</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">doseq</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="ow">or</span> <span class="n">parsed</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;GET&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">post</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="n">content_type</span><span class="o">=</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+             <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct a POST request.&quot;</span>
+
+        <span class="n">post_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encode_data</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="p">)</span>
+
+        <span class="n">parsed</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">post_data</span><span class="p">),</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>   <span class="n">content_type</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>      <span class="bp">self</span><span class="o">.</span><span class="n">_get_path</span><span class="p">(</span><span class="n">parsed</span><span class="p">),</span>
+            <span class="s">&#39;QUERY_STRING&#39;</span><span class="p">:</span>   <span class="n">parsed</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>     <span class="n">FakePayload</span><span class="p">(</span><span class="n">post_data</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">head</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct a HEAD request.&quot;</span>
+
+        <span class="n">parsed</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>    <span class="s">&#39;text/html; charset=utf-8&#39;</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">_get_path</span><span class="p">(</span><span class="n">parsed</span><span class="p">),</span>
+            <span class="s">&#39;QUERY_STRING&#39;</span><span class="p">:</span>    <span class="n">urlencode</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">doseq</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="ow">or</span> <span class="n">parsed</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;HEAD&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">options</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct an OPTIONS request.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">generic</span><span class="p">(</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">put</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct a PUT request.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">generic</span><span class="p">(</span><span class="s">&#39;PUT&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Construct a DELETE request.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">generic</span><span class="p">(</span><span class="s">&#39;DELETE&#39;</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">generic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span>
+                <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="n">parsed</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>      <span class="bp">self</span><span class="o">.</span><span class="n">_get_path</span><span class="p">(</span><span class="n">parsed</span><span class="p">),</span>
+            <span class="s">&#39;QUERY_STRING&#39;</span><span class="p">:</span>   <span class="n">parsed</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="n">method</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+                <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+                <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>   <span class="n">content_type</span><span class="p">,</span>
+                <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>     <span class="n">FakePayload</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
+            <span class="p">})</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">Client</span><span class="p">(</span><span class="n">RequestFactory</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A class that can act as a client for testing purposes.</span>
+
+<span class="sd">    It allows the user to compose GET and POST requests, and</span>
+<span class="sd">    obtain the response that the server gave to those requests.</span>
+<span class="sd">    The server Response objects are annotated with the details</span>
+<span class="sd">    of the contexts and templates that were rendered during the</span>
+<span class="sd">    process of serving the request.</span>
+
+<span class="sd">    Client objects are stateful - they will retain cookie (and</span>
+<span class="sd">    thus session) details for the lifetime of the Client instance.</span>
+
+<span class="sd">    This is not intended as a replacement for Twill/Selenium or</span>
+<span class="sd">    the like - it is here to allow testing against the</span>
+<span class="sd">    contexts and templates produced by a view, rather than the</span>
+<span class="sd">    HTML rendered to the end-user.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">enforce_csrf_checks</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">defaults</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">defaults</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">handler</span> <span class="o">=</span> <span class="n">ClientHandler</span><span class="p">(</span><span class="n">enforce_csrf_checks</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exc_info</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">store_exc_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Stores exceptions when they are generated by a view.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exc_info</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_session</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Obtains the current session variables.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s">&#39;django.contrib.sessions&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span><span class="p">:</span>
+            <span class="n">engine</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">SESSION_ENGINE</span><span class="p">)</span>
+            <span class="n">cookie</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">SESSION_COOKIE_NAME</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cookie</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">engine</span><span class="o">.</span><span class="n">SessionStore</span><span class="p">(</span><span class="n">cookie</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_session</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="nf">request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">request</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The master request method. Composes the environment dictionary</span>
+<span class="sd">        and passes to the handler, returning the result of the handler.</span>
+<span class="sd">        Assumes defaults for the query environment, which can be overridden</span>
+<span class="sd">        using the arguments to the request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">environ</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_base_environ</span><span class="p">(</span><span class="o">**</span><span class="n">request</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Curry a data dictionary into an instance of the template renderer
+callback function.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">on_template_render</span> <span class="o">=</span> <span class="n">curry</span><span class="p">(</span><span class="n">store_rendered_templates</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">template_rendered</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">on_template_render</span><span class="p">,</span> <span class="n">dispatch_uid</span><span class="o">=</span><span class="s">&quot;template-render&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Capture exceptions created by the handler.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">got_request_exception</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">store_exc_info</span><span class="p">,</span> <span class="n">dispatch_uid</span><span class="o">=</span><span class="s">&quot;request-exception&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">handler</span><span class="p">(</span><span class="n">environ</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">TemplateDoesNotExist</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>If the view raises an exception, Django will attempt to show
+the 500.html template. If that template is not available,
+we should ignore the error in favor of re-raising the
+underlying exception that caused the 500 error. Any other
+template found to be missing during view error handling
+should be reported as-is.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span> <span class="o">!=</span> <span class="p">(</span><span class="s">&#39;500.html&#39;</span><span class="p">,):</span>
+                    <span class="k">raise</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Look for a signalled exception, clear the current context
+exception data, then re-raise the signalled exception.
+Also make sure that the signalled exception is cleared from
+the local cache!</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exc_info</span><span class="p">:</span>
+                <span class="n">exc_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exc_info</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">exc_info</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="k">raise</span> <span class="n">exc_info</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">None</span><span class="p">,</span> <span class="n">exc_info</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Save the client and request that stimulated the response.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">response</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="bp">self</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">request</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Add any rendered template detail to the response.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">response</span><span class="o">.</span><span class="n">templates</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;templates&quot;</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">context</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;context&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Flatten a single context. Not really necessary anymore thanks to
+the <strong>getattr</strong> flattening in ContextList, but has some edge-case
+backwards-compatibility implications.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">context</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">response</span><span class="o">.</span><span class="n">context</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Update persistent cookie data.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">response</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">signals</span><span class="o">.</span><span class="n">template_rendered</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">dispatch_uid</span><span class="o">=</span><span class="s">&quot;template-render&quot;</span><span class="p">)</span>
+            <span class="n">got_request_exception</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">dispatch_uid</span><span class="o">=</span><span class="s">&quot;request-exception&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Requests a response from the server using GET.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">post</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="n">content_type</span><span class="o">=</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+             <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Requests a response from the server using POST.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">head</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{},</span> <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Request a response from the server using HEAD.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">options</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Request a response from the server using OPTIONS.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">path</span><span class="p">,</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">put</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Send a resource to the server using PUT.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">path</span><span class="p">,</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="s">&#39;application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Send a DELETE request to the server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">Client</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">path</span><span class="p">,</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="n">content_type</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">follow</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_redirects</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="k">def</span> <span class="nf">login</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">credentials</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the Factory to appear as if it has successfully logged into a site.</span>
+
+<span class="sd">        Returns True if login is possible; False if the provided credentials</span>
+<span class="sd">        are incorrect, or the user is inactive, or if the sessions framework is</span>
+<span class="sd">        not available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">authenticate</span><span class="p">(</span><span class="o">**</span><span class="n">credentials</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">is_active</span> \
+                <span class="ow">and</span> <span class="s">&#39;django.contrib.sessions&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span><span class="p">:</span>
+            <span class="n">engine</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">SESSION_ENGINE</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Create a fake request to store login details.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="p">:</span>
+                <span class="n">request</span><span class="o">.</span><span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">session</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">request</span><span class="o">.</span><span class="n">session</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">SessionStore</span><span class="p">()</span>
+            <span class="n">login</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Save the session values.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Set the cookie to represent the session.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">session_cookie</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">SESSION_COOKIE_NAME</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="n">session_cookie</span><span class="p">]</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">session_key</span>
+            <span class="n">cookie_data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;max-age&#39;</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span>
+                <span class="s">&#39;path&#39;</span><span class="p">:</span> <span class="s">&#39;/&#39;</span><span class="p">,</span>
+                <span class="s">&#39;domain&#39;</span><span class="p">:</span> <span class="n">settings</span><span class="o">.</span><span class="n">SESSION_COOKIE_DOMAIN</span><span class="p">,</span>
+                <span class="s">&#39;secure&#39;</span><span class="p">:</span> <span class="n">settings</span><span class="o">.</span><span class="n">SESSION_COOKIE_SECURE</span> <span class="ow">or</span> <span class="bp">None</span><span class="p">,</span>
+                <span class="s">&#39;expires&#39;</span><span class="p">:</span> <span class="bp">None</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="n">session_cookie</span><span class="p">]</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">cookie_data</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">logout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Removes the authenticated user&#39;s cookies and session object.</span>
+
+<span class="sd">        Causes the authenticated user to be logged out.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">SESSION_ENGINE</span><span class="p">)</span><span class="o">.</span><span class="n">SessionStore</span><span class="p">()</span>
+        <span class="n">session_cookie</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">SESSION_COOKIE_NAME</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">session_cookie</span><span class="p">:</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">session_key</span><span class="o">=</span><span class="n">session_cookie</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cookies</span> <span class="o">=</span> <span class="n">SimpleCookie</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_handle_redirects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">):</span>
+        <span class="s">&quot;Follows any redirects by requesting responses from the server using GET.&quot;</span>
+
+        <span class="n">response</span><span class="o">.</span><span class="n">redirect_chain</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">301</span><span class="p">,</span> <span class="mi">302</span><span class="p">,</span> <span class="mi">303</span><span class="p">,</span> <span class="mi">307</span><span class="p">):</span>
+            <span class="n">url</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span>
+            <span class="n">redirect_chain</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">redirect_chain</span>
+            <span class="n">redirect_chain</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">url</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">))</span>
+
+            <span class="n">url</span> <span class="o">=</span> <span class="n">urlsplit</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">scheme</span><span class="p">:</span>
+                <span class="n">extra</span><span class="p">[</span><span class="s">&#39;wsgi.url_scheme&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">scheme</span>
+            <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">hostname</span><span class="p">:</span>
+                <span class="n">extra</span><span class="p">[</span><span class="s">&#39;SERVER_NAME&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">hostname</span>
+            <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">port</span><span class="p">:</span>
+                <span class="n">extra</span><span class="p">[</span><span class="s">&#39;SERVER_PORT&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">path</span><span class="p">,</span> <span class="n">QueryDict</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">query</span><span class="p">),</span> <span class="n">follow</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">extra</span><span class="p">)</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">redirect_chain</span> <span class="o">=</span> <span class="n">redirect_chain</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Prevent loops</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">redirect_chain</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">redirect_chain</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+                <span class="k">break</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

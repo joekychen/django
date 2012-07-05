@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › backends › oracle › introspection.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>introspection.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db.backends</span> <span class="kn">import</span> <span class="n">BaseDatabaseIntrospection</span>
+<span class="kn">import</span> <span class="nn">cx_Oracle</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="n">foreign_key_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&quot;\sCONSTRAINT `[^`]*` FOREIGN KEY \(`([^`]*)`\) REFERENCES `([^`]*)` \(`([^`]*)`\)&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DatabaseIntrospection</span><span class="p">(</span><span class="n">BaseDatabaseIntrospection</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Maps type objects to Django Field types.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">data_types_reverse</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">CLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">DATETIME</span><span class="p">:</span> <span class="s">&#39;DateField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">FIXED_CHAR</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">NCLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">NUMBER</span><span class="p">:</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">STRING</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+        <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">TIMESTAMP</span><span class="p">:</span> <span class="s">&#39;DateTimeField&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">data_types_reverse</span><span class="p">[</span><span class="n">cx_Oracle</span><span class="o">.</span><span class="n">NATIVE_FLOAT</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;FloatField&#39;</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">data_types_reverse</span><span class="p">[</span><span class="n">cx_Oracle</span><span class="o">.</span><span class="n">UNICODE</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;CharField&#39;</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">get_field_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_type</span><span class="p">,</span> <span class="n">description</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>If it's a NUMBER with scale == 0, consider it an IntegerField</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">data_type</span> <span class="o">==</span> <span class="n">cx_Oracle</span><span class="o">.</span><span class="n">NUMBER</span> <span class="ow">and</span> <span class="n">description</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">description</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">11</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s">&#39;BigIntegerField&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s">&#39;IntegerField&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">DatabaseIntrospection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span>
+                <span class="n">data_type</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_table_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="s">&quot;Returns a list of table names in the current database.&quot;</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT TABLE_NAME FROM USER_TABLES&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+
+    <span class="k">def</span> <span class="nf">get_table_description</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="s">&quot;Returns a description of the table, with the DB-API cursor.description interface.&quot;</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT * FROM </span><span class="si">%s</span><span class="s"> WHERE ROWNUM &lt; 2&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table_name</span><span class="p">))</span>
+        <span class="n">description</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">desc</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">description</span><span class="p">:</span>
+            <span class="n">description</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">desc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">(),)</span> <span class="o">+</span> <span class="n">desc</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="k">return</span> <span class="n">description</span>
+
+    <span class="k">def</span> <span class="nf">table_name_converter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="s">&quot;Table name comparison is case insensitive under Oracle&quot;</span>
+        <span class="k">return</span> <span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_name_to_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of {field_name: field_index} for the given table.</span>
+<span class="sd">        Indexes are 0-based.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">))])</span>
+
+    <span class="k">def</span> <span class="nf">get_relations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of {field_index: (field_index_other_table, other_table)}</span>
+<span class="sd">        representing all relationships to the given table. Indexes are 0-based.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">table_name</span> <span class="o">=</span> <span class="n">table_name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">    SELECT ta.column_id - 1, tb.table_name, tb.column_id - 1</span>
+<span class="s">    FROM   user_constraints, USER_CONS_COLUMNS ca, USER_CONS_COLUMNS cb,</span>
+<span class="s">           user_tab_cols ta, user_tab_cols tb</span>
+<span class="s">    WHERE  user_constraints.table_name = </span><span class="si">%s</span><span class="s"> AND</span>
+<span class="s">           ta.table_name = user_constraints.table_name AND</span>
+<span class="s">           ta.column_name = ca.column_name AND</span>
+<span class="s">           ca.table_name = ta.table_name AND</span>
+<span class="s">           user_constraints.constraint_name = ca.constraint_name AND</span>
+<span class="s">           user_constraints.r_constraint_name = cb.constraint_name AND</span>
+<span class="s">           cb.table_name = tb.table_name AND</span>
+<span class="s">           cb.column_name = tb.column_name AND</span>
+<span class="s">           ca.position = cb.position&quot;&quot;&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">])</span>
+
+        <span class="n">relations</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">():</span>
+            <span class="n">relations</span><span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">relations</span>
+
+    <span class="k">def</span> <span class="nf">get_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">    SELECT LOWER(uic1.column_name) AS column_name,</span>
+<span class="s">           CASE user_constraints.constraint_type</span>
+<span class="s">               WHEN &#39;P&#39; THEN 1 ELSE 0</span>
+<span class="s">           END AS is_primary_key,</span>
+<span class="s">           CASE user_indexes.uniqueness</span>
+<span class="s">               WHEN &#39;UNIQUE&#39; THEN 1 ELSE 0</span>
+<span class="s">           END AS is_unique</span>
+<span class="s">    FROM   user_constraints, user_indexes, user_ind_columns uic1</span>
+<span class="s">    WHERE  user_constraints.constraint_type (+) = &#39;P&#39;</span>
+<span class="s">      AND  user_constraints.index_name (+) = uic1.index_name</span>
+<span class="s">      AND  user_indexes.uniqueness (+) = &#39;UNIQUE&#39;</span>
+<span class="s">      AND  user_indexes.index_name (+) = uic1.index_name</span>
+<span class="s">      AND  uic1.table_name = UPPER(</span><span class="si">%s</span><span class="s">)</span>
+<span class="s">      AND  uic1.column_position = 1</span>
+<span class="s">      AND  NOT EXISTS (</span>
+<span class="s">              SELECT 1</span>
+<span class="s">              FROM   user_ind_columns uic2</span>
+<span class="s">              WHERE  uic2.index_name = uic1.index_name</span>
+<span class="s">                AND  uic2.column_position = 2</span>
+<span class="s">           )</span>
+<span class="s">        &quot;&quot;&quot;</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">])</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">():</span>
+            <span class="n">indexes</span><span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+                               <span class="s">&#39;unique&#39;</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">])}</span>
+        <span class="k">return</span> <span class="n">indexes</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

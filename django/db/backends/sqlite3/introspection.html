@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › backends › sqlite3 › introspection.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>introspection.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">django.db.backends</span> <span class="kn">import</span> <span class="n">BaseDatabaseIntrospection</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>This light wrapper "fakes" a dictionary interface, because some SQLite data
+types include variables in them -- e.g. "varchar(30)" -- and can't be matched
+as a simple dictionary lookup.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">FlexibleFieldLookupDict</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Maps SQL types to Django Field types. Some of the SQL types have multiple
+entries here because SQLite allows for anything and doesn't normalize the
+field type; it uses whatever was given.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">base_data_types_reverse</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;bool&#39;</span><span class="p">:</span> <span class="s">&#39;BooleanField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;boolean&#39;</span><span class="p">:</span> <span class="s">&#39;BooleanField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;smallint&#39;</span><span class="p">:</span> <span class="s">&#39;SmallIntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;smallint unsigned&#39;</span><span class="p">:</span> <span class="s">&#39;PositiveSmallIntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;smallinteger&#39;</span><span class="p">:</span> <span class="s">&#39;SmallIntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;int&#39;</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;integer&#39;</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;bigint&#39;</span><span class="p">:</span> <span class="s">&#39;BigIntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;integer unsigned&#39;</span><span class="p">:</span> <span class="s">&#39;PositiveIntegerField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;decimal&#39;</span><span class="p">:</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;real&#39;</span><span class="p">:</span> <span class="s">&#39;FloatField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;text&#39;</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;char&#39;</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;date&#39;</span><span class="p">:</span> <span class="s">&#39;DateField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;datetime&#39;</span><span class="p">:</span> <span class="s">&#39;DateTimeField&#39;</span><span class="p">,</span>
+        <span class="s">&#39;time&#39;</span><span class="p">:</span> <span class="s">&#39;TimeField&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_data_types_reverse</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">re</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">r&#39;^\s*(?:var)?char\s*\(\s*(\d+)\s*\)\s*$&#39;</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="s">&#39;CharField&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;max_length&#39;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))})</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span>
+
+<span class="k">class</span> <span class="nc">DatabaseIntrospection</span><span class="p">(</span><span class="n">BaseDatabaseIntrospection</span><span class="p">):</span>
+    <span class="n">data_types_reverse</span> <span class="o">=</span> <span class="n">FlexibleFieldLookupDict</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">get_table_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="s">&quot;Returns a list of table names in the current database.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Skip the sqlite_sequence system table used for autoincrement key
+generation.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">            SELECT name FROM sqlite_master</span>
+<span class="s">            WHERE type=&#39;table&#39; AND NOT name=&#39;sqlite_sequence&#39;</span>
+<span class="s">            ORDER BY name&quot;&quot;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+
+    <span class="k">def</span> <span class="nf">get_table_description</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="s">&quot;Returns a description of the table, with the DB-API cursor.description interface.&quot;</span>
+        <span class="k">return</span> <span class="p">[(</span><span class="n">info</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">],</span> <span class="n">info</span><span class="p">[</span><span class="s">&#39;type&#39;</span><span class="p">],</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span>
+                 <span class="n">info</span><span class="p">[</span><span class="s">&#39;null_ok&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">info</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_table_info</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)]</span>
+
+    <span class="k">def</span> <span class="nf">get_relations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of {field_index: (field_index_other_table, other_table)}</span>
+<span class="sd">        representing all relationships to the given table. Indexes are 0-based.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Dictionary of relations to return</p></td><td class="code"><div class="highlight"><pre>        <span class="n">relations</span> <span class="o">=</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Schema for this table</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT sql FROM sqlite_master WHERE tbl_name = </span><span class="si">%s</span><span class="s"> AND type = </span><span class="si">%s</span><span class="s">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">,</span> <span class="s">&quot;table&quot;</span><span class="p">])</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">results</span><span class="o">.</span><span class="n">rindex</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)]</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Walk through and look for references to other tables. SQLite doesn't
+really have enforced references, but since it echoes out the SQL used
+to create the table we can look for REFERENCES statements used there.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">field_index</span><span class="p">,</span> <span class="n">field_desc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)):</span>
+            <span class="n">field_desc</span> <span class="o">=</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;UNIQUE&quot;</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+            <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">&#39;references (.*) \([&quot;|](.*)[&quot;|]\)&#39;</span><span class="p">,</span> <span class="n">field_desc</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">table</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()]</span>
+
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT sql FROM sqlite_master WHERE tbl_name = </span><span class="si">%s</span><span class="s">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table</span><span class="p">])</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">other_table_results</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">li</span><span class="p">,</span> <span class="n">ri</span> <span class="o">=</span> <span class="n">other_table_results</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">),</span> <span class="n">other_table_results</span><span class="o">.</span><span class="n">rindex</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)</span>
+            <span class="n">other_table_results</span> <span class="o">=</span> <span class="n">other_table_results</span><span class="p">[</span><span class="n">li</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">ri</span><span class="p">]</span>
+
+
+            <span class="k">for</span> <span class="n">other_index</span><span class="p">,</span> <span class="n">other_desc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">other_table_results</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)):</span>
+                <span class="n">other_desc</span> <span class="o">=</span> <span class="n">other_desc</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">other_desc</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;UNIQUE&#39;</span><span class="p">):</span>
+                    <span class="k">continue</span>
+
+                <span class="n">name</span> <span class="o">=</span> <span class="n">other_desc</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="n">column</span><span class="p">:</span>
+                    <span class="n">relations</span><span class="p">[</span><span class="n">field_index</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">other_index</span><span class="p">,</span> <span class="n">table</span><span class="p">)</span>
+                    <span class="k">break</span>
+
+        <span class="k">return</span> <span class="n">relations</span>
+
+    <span class="k">def</span> <span class="nf">get_key_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list of (column_name, referenced_table_name, referenced_column_name) for all</span>
+<span class="sd">        key columns in given table.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">key_columns</span> <span class="o">=</span> <span class="p">[]</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Schema for this table</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT sql FROM sqlite_master WHERE tbl_name = </span><span class="si">%s</span><span class="s"> AND type = </span><span class="si">%s</span><span class="s">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">,</span> <span class="s">&quot;table&quot;</span><span class="p">])</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">results</span><span class="o">.</span><span class="n">rindex</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)]</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Walk through and look for references to other tables. SQLite doesn't
+really have enforced references, but since it echoes out the SQL used
+to create the table we can look for REFERENCES statements used there.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">field_index</span><span class="p">,</span> <span class="n">field_desc</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)):</span>
+            <span class="n">field_desc</span> <span class="o">=</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;UNIQUE&quot;</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+            <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">&#39;&quot;(.*)&quot;.*references (.*) \([&quot;|](.*)[&quot;|]\)&#39;</span><span class="p">,</span> <span class="n">field_desc</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>This will append (column<em>name, referenced</em>table<em>name, referenced</em>column<em>name) to key</em>columns</p></td><td class="code"><div class="highlight"><pre>            <span class="n">key_columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">tuple</span><span class="p">([</span><span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()]))</span>
+
+        <span class="k">return</span> <span class="n">key_columns</span>
+
+    <span class="k">def</span> <span class="nf">get_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">info</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_table_info</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s">&#39;pk&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">indexes</span><span class="p">[</span><span class="n">info</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+                                         <span class="s">&#39;unique&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">}</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;PRAGMA index_list(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table_name</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>seq, name, unique</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">unique</span> <span class="ow">in</span> <span class="p">[(</span><span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">field</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;PRAGMA index_info(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">index</span><span class="p">))</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Skip indexes across multiple fields</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">info</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span> <span class="c"># seqno, cid, name</span>
+            <span class="n">indexes</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+                             <span class="s">&#39;unique&#39;</span><span class="p">:</span> <span class="n">unique</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">indexes</span>
+
+    <span class="k">def</span> <span class="nf">get_primary_key_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get the column name of the primary key for the given table.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Don't use PRAGMA because that causes issues with some transactions</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT sql FROM sqlite_master WHERE tbl_name = </span><span class="si">%s</span><span class="s"> AND type = </span><span class="si">%s</span><span class="s">&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">,</span> <span class="s">&quot;table&quot;</span><span class="p">])</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">results</span><span class="o">.</span><span class="n">rindex</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)]</span>
+        <span class="k">for</span> <span class="n">field_desc</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">):</span>
+            <span class="n">field_desc</span> <span class="o">=</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">&#39;&quot;(.*)&quot;.*PRIMARY KEY$&#39;</span><span class="p">,</span> <span class="n">field_desc</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_table_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;PRAGMA table_info(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">name</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>cid, name, type, notnull, dflt_value, pk</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="p">[{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                 <span class="s">&#39;type&#39;</span><span class="p">:</span> <span class="n">field</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                 <span class="s">&#39;null_ok&#39;</span><span class="p">:</span> <span class="ow">not</span> <span class="n">field</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span>
+                 <span class="s">&#39;pk&#39;</span><span class="p">:</span> <span class="n">field</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span>     <span class="c"># undocumented</span>
+                 <span class="p">}</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

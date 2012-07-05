@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › modeltests › select_for_update › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">connection</span>
+<span class="kn">from</span> <span class="nn">django.db.utils</span> <span class="kn">import</span> <span class="n">ConnectionHandler</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span> <span class="n">DatabaseError</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">,</span> <span class="n">skipIfDBFeature</span><span class="p">,</span>
+    <span class="n">skipUnlessDBFeature</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Person</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Some tests require threading, which might not be available. So create a
+skip-test decorator for those test functions.</p></td><td class="code"><div class="highlight"><pre><span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">threading</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">threading</span> <span class="o">=</span> <span class="bp">None</span>
+<span class="n">requires_threading</span> <span class="o">=</span> <span class="n">unittest</span><span class="o">.</span><span class="n">skipUnless</span><span class="p">(</span><span class="n">threading</span><span class="p">,</span> <span class="s">&#39;requires threading&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SelectForUpdateTests</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">person</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Reinhardt&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>We have to commit here so that code in run<em>select</em>for_update can
+see this data.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>We need another database connection to test that one connection
+issuing a SELECT ... FOR UPDATE will block.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">new_connections</span> <span class="o">=</span> <span class="n">ConnectionHandler</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">DATABASES</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span> <span class="o">=</span> <span class="n">new_connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>We need to set settings.DEBUG to True so we can capture
+the output SQL to examine.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_old_debug</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>We don't really care if this fails - some of the tests will set
+this in the course of their run.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">transaction</span><span class="o">.</span><span class="n">TransactionManagementError</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_debug</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">end_blocking_transaction</span><span class="p">()</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">start_blocking_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Start a blocking transaction. At some point,
+end<em>blocking</em>transaction() should be called.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="s">&#39;SELECT * FROM </span><span class="si">%(db_table)s</span><span class="s"> </span><span class="si">%(for_update)s</span><span class="s">;&#39;</span> <span class="o">%</span> <span class="p">{</span>
+            <span class="s">&#39;db_table&#39;</span><span class="p">:</span> <span class="n">Person</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span>
+            <span class="s">&#39;for_update&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">for_update_sql</span><span class="p">(),</span>
+            <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">end_blocking_transaction</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Roll back the blocking transaction.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">new_connection</span><span class="o">.</span><span class="n">_rollback</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">has_for_update_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tested_connection</span><span class="p">,</span> <span class="n">nowait</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Examine the SQL that was executed to determine whether it
+contains the 'SELECT..FOR UPDATE' stanza.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">for_update_sql</span> <span class="o">=</span> <span class="n">tested_connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">for_update_sql</span><span class="p">(</span><span class="n">nowait</span><span class="p">)</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="n">tested_connection</span><span class="o">.</span><span class="n">queries</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s">&#39;sql&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">sql</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">for_update_sql</span><span class="p">)</span> <span class="o">&gt;</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">check_exc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="n">DatabaseError</span><span class="p">))</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_for_update_sql_generated</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the backend&#39;s FOR UPDATE variant appears in</span>
+<span class="sd">        generated SQL when select_for_update is invoked.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">list</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">has_for_update_sql</span><span class="p">(</span><span class="n">connection</span><span class="p">))</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update_nowait&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_for_update_sql_generated_nowait</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the backend&#39;s FOR UPDATE NOWAIT variant appears in</span>
+<span class="sd">        generated SQL when select_for_update is invoked.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">list</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">(</span><span class="n">nowait</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">has_for_update_sql</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">nowait</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>In Python 2.6 beta and some final releases, exceptions raised in <strong>len</strong>
+are swallowed (Python issue 1242657), so these cases return an empty
+list, rather than raising an exception. Not a lot we can do about that,
+unfortunately, due to the way Python handles list() calls internally.
+Python 2.6.1 is the "in the wild" version affected by this, so we skip
+the test for that version.</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@requires_threading</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update_nowait&#39;</span><span class="p">)</span>
+    <span class="nd">@unittest.skipIf</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="s">&quot;Python version is 2.6.1&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_nowait_raises_error_on_block</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If nowait is specified, we expect an error to be raised rather</span>
+<span class="sd">        than blocking.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_blocking_transaction</span><span class="p">()</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+            <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">run_select_for_update</span><span class="p">,</span>
+            <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">status</span><span class="p">,),</span>
+            <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;nowait&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+        <span class="p">)</span>
+
+        <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">thread</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_blocking_transaction</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">check_exc</span><span class="p">(</span><span class="n">status</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>In Python 2.6 beta and some final releases, exceptions raised in <strong>len</strong>
+are swallowed (Python issue 1242657), so these cases return an empty
+list, rather than raising an exception. Not a lot we can do about that,
+unfortunately, due to the way Python handles list() calls internally.
+Python 2.6.1 is the "in the wild" version affected by this, so we skip
+the test for that version.</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@skipIfDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update_nowait&#39;</span><span class="p">)</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="nd">@unittest.skipIf</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="s">&quot;Python version is 2.6.1&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_unsupported_nowait_raises_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If a SELECT...FOR UPDATE NOWAIT is run on a database backend</span>
+<span class="sd">        that supports FOR UPDATE but not NOWAIT, then we should find</span>
+<span class="sd">        that a DatabaseError is raised.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="n">DatabaseError</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">,</span>
+            <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">(</span><span class="n">nowait</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">run_select_for_update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">nowait</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Utility method that runs a SELECT FOR UPDATE against all</span>
+<span class="sd">        Person instances. After the select_for_update, it attempts</span>
+<span class="sd">        to update the name of the only record, save, and commit.</span>
+
+<span class="sd">        This function expects to run in a separate thread.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">status</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;started&#39;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>We need to enter transaction management again, as this is done on
+per-thread basis</p></td><td class="code"><div class="highlight"><pre>            <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+            <span class="n">people</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+                <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">(</span><span class="n">nowait</span><span class="o">=</span><span class="n">nowait</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">people</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&#39;Fred&#39;</span>
+            <span class="n">people</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">status</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>This method is run in a separate thread. It uses its own
+database connection. Close it without waiting for the GC.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="nd">@requires_threading</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_transactions&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_block</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that a thread running a select_for_update that</span>
+<span class="sd">        accesses rows being touched by a similar operation</span>
+<span class="sd">        on another connection blocks correctly.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>First, let's start the transaction in our thread.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">start_blocking_transaction</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Now, try it again using the ORM's select<em>for</em>update
+facility. Do this in a separate thread.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">status</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+            <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">run_select_for_update</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">status</span><span class="p">,)</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>The thread should immediately block, but we'll sleep
+for a bit to make sure.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">sanity_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">status</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">sanity_count</span> <span class="o">&lt;</span> <span class="mi">10</span><span class="p">:</span>
+            <span class="n">sanity_count</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sanity_count</span> <span class="o">&gt;=</span> <span class="mi">10</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="s">&#39;Thread did not run and block&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Check the person hasn't been updated. Since this isn't
+using FOR UPDATE, it won't block.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">p</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">person</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Reinhardt&#39;</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>When we end our blocking transaction, our thread should
+be able to continue.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">end_blocking_transaction</span><span class="p">()</span>
+        <span class="n">thread</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Check the thread has finished. Assuming it has, we should
+find that it has updated the person's name.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">thread</span><span class="o">.</span><span class="n">isAlive</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>We must commit the transaction to ensure that MySQL gets a fresh read,
+since by default it runs in REPEATABLE READ mode</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+        <span class="n">p</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">person</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Fred&#39;</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="nd">@requires_threading</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_raw_lock_not_available</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that running a raw query which can&#39;t obtain a FOR UPDATE lock</span>
+<span class="sd">        raises the correct exception</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_blocking_transaction</span><span class="p">()</span>
+        <span class="k">def</span> <span class="nf">raw</span><span class="p">(</span><span class="n">status</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="nb">list</span><span class="p">(</span>
+                    <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">raw</span><span class="p">(</span>
+                        <span class="s">&#39;SELECT * FROM </span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span>
+                            <span class="n">Person</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span>
+                            <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">for_update_sql</span><span class="p">(</span><span class="n">nowait</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+                        <span class="p">)</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">status</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>This method is run in a separate thread. It uses its own
+database connection. Close it without waiting for the GC.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="n">status</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;status&#39;</span><span class="p">:</span> <span class="n">status</span><span class="p">})</span>
+        <span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">thread</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">end_blocking_transaction</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">check_exc</span><span class="p">(</span><span class="n">status</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_transaction_dirty_managed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Check that a select_for_update sets the transaction to be</span>
+<span class="sd">        dirty when executed under txn management. Setting the txn dirty</span>
+<span class="sd">        means that it will be either committed or rolled back by Django,</span>
+<span class="sd">        which will release any locks held by the SELECT FOR UPDATE.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">people</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">transaction</span><span class="o">.</span><span class="n">is_dirty</span><span class="p">())</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_select_for_update&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_transaction_not_dirty_unmanaged</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; If we&#39;re not under txn management, the txn will never be</span>
+<span class="sd">        marked as dirty.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+        <span class="n">people</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_for_update</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">transaction</span><span class="o">.</span><span class="n">is_dirty</span><span class="p">())</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

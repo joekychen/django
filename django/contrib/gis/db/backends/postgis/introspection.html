@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › backends › postgis › introspection.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../../index.html"></a><h1>introspection.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.introspection</span> <span class="kn">import</span> <span class="n">DatabaseIntrospection</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal</span> <span class="kn">import</span> <span class="n">OGRGeomType</span>
+
+<span class="k">class</span> <span class="nc">GeoIntrospectionError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">PostGISIntrospection</span><span class="p">(</span><span class="n">DatabaseIntrospection</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Reverse dictionary for PostGIS geometry types not populated until
+introspection is actually performed.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">postgis_types_reverse</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">get_postgis_types</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary with keys that are the PostgreSQL object</span>
+<span class="sd">        identification integers for the PostGIS geometry and/or</span>
+<span class="sd">        geography types (if supported).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>The OID integers associated with the geometry type may
+be different across versions; hence, this is why we have
+to query the PostgreSQL pg_type table corresponding to the
+PostGIS custom data types.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">oid_sql</span> <span class="o">=</span> <span class="s">&#39;SELECT &quot;oid&quot; FROM &quot;pg_type&quot; WHERE &quot;typname&quot; = </span><span class="si">%s</span><span class="s">&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">oid_sql</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;geometry&#39;</span><span class="p">,))</span>
+            <span class="n">GEOM_TYPE</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">postgis_types</span> <span class="o">=</span> <span class="p">{</span> <span class="n">GEOM_TYPE</span> <span class="p">:</span> <span class="s">&#39;GeometryField&#39;</span> <span class="p">}</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+                <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">oid_sql</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;geography&#39;</span><span class="p">,))</span>
+                <span class="n">GEOG_TYPE</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The value for the geography type is actually a tuple
+to pass in the <code>geography=True</code> keyword to the field
+definition.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">postgis_types</span><span class="p">[</span><span class="n">GEOG_TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;GeometryField&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;geography&#39;</span> <span class="p">:</span> <span class="bp">True</span><span class="p">})</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">postgis_types</span>
+
+    <span class="k">def</span> <span class="nf">get_field_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_type</span><span class="p">,</span> <span class="n">description</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">postgis_types_reverse</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>If the PostGIS types reverse dictionary is not populated, do so
+now.  In order to prevent unnecessary requests upon connection
+intialization, the <code>data_types_reverse</code> dictionary is not updated
+with the PostGIS custom types until introspection is actually
+performed -- in other words, when this function is called.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">postgis_types_reverse</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_postgis_types</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data_types_reverse</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">postgis_types_reverse</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">PostGISIntrospection</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span><span class="n">data_type</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_geometry_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The geometry type OID used by PostGIS does not indicate the particular</span>
+<span class="sd">        type of field that a geometry column is (e.g., whether it&#39;s a</span>
+<span class="sd">        PointField or a PolygonField).  Thus, this routine queries the PostGIS</span>
+<span class="sd">        metadata tables to determine the geometry type,</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>First seeing if this geometry column is in the <code>geometry_columns</code></p></td><td class="code"><div class="highlight"><pre>                <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT &quot;coord_dimension&quot;, &quot;srid&quot;, &quot;type&quot; &#39;</span>
+                               <span class="s">&#39;FROM &quot;geometry_columns&quot; &#39;</span>
+                               <span class="s">&#39;WHERE &quot;f_table_name&quot;=</span><span class="si">%s</span><span class="s"> AND &quot;f_geometry_column&quot;=</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+                               <span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">))</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">row</span><span class="p">:</span> <span class="k">raise</span> <span class="n">GeoIntrospectionError</span>
+            <span class="k">except</span> <span class="n">GeoIntrospectionError</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+                    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT &quot;coord_dimension&quot;, &quot;srid&quot;, &quot;type&quot; &#39;</span>
+                                   <span class="s">&#39;FROM &quot;geography_columns&quot; &#39;</span>
+                                   <span class="s">&#39;WHERE &quot;f_table_name&quot;=</span><span class="si">%s</span><span class="s"> AND &quot;f_geography_column&quot;=</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+                                   <span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">))</span>
+                    <span class="n">row</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">row</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Could not find a geometry or geography column for &quot;</span><span class="si">%s</span><span class="s">&quot;.&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span>
+                                <span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>OGRGeomType does not require GDAL and makes it easy to convert
+from OGC geom type name to Django field.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_type</span> <span class="o">=</span> <span class="n">OGRGeomType</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span><span class="o">.</span><span class="n">django</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Getting any GeometryField keyword arguments that are not the default.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">dim</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">srid</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">field_params</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">srid</span> <span class="o">!=</span> <span class="mi">4326</span><span class="p">:</span>
+                <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;srid&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">srid</span>
+            <span class="k">if</span> <span class="n">dim</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;dim&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">field_params</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:6}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../../javascript/docco.min.js"></script>
+</html>

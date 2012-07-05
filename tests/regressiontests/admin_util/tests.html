@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › admin_util › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib</span> <span class="kn">import</span> <span class="n">admin</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin</span> <span class="kn">import</span> <span class="n">helpers</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.util</span> <span class="kn">import</span> <span class="p">(</span><span class="n">display_for_field</span><span class="p">,</span> <span class="n">label_for_field</span><span class="p">,</span>
+    <span class="n">lookup_field</span><span class="p">,</span> <span class="n">NestedObjects</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.views.main</span> <span class="kn">import</span> <span class="n">EMPTY_CHANGELIST_VALUE</span>
+<span class="kn">from</span> <span class="nn">django.contrib.sites.models</span> <span class="kn">import</span> <span class="n">Site</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+<span class="kn">from</span> <span class="nn">django.utils.formats</span> <span class="kn">import</span> <span class="n">localize</span>
+<span class="kn">from</span> <span class="nn">django.utils.safestring</span> <span class="kn">import</span> <span class="n">mark_safe</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Article</span><span class="p">,</span> <span class="n">Count</span><span class="p">,</span> <span class="n">Event</span><span class="p">,</span> <span class="n">Location</span>
+
+
+<span class="k">class</span> <span class="nc">NestedObjectsTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for ``NestedObject`` utility collection.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span> <span class="o">=</span> <span class="n">NestedObjects</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objs</span> <span class="o">=</span> <span class="p">[</span><span class="n">Count</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">num</span><span class="o">=</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">)]</span>
+
+    <span class="k">def</span> <span class="nf">_check</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="o">.</span><span class="n">nested</span><span class="p">(</span><span class="k">lambda</span> <span class="n">obj</span><span class="p">:</span> <span class="n">obj</span><span class="o">.</span><span class="n">num</span><span class="p">),</span> <span class="n">target</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_connect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">parent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">objs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">objs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_collect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">indices</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n</span><span class="o">.</span><span class="n">collect</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">objs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_unrelated_roots</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">[</span><span class="mi">2</span><span class="p">]])</span>
+
+    <span class="k">def</span> <span class="nf">test_siblings</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]])</span>
+
+    <span class="k">def</span> <span class="nf">test_non_added_parent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check</span><span class="p">([</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_cyclic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_check</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="p">[</span><span class="mi">2</span><span class="p">]]])</span>
+
+    <span class="k">def</span> <span class="nf">test_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connect</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>1 query to fetch all children of 0 (1 and 2)
+1 query to fetch all children of 1 and 2 (none)
+Should not require additional queries to populate the nested graph.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collect</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">UtilTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_values_from_lookup_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #12654: lookup_field</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">SITE_NAME</span> <span class="o">=</span> <span class="s">&#39;example.com&#39;</span>
+        <span class="n">TITLE_TEXT</span> <span class="o">=</span> <span class="s">&#39;Some title&#39;</span>
+        <span class="n">CREATED_DATE</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span>
+        <span class="n">ADMIN_METHOD</span> <span class="o">=</span> <span class="s">&#39;admin method&#39;</span>
+        <span class="n">SIMPLE_FUNCTION</span> <span class="o">=</span> <span class="s">&#39;function&#39;</span>
+        <span class="n">INSTANCE_ATTRIBUTE</span> <span class="o">=</span> <span class="s">&#39;attr&#39;</span>
+
+        <span class="k">class</span> <span class="nc">MockModelAdmin</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">get_admin_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">ADMIN_METHOD</span>
+
+        <span class="n">simple_function</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">obj</span><span class="p">:</span> <span class="n">SIMPLE_FUNCTION</span>
+
+        <span class="n">article</span> <span class="o">=</span> <span class="n">Article</span><span class="p">(</span>
+            <span class="n">site</span><span class="o">=</span><span class="n">Site</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="n">SITE_NAME</span><span class="p">),</span>
+            <span class="n">title</span><span class="o">=</span><span class="n">TITLE_TEXT</span><span class="p">,</span>
+            <span class="n">created</span><span class="o">=</span><span class="n">CREATED_DATE</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">article</span><span class="o">.</span><span class="n">non_field</span> <span class="o">=</span> <span class="n">INSTANCE_ATTRIBUTE</span>
+
+        <span class="n">verifications</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s">&#39;site&#39;</span><span class="p">,</span> <span class="n">SITE_NAME</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;created&#39;</span><span class="p">,</span> <span class="n">localize</span><span class="p">(</span><span class="n">CREATED_DATE</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="n">TITLE_TEXT</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;get_admin_value&#39;</span><span class="p">,</span> <span class="n">ADMIN_METHOD</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">simple_function</span><span class="p">,</span> <span class="n">SIMPLE_FUNCTION</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;test_from_model&#39;</span><span class="p">,</span> <span class="n">article</span><span class="o">.</span><span class="n">test_from_model</span><span class="p">()),</span>
+            <span class="p">(</span><span class="s">&#39;non_field&#39;</span><span class="p">,</span> <span class="n">INSTANCE_ATTRIBUTE</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">mock_admin</span> <span class="o">=</span> <span class="n">MockModelAdmin</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">verifications</span><span class="p">:</span>
+            <span class="n">field</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">resolved_value</span> <span class="o">=</span> <span class="n">lookup_field</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">article</span><span class="p">,</span> <span class="n">mock_admin</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">resolved_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="n">resolved_value</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">resolved_value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_null_display_for_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #12550: display_for_field should handle None</span>
+<span class="sd">        value.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">EMPTY_CHANGELIST_VALUE</span><span class="p">)</span>
+
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span>
+            <span class="n">choices</span><span class="o">=</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="s">&quot;test_none&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="s">&quot;test_none&quot;</span><span class="p">)</span>
+
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">EMPTY_CHANGELIST_VALUE</span><span class="p">)</span>
+
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">TimeField</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">EMPTY_CHANGELIST_VALUE</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Regression test for #13071: NullBooleanField has special
+handling.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">NullBooleanField</span><span class="p">())</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="s">&#39;&lt;img src=&quot;</span><span class="si">%s</span><span class="s">admin/img/icon-unknown.gif&quot; alt=&quot;None&quot; /&gt;&#39;</span> <span class="o">%</span> <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">DecimalField</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">EMPTY_CHANGELIST_VALUE</span><span class="p">)</span>
+
+        <span class="n">display_value</span> <span class="o">=</span> <span class="n">display_for_field</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">FloatField</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">display_value</span><span class="p">,</span> <span class="n">EMPTY_CHANGELIST_VALUE</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_label_for_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests for label_for_field</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;title&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;title&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;title2&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;another name&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;title2&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&quot;another name&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;__unicode__&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;article&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;__str__&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="n">b</span><span class="s">&quot;article&quot;</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="ne">AttributeError</span><span class="p">,</span>
+            <span class="k">lambda</span><span class="p">:</span> <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;unknown&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">test_callable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&quot;nothing&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="n">test_callable</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;Test callable&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="n">test_callable</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&quot;Test callable&quot;</span><span class="p">,</span> <span class="n">test_callable</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;test_from_model&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;Test from model&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;test_from_model&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&quot;Test from model&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="o">.</span><span class="n">test_from_model</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;test_from_model_with_override&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;not What you Expect&quot;</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s">&quot;nothing&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">),</span>
+            <span class="s">&quot;--&quot;</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">MockModelAdmin</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">test_from_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s">&quot;nothing&quot;</span>
+            <span class="n">test_from_model</span><span class="o">.</span><span class="n">short_description</span> <span class="o">=</span> <span class="s">&quot;not Really the Model&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;test_from_model&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">model_admin</span><span class="o">=</span><span class="n">MockModelAdmin</span><span class="p">),</span>
+            <span class="s">&quot;not Really the Model&quot;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&quot;test_from_model&quot;</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span>
+                <span class="n">model_admin</span> <span class="o">=</span> <span class="n">MockModelAdmin</span><span class="p">,</span>
+                <span class="n">return_attr</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="p">),</span>
+            <span class="p">(</span><span class="s">&quot;not Really the Model&quot;</span><span class="p">,</span> <span class="n">MockModelAdmin</span><span class="o">.</span><span class="n">test_from_model</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_related_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #13963</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&#39;location&#39;</span><span class="p">,</span> <span class="n">Event</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;location&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&#39;event&#39;</span><span class="p">,</span> <span class="n">Location</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;awesome event&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">label_for_field</span><span class="p">(</span><span class="s">&#39;guest&#39;</span><span class="p">,</span> <span class="n">Event</span><span class="p">,</span> <span class="n">return_attr</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="p">(</span><span class="s">&#39;awesome guest&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_logentry_unicode</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #15661</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">log_entry</span> <span class="o">=</span> <span class="n">admin</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">LogEntry</span><span class="p">()</span>
+
+        <span class="n">log_entry</span><span class="o">.</span><span class="n">action_flag</span> <span class="o">=</span> <span class="n">admin</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">ADDITION</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span>
+            <span class="nb">unicode</span><span class="p">(</span><span class="n">log_entry</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;Added &#39;</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">log_entry</span><span class="o">.</span><span class="n">action_flag</span> <span class="o">=</span> <span class="n">admin</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CHANGE</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span>
+            <span class="nb">unicode</span><span class="p">(</span><span class="n">log_entry</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;Changed &#39;</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">log_entry</span><span class="o">.</span><span class="n">action_flag</span> <span class="o">=</span> <span class="n">admin</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">DELETION</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span>
+            <span class="nb">unicode</span><span class="p">(</span><span class="n">log_entry</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;Deleted &#39;</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_safestring_in_field_label</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>safestring should not be escaped</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">MyForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">Form</span><span class="p">):</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">mark_safe</span><span class="p">(</span><span class="s">&#39;&lt;i&gt;text&lt;/i&gt;&#39;</span><span class="p">))</span>
+            <span class="n">cb</span>   <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">mark_safe</span><span class="p">(</span><span class="s">&#39;&lt;i&gt;cb&lt;/i&gt;&#39;</span><span class="p">))</span>
+
+        <span class="n">form</span> <span class="o">=</span> <span class="n">MyForm</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">helpers</span><span class="o">.</span><span class="n">AdminField</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;text&#39;</span><span class="p">,</span> <span class="n">is_first</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span><span class="o">.</span><span class="n">label_tag</span><span class="p">(),</span>
+                         <span class="s">&#39;&lt;label for=&quot;id_text&quot; class=&quot;required inline&quot;&gt;&lt;i&gt;text&lt;/i&gt;:&lt;/label&gt;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">helpers</span><span class="o">.</span><span class="n">AdminField</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;cb&#39;</span><span class="p">,</span> <span class="n">is_first</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span><span class="o">.</span><span class="n">label_tag</span><span class="p">(),</span>
+                         <span class="s">&#39;&lt;label for=&quot;id_cb&quot; class=&quot;vCheckboxLabel required inline&quot;&gt;&lt;i&gt;cb&lt;/i&gt;&lt;/label&gt;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>normal strings needs to be escaped</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">MyForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">Form</span><span class="p">):</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s">&#39;&amp;text&#39;</span><span class="p">)</span>
+            <span class="n">cb</span>   <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="s">&#39;&amp;cb&#39;</span><span class="p">)</span>
+
+        <span class="n">form</span> <span class="o">=</span> <span class="n">MyForm</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">helpers</span><span class="o">.</span><span class="n">AdminField</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;text&#39;</span><span class="p">,</span> <span class="n">is_first</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span><span class="o">.</span><span class="n">label_tag</span><span class="p">(),</span>
+                         <span class="s">&#39;&lt;label for=&quot;id_text&quot; class=&quot;required inline&quot;&gt;&amp;amp;text:&lt;/label&gt;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">helpers</span><span class="o">.</span><span class="n">AdminField</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;cb&#39;</span><span class="p">,</span> <span class="n">is_first</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span><span class="o">.</span><span class="n">label_tag</span><span class="p">(),</span>
+                         <span class="s">&#39;&lt;label for=&quot;id_cb&quot; class=&quot;vCheckboxLabel required inline&quot;&gt;&amp;amp;cb&lt;/label&gt;&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

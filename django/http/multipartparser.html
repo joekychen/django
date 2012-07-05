@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › http › multipartparser.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>multipartparser.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Multi-part parsing for file uploads.</span>
+
+<span class="sd">Exposes one class, ``MultiPartParser``, which feeds chunks of uploaded data to</span>
+<span class="sd">file upload handlers for processing.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">cgi</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">SuspiciousOperation</span>
+<span class="kn">from</span> <span class="nn">django.utils.datastructures</span> <span class="kn">import</span> <span class="n">MultiValueDict</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span>
+<span class="kn">from</span> <span class="nn">django.utils.text</span> <span class="kn">import</span> <span class="n">unescape_entities</span>
+<span class="kn">from</span> <span class="nn">django.core.files.uploadhandler</span> <span class="kn">import</span> <span class="n">StopUpload</span><span class="p">,</span> <span class="n">SkipFile</span><span class="p">,</span> <span class="n">StopFutureHandlers</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;MultiPartParser&#39;</span><span class="p">,</span> <span class="s">&#39;MultiPartParserError&#39;</span><span class="p">,</span> <span class="s">&#39;InputStreamExhausted&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">MultiPartParserError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">InputStreamExhausted</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    No more reads are allowed from this device.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="n">RAW</span> <span class="o">=</span> <span class="s">&quot;raw&quot;</span>
+<span class="n">FILE</span> <span class="o">=</span> <span class="s">&quot;file&quot;</span>
+<span class="n">FIELD</span> <span class="o">=</span> <span class="s">&quot;field&quot;</span>
+
+<span class="k">class</span> <span class="nc">MultiPartParser</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A rfc2388 multipart/form-data parser.</span>
+
+<span class="sd">    ``MultiValueDict.parse()`` reads the input stream in ``chunk_size`` chunks</span>
+<span class="sd">    and returns a tuple of ``(MultiValueDict(POST), MultiValueDict(FILES))``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">META</span><span class="p">,</span> <span class="n">input_data</span><span class="p">,</span> <span class="n">upload_handlers</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initialize the MultiPartParser object.</span>
+
+<span class="sd">        :META:</span>
+<span class="sd">            The standard ``META`` dictionary in Django request objects.</span>
+<span class="sd">        :input_data:</span>
+<span class="sd">            The raw post data, as a file-like object.</span>
+<span class="sd">        :upload_handler:</span>
+<span class="sd">            An UploadHandler instance that performs operations on the uploaded</span>
+<span class="sd">            data.</span>
+<span class="sd">        :encoding:</span>
+<span class="sd">            The encoding with which to treat the incoming data.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Content-Type should containt multipart and the boundary information.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">content_type</span> <span class="o">=</span> <span class="n">META</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;HTTP_CONTENT_TYPE&#39;</span><span class="p">,</span> <span class="n">META</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">content_type</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;multipart/&#39;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">MultiPartParserError</span><span class="p">(</span><span class="s">&#39;Invalid Content-Type: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">content_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Parse the header to get the boundary to split the parts.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ctypes</span><span class="p">,</span> <span class="n">opts</span> <span class="o">=</span> <span class="n">parse_header</span><span class="p">(</span><span class="n">content_type</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">))</span>
+        <span class="n">boundary</span> <span class="o">=</span> <span class="n">opts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;boundary&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">boundary</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">cgi</span><span class="o">.</span><span class="n">valid_boundary</span><span class="p">(</span><span class="n">boundary</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">MultiPartParserError</span><span class="p">(</span><span class="s">&#39;Invalid boundary in multipart: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">boundary</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Content-Length should contain the length of the body we are about
+to receive.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="n">content_length</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">META</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;HTTP_CONTENT_LENGTH&#39;</span><span class="p">,</span> <span class="n">META</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">,</span><span class="mi">0</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+            <span class="n">content_length</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">if</span> <span class="n">content_length</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>This means we shouldn't continue...raise an error.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">raise</span> <span class="n">MultiPartParserError</span><span class="p">(</span><span class="s">&quot;Invalid content length: </span><span class="si">%r</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">content_length</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">boundary</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">):</span>
+            <span class="n">boundary</span> <span class="o">=</span> <span class="n">boundary</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span> <span class="o">=</span> <span class="n">boundary</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_input_data</span> <span class="o">=</span> <span class="n">input_data</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>For compatibility with low-level network APIs (with 32-bit integers),
+the chunk size should be &lt; 2^31, but still divisible by 4.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">possible_sizes</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">chunk_size</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">upload_handlers</span> <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">chunk_size</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_chunk_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">([</span><span class="mi">2</span><span class="o">**</span><span class="mi">31</span><span class="o">-</span><span class="mi">4</span><span class="p">]</span> <span class="o">+</span> <span class="n">possible_sizes</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span> <span class="o">=</span> <span class="n">META</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span> <span class="o">=</span> <span class="n">encoding</span> <span class="ow">or</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_content_length</span> <span class="o">=</span> <span class="n">content_length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_upload_handlers</span> <span class="o">=</span> <span class="n">upload_handlers</span>
+
+    <span class="k">def</span> <span class="nf">parse</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parse the POST data and break it into a FILES MultiValueDict and a POST</span>
+<span class="sd">        MultiValueDict.</span>
+
+<span class="sd">        Returns a tuple containing the POST and FILES dictionary, respectively.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>We have to import QueryDict down here to avoid a circular import.</p></td><td class="code"><div class="highlight"><pre>        <span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">QueryDict</span>
+
+        <span class="n">encoding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span>
+        <span class="n">handlers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_upload_handlers</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>HTTP spec says that Content-Length >= 0 is valid
+handling content-length == 0 before continuing</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_content_length</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">QueryDict</span><span class="p">(</span><span class="n">MultiValueDict</span><span class="p">(),</span> <span class="n">encoding</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span><span class="p">),</span> <span class="n">MultiValueDict</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>See if the handler will want to take care of the parsing.
+This allows overriding everything if somebody wants it.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">handler</span> <span class="ow">in</span> <span class="n">handlers</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">handler</span><span class="o">.</span><span class="n">handle_raw_input</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_data</span><span class="p">,</span>
+                                              <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="p">,</span>
+                                              <span class="bp">self</span><span class="o">.</span><span class="n">_content_length</span><span class="p">,</span>
+                                              <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span><span class="p">,</span>
+                                              <span class="n">encoding</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">result</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Create the data structures to be used later.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_post</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_files</span> <span class="o">=</span> <span class="n">MultiValueDict</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Instantiate the parser and stream:</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LazyStream</span><span class="p">(</span><span class="n">ChunkIter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chunk_size</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Whether or not to signal a file-completion at the beginning of the loop.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">old_field_name</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">counters</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">handlers</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">item_type</span><span class="p">,</span> <span class="n">meta_data</span><span class="p">,</span> <span class="n">field_stream</span> <span class="ow">in</span> <span class="n">Parser</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">old_field_name</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>We run this at the beginning of the next loop
+since we cannot be sure a file is complete until
+we hit the next boundary/part of the multipart content.</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">handle_file_complete</span><span class="p">(</span><span class="n">old_field_name</span><span class="p">,</span> <span class="n">counters</span><span class="p">)</span>
+                    <span class="n">old_field_name</span> <span class="o">=</span> <span class="bp">None</span>
+
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">disposition</span> <span class="o">=</span> <span class="n">meta_data</span><span class="p">[</span><span class="s">&#39;content-disposition&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">field_name</span> <span class="o">=</span> <span class="n">disposition</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">KeyError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">):</span>
+                    <span class="k">continue</span>
+
+                <span class="n">transfer_encoding</span> <span class="o">=</span> <span class="n">meta_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;content-transfer-encoding&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">transfer_encoding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">transfer_encoding</span> <span class="o">=</span> <span class="n">transfer_encoding</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">field_name</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">encoding</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s">&#39;replace&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">item_type</span> <span class="o">==</span> <span class="n">FIELD</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>This is a post field, we can just set it in the post</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">transfer_encoding</span> <span class="o">==</span> <span class="s">&#39;base64&#39;</span><span class="p">:</span>
+                        <span class="n">raw_data</span> <span class="o">=</span> <span class="n">field_stream</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">data</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;base64&#39;</span><span class="p">)</span>
+                        <span class="k">except</span><span class="p">:</span>
+                            <span class="n">data</span> <span class="o">=</span> <span class="n">raw_data</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">data</span> <span class="o">=</span> <span class="n">field_stream</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_post</span><span class="o">.</span><span class="n">appendlist</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span>
+                                          <span class="n">force_unicode</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">encoding</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s">&#39;replace&#39;</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="n">item_type</span> <span class="o">==</span> <span class="n">FILE</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>This is a file, use the handler...</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">file_name</span> <span class="o">=</span> <span class="n">disposition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;filename&#39;</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">file_name</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">file_name</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span> <span class="n">encoding</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s">&#39;replace&#39;</span><span class="p">)</span>
+                    <span class="n">file_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">IE_sanitize</span><span class="p">(</span><span class="n">unescape_entities</span><span class="p">(</span><span class="n">file_name</span><span class="p">))</span>
+
+                    <span class="n">content_type</span> <span class="o">=</span> <span class="n">meta_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;content-type&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,))[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">charset</span> <span class="o">=</span> <span class="n">meta_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;content-type&#39;</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,{}))[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;charset&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+                    <span class="k">except</span><span class="p">:</span>
+                        <span class="n">charset</span> <span class="o">=</span> <span class="bp">None</span>
+
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">content_length</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">meta_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;content-length&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                        <span class="n">content_length</span> <span class="o">=</span> <span class="bp">None</span>
+
+                    <span class="n">counters</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">handlers</span><span class="p">)</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="k">for</span> <span class="n">handler</span> <span class="ow">in</span> <span class="n">handlers</span><span class="p">:</span>
+                            <span class="k">try</span><span class="p">:</span>
+                                <span class="n">handler</span><span class="o">.</span><span class="n">new_file</span><span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">file_name</span><span class="p">,</span>
+                                                 <span class="n">content_type</span><span class="p">,</span> <span class="n">content_length</span><span class="p">,</span>
+                                                 <span class="n">charset</span><span class="p">)</span>
+                            <span class="k">except</span> <span class="n">StopFutureHandlers</span><span class="p">:</span>
+                                <span class="k">break</span>
+
+                        <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">field_stream</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="n">transfer_encoding</span> <span class="o">==</span> <span class="s">&#39;base64&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>We only special-case base64 transfer encoding</p></td><td class="code"><div class="highlight"><pre>                                <span class="k">try</span><span class="p">:</span>
+                                    <span class="n">chunk</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;base64&#39;</span><span class="p">)</span>
+                                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Since this is only a chunk, any error is an unfixable error.</p></td><td class="code"><div class="highlight"><pre>                                    <span class="k">raise</span> <span class="n">MultiPartParserError</span><span class="p">(</span><span class="s">&quot;Could not decode base64 data: </span><span class="si">%r</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span><span class="p">)</span>
+
+                            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">handler</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">handlers</span><span class="p">):</span>
+                                <span class="n">chunk_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+                                <span class="n">chunk</span> <span class="o">=</span> <span class="n">handler</span><span class="o">.</span><span class="n">receive_data_chunk</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span>
+                                                                   <span class="n">counters</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                                <span class="n">counters</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">chunk_length</span>
+                                <span class="k">if</span> <span class="n">chunk</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>If the chunk received by the handler is None, then don't continue.</p></td><td class="code"><div class="highlight"><pre>                                    <span class="k">break</span>
+
+                    <span class="k">except</span> <span class="n">SkipFile</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Just use up the rest of this file...</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">exhaust</span><span class="p">(</span><span class="n">field_stream</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Handle file upload completions on next iteration.</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">old_field_name</span> <span class="o">=</span> <span class="n">field_name</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>If this is neither a FIELD or a FILE, just exhaust the stream.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">exhaust</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">StopUpload</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">e</span><span class="o">.</span><span class="n">connection_reset</span><span class="p">:</span>
+                <span class="n">exhaust</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_data</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Make sure that the request data is all fed</p></td><td class="code"><div class="highlight"><pre>            <span class="n">exhaust</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_data</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Signal that the upload has completed.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">handler</span> <span class="ow">in</span> <span class="n">handlers</span><span class="p">:</span>
+            <span class="n">retval</span> <span class="o">=</span> <span class="n">handler</span><span class="o">.</span><span class="n">upload_complete</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">retval</span><span class="p">:</span>
+                <span class="k">break</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_files</span>
+
+    <span class="k">def</span> <span class="nf">handle_file_complete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">old_field_name</span><span class="p">,</span> <span class="n">counters</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle all the signalling that takes place when a file is complete.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">handler</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_upload_handlers</span><span class="p">):</span>
+            <span class="n">file_obj</span> <span class="o">=</span> <span class="n">handler</span><span class="o">.</span><span class="n">file_complete</span><span class="p">(</span><span class="n">counters</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">file_obj</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>If it returns a file object, then set the files dict.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">_files</span><span class="o">.</span><span class="n">appendlist</span><span class="p">(</span><span class="n">force_unicode</span><span class="p">(</span><span class="n">old_field_name</span><span class="p">,</span>
+                                                     <span class="bp">self</span><span class="o">.</span><span class="n">_encoding</span><span class="p">,</span>
+                                                     <span class="n">errors</span><span class="o">=</span><span class="s">&#39;replace&#39;</span><span class="p">),</span>
+                                       <span class="n">file_obj</span><span class="p">)</span>
+                <span class="k">break</span>
+
+    <span class="k">def</span> <span class="nf">IE_sanitize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cleanup filename from Internet Explorer full paths.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">filename</span> <span class="ow">and</span> <span class="n">filename</span><span class="p">[</span><span class="n">filename</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\\</span><span class="s">&quot;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">LazyStream</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The LazyStream wrapper allows one to get and &quot;unget&quot; bytes from a stream.</span>
+
+<span class="sd">    Given a producer object (an iterator that yields bytestrings), the</span>
+<span class="sd">    LazyStream object will support iteration, reading, and keeping a &quot;look-back&quot;</span>
+<span class="sd">    variable in case you need to &quot;unget&quot; some bytes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">producer</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Every LazyStream must have a producer when instantiated.</span>
+
+<span class="sd">        A producer is an iterable that returns a string each time it</span>
+<span class="sd">        is called.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_producer</span> <span class="o">=</span> <span class="n">producer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_empty</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_remaining</span> <span class="o">=</span> <span class="n">length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unget_history</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">tell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">position</span>
+
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">parts</span><span class="p">():</span>
+            <span class="n">remaining</span> <span class="o">=</span> <span class="p">(</span><span class="n">size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="p">[</span><span class="n">size</span><span class="p">]</span> <span class="ow">or</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_remaining</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>do the whole thing in one shot if no limit was provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">remaining</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+                <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>otherwise do some bookkeeping to return exactly enough
+of the stream and stashing any extra content we get from
+the producer</p></td><td class="code"><div class="highlight"><pre>            <span class="k">while</span> <span class="n">remaining</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="n">remaining</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#39;remaining bytes to read should never go negative&#39;</span>
+
+                <span class="n">chunk</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+                <span class="n">emitting</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[:</span><span class="n">remaining</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="n">remaining</span><span class="p">:])</span>
+                <span class="n">remaining</span> <span class="o">-=</span> <span class="nb">len</span><span class="p">(</span><span class="n">emitting</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="n">emitting</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">out</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Used when the exact number of bytes to read is unimportant.</span>
+
+<span class="sd">        This procedure just returns whatever is chunk is conveniently returned</span>
+<span class="sd">        from the iterator instead. Useful to avoid unnecessary bookkeeping if</span>
+<span class="sd">        performance is an issue.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_producer</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_unget_history</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Used to invalidate/disable this lazy stream.</span>
+
+<span class="sd">        Replaces the producer with an empty list. Any leftover bytes that have</span>
+<span class="sd">        already been read will still be reported upon read() and/or next().</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_producer</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">unget</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Places bytes back onto the front of the lazy stream.</span>
+
+<span class="sd">        Future calls to read() will return those bytes first. The</span>
+<span class="sd">        stream position and thus tell() will be rewound.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">bytes</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_update_unget_history</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nb">bytes</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="o">-=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">bytes</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">bytes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_leftover</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_update_unget_history</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_bytes</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Updates the unget history as a sanity check to see if we&#39;ve pushed</span>
+<span class="sd">        back the same number of bytes in one chunk. If we keep ungetting the</span>
+<span class="sd">        same number of bytes many times (here, 50), we&#39;re mostly likely in an</span>
+<span class="sd">        infinite loop of some sort. This is usually caused by a</span>
+<span class="sd">        maliciously-malformed MIME request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unget_history</span> <span class="o">=</span> <span class="p">[</span><span class="n">num_bytes</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_unget_history</span><span class="p">[:</span><span class="mi">49</span><span class="p">]</span>
+        <span class="n">number_equal</span> <span class="o">=</span> <span class="nb">len</span><span class="p">([</span><span class="n">current_number</span> <span class="k">for</span> <span class="n">current_number</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_unget_history</span>
+                            <span class="k">if</span> <span class="n">current_number</span> <span class="o">==</span> <span class="n">num_bytes</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">number_equal</span> <span class="o">&gt;</span> <span class="mi">40</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">SuspiciousOperation</span><span class="p">(</span>
+                <span class="s">&quot;The multipart parser got stuck, which shouldn&#39;t happen with&quot;</span>
+                <span class="s">&quot; normal uploaded files. Check for malicious upload activity;&quot;</span>
+                <span class="s">&quot; if there is none, report this to the Django developers.&quot;</span>
+            <span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ChunkIter</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An iterable that will yield chunks of data. Given a file-like object as the</span>
+<span class="sd">    constructor, this object will yield chunks of read operations from that</span>
+<span class="sd">    object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">flo</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flo</span> <span class="o">=</span> <span class="n">flo</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chunk_size</span> <span class="o">=</span> <span class="n">chunk_size</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flo</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">chunk_size</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">InputStreamExhausted</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">data</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+<span class="k">class</span> <span class="nc">InterBoundaryIter</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A Producer that will iterate over boundaries.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">,</span> <span class="n">boundary</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span> <span class="o">=</span> <span class="n">stream</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span> <span class="o">=</span> <span class="n">boundary</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">LazyStream</span><span class="p">(</span><span class="n">BoundaryIter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">InputStreamExhausted</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">BoundaryIter</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A Producer that is sensitive to boundaries.</span>
+
+<span class="sd">    Will happily yield bytes until a boundary is found. Will yield the bytes</span>
+<span class="sd">    before the boundary, throw away the boundary bytes themselves, and push the</span>
+<span class="sd">    post-boundary bytes back on the stream.</span>
+
+<span class="sd">    The future calls to next() after locating the boundary will raise a</span>
+<span class="sd">    StopIteration exception.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">,</span> <span class="n">boundary</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span> <span class="o">=</span> <span class="n">stream</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span> <span class="o">=</span> <span class="n">boundary</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_done</span> <span class="o">=</span> <span class="bp">False</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>rollback an additional six bytes because the format is like
+this: CRLF<boundary>[--CRLF]</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_rollback</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">boundary</span><span class="p">)</span> <span class="o">+</span> <span class="mi">6</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Try to use mx fast string search if available. Otherwise
+use Python find. Wrap the latter for consistency.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">unused_char</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">unused_char</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InputStreamExhausted</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">unused_char</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">mx.TextTools</span> <span class="kn">import</span> <span class="n">FS</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fs</span> <span class="o">=</span> <span class="n">FS</span><span class="p">(</span><span class="n">boundary</span><span class="p">)</span><span class="o">.</span><span class="n">find</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fs</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">data</span><span class="p">:</span> <span class="n">data</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">boundary</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_done</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span><span class="p">()</span>
+
+        <span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span>
+        <span class="n">rollback</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rollback</span>
+
+        <span class="n">bytes_read</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="nb">bytes</span> <span class="ow">in</span> <span class="n">stream</span><span class="p">:</span>
+            <span class="n">bytes_read</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">bytes</span><span class="p">)</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">bytes</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">bytes_read</span> <span class="o">&gt;</span> <span class="n">rollback</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bytes</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_done</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">chunks</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">StopIteration</span><span class="p">()</span>
+
+        <span class="n">chunk</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span>
+        <span class="n">boundary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_boundary</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rollback</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">boundary</span><span class="p">:</span>
+            <span class="n">end</span><span class="p">,</span> <span class="nb">next</span> <span class="o">=</span> <span class="n">boundary</span>
+            <span class="n">stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="nb">next</span><span class="p">:])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_done</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="k">return</span> <span class="n">chunk</span><span class="p">[:</span><span class="n">end</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>make sure we dont treat a partial boundary (and
+its separators) as data</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="p">[:</span><span class="o">-</span><span class="n">rollback</span><span class="p">]:</span><span class="c"># and len(chunk) &gt;= (len(self._boundary) + 6):</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>There's nothing left, we should just return and mark as done.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">_done</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="k">return</span> <span class="n">chunk</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="o">-</span><span class="n">rollback</span><span class="p">:])</span>
+                <span class="k">return</span> <span class="n">chunk</span><span class="p">[:</span><span class="o">-</span><span class="n">rollback</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_find_boundary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">eof</span> <span class="o">=</span> <span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Finds a multipart boundary in data.</span>
+
+<span class="sd">        Should no boundry exist in the data None is returned instead. Otherwise</span>
+<span class="sd">        a tuple containing the indices of the following are returned:</span>
+
+<span class="sd">         * the end of current encapsulation</span>
+<span class="sd">         * the start of the next encapsulation</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fs</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">index</span>
+            <span class="nb">next</span> <span class="o">=</span> <span class="n">index</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_boundary</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>backup over CRLF</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">end</span><span class="o">-</span><span class="mi">1</span><span class="p">)]</span> <span class="o">==</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">:</span>
+                <span class="n">end</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">end</span><span class="o">-</span><span class="mi">1</span><span class="p">)]</span> <span class="o">==</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\r</span><span class="s">&#39;</span><span class="p">:</span>
+                <span class="n">end</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="n">end</span><span class="p">,</span> <span class="nb">next</span>
+
+<span class="k">def</span> <span class="nf">exhaust</span><span class="p">(</span><span class="n">stream_or_iterable</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Completely exhausts an iterator or stream.</span>
+
+<span class="sd">    Raise a MultiPartParserError if the argument is not a stream or an iterable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">iterator</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">iterator</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">stream_or_iterable</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="n">iterator</span> <span class="o">=</span> <span class="n">ChunkIter</span><span class="p">(</span><span class="n">stream_or_iterable</span><span class="p">,</span> <span class="mi">16384</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">iterator</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">MultiPartParserError</span><span class="p">(</span><span class="s">&#39;multipartparser.exhaust() was passed a non-iterable or stream parameter&#39;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">__</span> <span class="ow">in</span> <span class="n">iterator</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+<span class="k">def</span> <span class="nf">parse_boundary_stream</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">max_header_size</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parses one and exactly one stream that encapsulates a boundary.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Stream at beginning of header, look for end of header
+and parse it if found. The header must fit within one
+chunk.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">chunk</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">max_header_size</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>'find' returns the top of these four bytes, so we'll
+need to munch them later to prevent them from polluting
+the payload.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">header_end</span> <span class="o">=</span> <span class="n">chunk</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n\r\n</span><span class="s">&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_parse_header</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+        <span class="n">main_value_pair</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">parse_header</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">main_value_pair</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Invalid header: </span><span class="si">%r</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">header_end</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>we find no header, so we just mark this fact and pass on
+the stream verbatim</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">RAW</span><span class="p">,</span> <span class="p">{},</span> <span class="n">stream</span><span class="p">)</span>
+
+    <span class="n">header</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[:</span><span class="n">header_end</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>here we place any excess chunk back onto the stream, as
+well as throwing away the CRLFCRLF bytes from above.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="n">header_end</span> <span class="o">+</span> <span class="mi">4</span><span class="p">:])</span>
+
+    <span class="n">TYPE</span> <span class="o">=</span> <span class="n">RAW</span>
+    <span class="n">outdict</span> <span class="o">=</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Eliminate blank lines</p></td><td class="code"><div class="highlight"><pre>    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">header</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>This terminology ("main value" and "dictionary of
+parameters") is from the Python docs.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="n">name</span><span class="p">,</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span> <span class="o">=</span> <span class="n">_parse_header</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s">&#39;content-disposition&#39;</span><span class="p">:</span>
+            <span class="n">TYPE</span> <span class="o">=</span> <span class="n">FIELD</span>
+            <span class="k">if</span> <span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;filename&#39;</span><span class="p">):</span>
+                <span class="n">TYPE</span> <span class="o">=</span> <span class="n">FILE</span>
+
+        <span class="n">outdict</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span><span class="p">,</span> <span class="n">params</span>
+
+    <span class="k">if</span> <span class="n">TYPE</span> <span class="o">==</span> <span class="n">RAW</span><span class="p">:</span>
+        <span class="n">stream</span><span class="o">.</span><span class="n">unget</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">TYPE</span><span class="p">,</span> <span class="n">outdict</span><span class="p">,</span> <span class="n">stream</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">Parser</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">,</span> <span class="n">boundary</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream</span> <span class="o">=</span> <span class="n">stream</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_separator</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">boundary</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">boundarystream</span> <span class="o">=</span> <span class="n">InterBoundaryIter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_separator</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">sub_stream</span> <span class="ow">in</span> <span class="n">boundarystream</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Iterate over each part</p></td><td class="code"><div class="highlight"><pre>            <span class="k">yield</span> <span class="n">parse_boundary_stream</span><span class="p">(</span><span class="n">sub_stream</span><span class="p">,</span> <span class="mi">1024</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">parse_header</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; Parse the header into a key-value.</span>
+<span class="sd">        Input (line): bytes, output: unicode for key/name, bytes for value which</span>
+<span class="sd">        will be decoded later</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">plist</span> <span class="o">=</span> <span class="n">_parse_header_params</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;;&#39;</span> <span class="o">+</span> <span class="n">line</span><span class="p">)</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">plist</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span>
+    <span class="n">pdict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">plist</span><span class="p">:</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;=&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">p</span><span class="p">[:</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">b</span><span class="s">&#39;&quot;&#39;</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\\\\</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\\</span><span class="s">&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\\</span><span class="s">&quot;&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span>
+            <span class="n">pdict</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">key</span><span class="p">,</span> <span class="n">pdict</span>
+
+<span class="k">def</span> <span class="nf">_parse_header_params</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="n">plist</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">while</span> <span class="n">s</span><span class="p">[:</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">b</span><span class="s">&#39;;&#39;</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;;&#39;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">end</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;&quot;&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;;&#39;</span><span class="p">,</span> <span class="n">end</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">s</span><span class="p">[:</span><span class="n">end</span><span class="p">]</span>
+        <span class="n">plist</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="n">end</span><span class="p">:]</span>
+    <span class="k">return</span> <span class="n">plist</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

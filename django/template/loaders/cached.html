@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › template › loaders › cached.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>cached.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Wrapper class that takes a list of template loaders as an argument and attempts</span>
+<span class="sd">to load templates from them in order, caching the result.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">from</span> <span class="nn">django.template.base</span> <span class="kn">import</span> <span class="n">TemplateDoesNotExist</span>
+<span class="kn">from</span> <span class="nn">django.template.loader</span> <span class="kn">import</span> <span class="n">BaseLoader</span><span class="p">,</span> <span class="n">get_template_from_string</span><span class="p">,</span> <span class="n">find_template_loader</span><span class="p">,</span> <span class="n">make_origin</span>
+
+<span class="k">class</span> <span class="nc">Loader</span><span class="p">(</span><span class="n">BaseLoader</span><span class="p">):</span>
+    <span class="n">is_usable</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">loaders</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">template_cache</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaders</span> <span class="o">=</span> <span class="n">loaders</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cached_loaders</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">loaders</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Resolve loaders on demand to avoid circular imports</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_loaders</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Set self.<em>cached</em>loaders atomically. Otherwise, another thread
+could see an incomplete list. See #17303.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cached_loaders</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">loader</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loaders</span><span class="p">:</span>
+                <span class="n">cached_loaders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">find_template_loader</span><span class="p">(</span><span class="n">loader</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cached_loaders</span> <span class="o">=</span> <span class="n">cached_loaders</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cached_loaders</span>
+
+    <span class="k">def</span> <span class="nf">find_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">loader</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">loaders</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">template</span><span class="p">,</span> <span class="n">display_name</span> <span class="o">=</span> <span class="n">loader</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">make_origin</span><span class="p">(</span><span class="n">display_name</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">))</span>
+            <span class="k">except</span> <span class="n">TemplateDoesNotExist</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">raise</span> <span class="n">TemplateDoesNotExist</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">load_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">template_name</span>
+        <span class="k">if</span> <span class="n">template_dirs</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>If template directories were specified, use a hash to differentiate</p></td><td class="code"><div class="highlight"><pre>            <span class="n">key</span> <span class="o">=</span> <span class="s">&#39;-&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">template_name</span><span class="p">,</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="s">&#39;|&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">template_dirs</span><span class="p">))</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()])</span>
+
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">template_cache</span><span class="p">:</span>
+            <span class="n">template</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="s">&#39;render&#39;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">template</span> <span class="o">=</span> <span class="n">get_template_from_string</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">template_name</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">TemplateDoesNotExist</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>If compiling the template we found raises TemplateDoesNotExist,
+back off to returning the source and display name for the template
+we were asked to load. This allows for correct identification (later)
+of the actual template that does not exist.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">return</span> <span class="n">template</span><span class="p">,</span> <span class="n">origin</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">template_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">template</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">template_cache</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Empty the template cache.&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">template_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

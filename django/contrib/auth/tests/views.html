@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › auth › tests › views.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>views.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">urllib</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib.sites.models</span> <span class="kn">import</span> <span class="n">Site</span><span class="p">,</span> <span class="n">RequestSite</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">mail</span>
+<span class="kn">from</span> <span class="nn">django.core.urlresolvers</span> <span class="kn">import</span> <span class="n">reverse</span><span class="p">,</span> <span class="n">NoReverseMatch</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">QueryDict</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span>
+<span class="kn">from</span> <span class="nn">django.utils.html</span> <span class="kn">import</span> <span class="n">escape</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.auth</span> <span class="kn">import</span> <span class="n">SESSION_KEY</span><span class="p">,</span> <span class="n">REDIRECT_FIELD_NAME</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.forms</span> <span class="kn">import</span> <span class="p">(</span><span class="n">AuthenticationForm</span><span class="p">,</span> <span class="n">PasswordChangeForm</span><span class="p">,</span>
+                <span class="n">SetPasswordForm</span><span class="p">,</span> <span class="n">PasswordResetForm</span><span class="p">)</span>
+
+
+<span class="nd">@override_settings</span><span class="p">(</span>
+    <span class="n">LANGUAGES</span><span class="o">=</span><span class="p">(</span>
+        <span class="p">(</span><span class="s">&#39;en&#39;</span><span class="p">,</span> <span class="s">&#39;English&#39;</span><span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">LANGUAGE_CODE</span><span class="o">=</span><span class="s">&#39;en&#39;</span><span class="p">,</span>
+    <span class="n">TEMPLATE_DIRS</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;templates&#39;</span><span class="p">),</span>
+    <span class="p">),</span>
+    <span class="n">USE_TZ</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+    <span class="n">PASSWORD_HASHERS</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;django.contrib.auth.hashers.SHA1PasswordHasher&#39;</span><span class="p">,),</span>
+<span class="p">)</span>
+<span class="k">class</span> <span class="nc">AuthViewsTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helper base class for all the follow test cases.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fixtures</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;authtestdata.json&#39;</span><span class="p">]</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;django.contrib.auth.tests.urls&#39;</span>
+
+    <span class="k">def</span> <span class="nf">login</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&#39;password&#39;</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/login/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;username&#39;</span><span class="p">:</span> <span class="s">&#39;testclient&#39;</span><span class="p">,</span>
+            <span class="s">&#39;password&#39;</span><span class="p">:</span> <span class="n">password</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">LOGIN_REDIRECT_URL</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">SESSION_KEY</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">session</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertContainsEscaped</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">escape</span><span class="p">(</span><span class="n">force_unicode</span><span class="p">(</span><span class="n">text</span><span class="p">)),</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">AuthViewNamedURLTests</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;django.contrib.auth.urls&#39;</span>
+
+    <span class="k">def</span> <span class="nf">test_named_urls</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Named URLs should be reversible&quot;</span>
+        <span class="n">expected_named_urls</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s">&#39;login&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;logout&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;password_change&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;password_change_done&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;password_reset&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;password_reset_done&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+            <span class="p">(</span><span class="s">&#39;password_reset_confirm&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{</span>
+                <span class="s">&#39;uidb36&#39;</span><span class="p">:</span> <span class="s">&#39;aaaaaaa&#39;</span><span class="p">,</span>
+                <span class="s">&#39;token&#39;</span><span class="p">:</span> <span class="s">&#39;1111-aaaaa&#39;</span><span class="p">,</span>
+            <span class="p">}),</span>
+            <span class="p">(</span><span class="s">&#39;password_reset_complete&#39;</span><span class="p">,</span> <span class="p">[],</span> <span class="p">{}),</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="ow">in</span> <span class="n">expected_named_urls</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">reverse</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">NoReverseMatch</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;Reversal of url named &#39;</span><span class="si">%s</span><span class="s">&#39; failed with NoReverseMatch&quot;</span> <span class="o">%</span> <span class="n">name</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PasswordResetTest</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_email_not_found</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Error is raised if the provided email address isn&#39;t currently registered&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/password_reset/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_reset/&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;email&#39;</span><span class="p">:</span> <span class="s">&#39;not_a_real_email@email.com&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContainsEscaped</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">PasswordResetForm</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;unknown&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_email_found</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Email is sent if a valid email address is provided for password reset&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_reset/&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;email&#39;</span><span class="p">:</span> <span class="s">&#39;staffmember@example.com&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&quot;http://&quot;</span> <span class="ow">in</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_FROM_EMAIL</span><span class="p">,</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">from_email</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_email_found_custom_from</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Email is sent if a valid email address is provided for password reset when a custom from_email is provided.&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_reset_from_email/&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;email&#39;</span><span class="p">:</span> <span class="s">&#39;staffmember@example.com&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&quot;staffmember@example.com&quot;</span><span class="p">,</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">from_email</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_test_confirm_start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Start by creating the email</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_reset/&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;email&#39;</span><span class="p">:</span> <span class="s">&#39;staffmember@example.com&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_signup_email</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_read_signup_email</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">email</span><span class="p">):</span>
+        <span class="n">urlmatch</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">r&quot;https?://[^/]*(/.*reset/\S*)&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">urlmatch</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&quot;No URL found in sent email&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">urlmatch</span><span class="o">.</span><span class="n">group</span><span class="p">(),</span> <span class="n">urlmatch</span><span class="o">.</span><span class="n">groups</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">url</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_test_confirm_start</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>redirect to a 'complete' page:</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;Please enter your new password&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_invalid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">url</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_test_confirm_start</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Let's munge the token in the path, but keep the same length,
+in case the URLconf will reject a different length.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">path</span> <span class="o">=</span> <span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">5</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="s">&quot;0&quot;</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span> <span class="o">+</span> <span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;The password reset link was invalid&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_invalid_user</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Ensure that we get a 200 response for a non-existant user, not a 404</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/reset/123456-1-1/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;The password reset link was invalid&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_overflow_user</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Ensure that we get a 200 response for a base36 user id that overflows int</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/reset/zzzzzzzzzzzzz-1-1/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;The password reset link was invalid&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_invalid_post</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Same as test<em>confirm</em>invalid, but trying
+to do a POST instead.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">url</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_test_confirm_start</span><span class="p">()</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">path</span><span class="p">[:</span><span class="o">-</span><span class="mi">5</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="s">&quot;0&quot;</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span> <span class="o">+</span> <span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;anewpassword&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39; anewpassword&#39;</span><span class="p">,</span>
+        <span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Check the password has not been changed</p></td><td class="code"><div class="highlight"><pre>        <span class="n">u</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">email</span><span class="o">=</span><span class="s">&#39;staffmember@example.com&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="ow">not</span> <span class="n">u</span><span class="o">.</span><span class="n">check_password</span><span class="p">(</span><span class="s">&quot;anewpassword&quot;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_complete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">url</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_test_confirm_start</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;anewpassword&#39;</span><span class="p">,</span>
+                                           <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;anewpassword&#39;</span><span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>It redirects us to a 'complete' page:</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Check the password has been changed</p></td><td class="code"><div class="highlight"><pre>        <span class="n">u</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">email</span><span class="o">=</span><span class="s">&#39;staffmember@example.com&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">u</span><span class="o">.</span><span class="n">check_password</span><span class="p">(</span><span class="s">&quot;anewpassword&quot;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Check we can't use the link again</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;The password reset link was invalid&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_confirm_different_passwords</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">url</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_test_confirm_start</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;anewpassword&#39;</span><span class="p">,</span>
+                                           <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;x&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContainsEscaped</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">SetPasswordForm</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;password_mismatch&#39;</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">ChangePasswordTest</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">fail_login</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&#39;password&#39;</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/login/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;username&#39;</span><span class="p">:</span> <span class="s">&#39;testclient&#39;</span><span class="p">,</span>
+            <span class="s">&#39;password&#39;</span><span class="p">:</span> <span class="n">password</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContainsEscaped</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">AuthenticationForm</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;invalid_login&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">logout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_password_change_fails_with_invalid_old_password</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_change/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;old_password&#39;</span><span class="p">:</span> <span class="s">&#39;donuts&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContainsEscaped</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">PasswordChangeForm</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;password_incorrect&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_password_change_fails_with_mismatched_passwords</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_change/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;old_password&#39;</span><span class="p">:</span> <span class="s">&#39;password&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;donuts&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContainsEscaped</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">SetPasswordForm</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;password_mismatch&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_password_change_succeeds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_change/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;old_password&#39;</span><span class="p">:</span> <span class="s">&#39;password&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/password_change/done/&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fail_login</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s">&#39;password1&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_password_change_done_succeeds</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/password_change/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;old_password&#39;</span><span class="p">:</span> <span class="s">&#39;password&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password1&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+            <span class="s">&#39;new_password2&#39;</span><span class="p">:</span> <span class="s">&#39;password1&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/password_change/done/&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_password_change_done_fails</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">LOGIN_URL</span><span class="o">=</span><span class="s">&#39;/login/&#39;</span><span class="p">):</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/password_change/done/&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/login/?next=/password_change/done/&#39;</span><span class="p">))</span>
+
+
+<span class="k">class</span> <span class="nc">LoginTest</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_current_site_in_context_after_login</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">reverse</span><span class="p">(</span><span class="s">&#39;django.contrib.auth.views.login&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">Site</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">installed</span><span class="p">:</span>
+            <span class="n">site</span> <span class="o">=</span> <span class="n">Site</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_current</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s">&#39;site&#39;</span><span class="p">],</span> <span class="n">site</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s">&#39;site_name&#39;</span><span class="p">],</span> <span class="n">site</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s">&#39;site&#39;</span><span class="p">],</span> <span class="n">RequestSite</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s">&#39;form&#39;</span><span class="p">],</span> <span class="n">AuthenticationForm</span><span class="p">),</span>
+                     <span class="s">&#39;Login form is not an AuthenticationForm&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_security_check</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&#39;password&#39;</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="n">reverse</span><span class="p">(</span><span class="s">&#39;django.contrib.auth.views.login&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Those URLs should not pass the security check</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad_url</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;http://example.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;https://example.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;ftp://exampel.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;//example.com&#39;</span><span class="p">):</span>
+
+            <span class="n">nasty_url</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(url)s</span><span class="s">?</span><span class="si">%(next)s</span><span class="s">=</span><span class="si">%(bad_url)s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">{</span>
+                <span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="n">login_url</span><span class="p">,</span>
+                <span class="s">&#39;next&#39;</span><span class="p">:</span> <span class="n">REDIRECT_FIELD_NAME</span><span class="p">,</span>
+                <span class="s">&#39;bad_url&#39;</span><span class="p">:</span> <span class="n">urllib</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">bad_url</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">nasty_url</span><span class="p">,</span> <span class="p">{</span>
+                <span class="s">&#39;username&#39;</span><span class="p">:</span> <span class="s">&#39;testclient&#39;</span><span class="p">,</span>
+                <span class="s">&#39;password&#39;</span><span class="p">:</span> <span class="n">password</span><span class="p">,</span>
+            <span class="p">})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">bad_url</span> <span class="ow">in</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                             <span class="s">&quot;</span><span class="si">%s</span><span class="s"> should be blocked&quot;</span> <span class="o">%</span> <span class="n">bad_url</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>These URLs <em>should</em> still pass the security check</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">good_url</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;/view/?param=http://example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/view/?param=https://example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/view?param=ftp://exampel.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;view/?param=//example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;https:///&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;//testserver/&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/url%20with</span><span class="si">%20s</span><span class="s">paces/&#39;</span><span class="p">):</span>  <span class="c"># see ticket #12534</span>
+            <span class="n">safe_url</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(url)s</span><span class="s">?</span><span class="si">%(next)s</span><span class="s">=</span><span class="si">%(good_url)s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">{</span>
+                <span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="n">login_url</span><span class="p">,</span>
+                <span class="s">&#39;next&#39;</span><span class="p">:</span> <span class="n">REDIRECT_FIELD_NAME</span><span class="p">,</span>
+                <span class="s">&#39;good_url&#39;</span><span class="p">:</span> <span class="n">urllib</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">good_url</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">safe_url</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&#39;username&#39;</span><span class="p">:</span> <span class="s">&#39;testclient&#39;</span><span class="p">,</span>
+                    <span class="s">&#39;password&#39;</span><span class="p">:</span> <span class="n">password</span><span class="p">,</span>
+            <span class="p">})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">good_url</span> <span class="ow">in</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                            <span class="s">&quot;</span><span class="si">%s</span><span class="s"> should be allowed&quot;</span> <span class="o">%</span> <span class="n">good_url</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LoginURLSettings</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LoginURLSettings</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_LOGIN_URL</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">LOGIN_URL</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LoginURLSettings</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">tearDown</span><span class="p">()</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">LOGIN_URL</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_LOGIN_URL</span>
+
+    <span class="k">def</span> <span class="nf">get_login_required_url</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">login_url</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">LOGIN_URL</span> <span class="o">=</span> <span class="n">login_url</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/login_required/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">test_standard_login_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="s">&#39;/login/&#39;</span>
+        <span class="n">login_required_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_login_required_url</span><span class="p">(</span><span class="n">login_url</span><span class="p">)</span>
+        <span class="n">querystring</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">querystring</span><span class="p">[</span><span class="s">&#39;next&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;/login_required/&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">login_required_url</span><span class="p">,</span> <span class="s">&#39;http://testserver</span><span class="si">%s</span><span class="s">?</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span>
+                         <span class="p">(</span><span class="n">login_url</span><span class="p">,</span> <span class="n">querystring</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">test_remote_login_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="s">&#39;http://remote.example.com/login&#39;</span>
+        <span class="n">login_required_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_login_required_url</span><span class="p">(</span><span class="n">login_url</span><span class="p">)</span>
+        <span class="n">querystring</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">querystring</span><span class="p">[</span><span class="s">&#39;next&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;http://testserver/login_required/&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">login_required_url</span><span class="p">,</span>
+                         <span class="s">&#39;</span><span class="si">%s</span><span class="s">?</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">login_url</span><span class="p">,</span> <span class="n">querystring</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">test_https_login_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="s">&#39;https:///login/&#39;</span>
+        <span class="n">login_required_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_login_required_url</span><span class="p">(</span><span class="n">login_url</span><span class="p">)</span>
+        <span class="n">querystring</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">querystring</span><span class="p">[</span><span class="s">&#39;next&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;http://testserver/login_required/&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">login_required_url</span><span class="p">,</span>
+                         <span class="s">&#39;</span><span class="si">%s</span><span class="s">?</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">login_url</span><span class="p">,</span> <span class="n">querystring</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">test_login_url_with_querystring</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="s">&#39;/login/?pretty=1&#39;</span>
+        <span class="n">login_required_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_login_required_url</span><span class="p">(</span><span class="n">login_url</span><span class="p">)</span>
+        <span class="n">querystring</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;pretty=1&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">querystring</span><span class="p">[</span><span class="s">&#39;next&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;/login_required/&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">login_required_url</span><span class="p">,</span> <span class="s">&#39;http://testserver/login/?</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span>
+                         <span class="n">querystring</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_remote_login_url_with_next_querystring</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">login_url</span> <span class="o">=</span> <span class="s">&#39;http://remote.example.com/login/&#39;</span>
+        <span class="n">login_required_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_login_required_url</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">?next=/default/&#39;</span> <span class="o">%</span>
+                                                         <span class="n">login_url</span><span class="p">)</span>
+        <span class="n">querystring</span> <span class="o">=</span> <span class="n">QueryDict</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">mutable</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">querystring</span><span class="p">[</span><span class="s">&#39;next&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;http://testserver/login_required/&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">login_required_url</span><span class="p">,</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">?</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">login_url</span><span class="p">,</span>
+                                                    <span class="n">querystring</span><span class="o">.</span><span class="n">urlencode</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)))</span>
+
+
+<span class="k">class</span> <span class="nc">LogoutTest</span><span class="p">(</span><span class="n">AuthViewsTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">confirm_logged_out</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">SESSION_KEY</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">session</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_logout_default</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Logout without next_page option renders the default template&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;Logged out&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_14377</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Bug 14377</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;site&#39;</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">context</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_logout_with_overridden_redirect_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Bug 11223</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/next_page/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/somewhere/&#39;</span><span class="p">))</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/next_page/?next=/login/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/login/&#39;</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_logout_with_next_page_specified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Logout with next_page option given redirects to specified resource&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/next_page/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/somewhere/&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_logout_with_redirect_argument</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Logout with query string redirects to specified resource&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/?next=/login/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/login/&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_logout_with_custom_redirect_argument</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Logout with custom query string redirects to specified resource&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/logout/custom_query/?follow=/somewhere/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/somewhere/&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_security_check</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&#39;password&#39;</span><span class="p">):</span>
+        <span class="n">logout_url</span> <span class="o">=</span> <span class="n">reverse</span><span class="p">(</span><span class="s">&#39;django.contrib.auth.views.logout&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Those URLs should not pass the security check</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad_url</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;http://example.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;https://example.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;ftp://exampel.com&#39;</span><span class="p">,</span>
+                        <span class="s">&#39;//example.com&#39;</span><span class="p">):</span>
+            <span class="n">nasty_url</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(url)s</span><span class="s">?</span><span class="si">%(next)s</span><span class="s">=</span><span class="si">%(bad_url)s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">{</span>
+                <span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="n">logout_url</span><span class="p">,</span>
+                <span class="s">&#39;next&#39;</span><span class="p">:</span> <span class="n">REDIRECT_FIELD_NAME</span><span class="p">,</span>
+                <span class="s">&#39;bad_url&#39;</span><span class="p">:</span> <span class="n">urllib</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">bad_url</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">nasty_url</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">bad_url</span> <span class="ow">in</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                             <span class="s">&quot;</span><span class="si">%s</span><span class="s"> should be blocked&quot;</span> <span class="o">%</span> <span class="n">bad_url</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>These URLs <em>should</em> still pass the security check</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">good_url</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;/view/?param=http://example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/view/?param=https://example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/view?param=ftp://exampel.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;view/?param=//example.com&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;https:///&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;//testserver/&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;/url%20with</span><span class="si">%20s</span><span class="s">paces/&#39;</span><span class="p">):</span>  <span class="c"># see ticket #12534</span>
+            <span class="n">safe_url</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(url)s</span><span class="s">?</span><span class="si">%(next)s</span><span class="s">=</span><span class="si">%(good_url)s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">{</span>
+                <span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="n">logout_url</span><span class="p">,</span>
+                <span class="s">&#39;next&#39;</span><span class="p">:</span> <span class="n">REDIRECT_FIELD_NAME</span><span class="p">,</span>
+                <span class="s">&#39;good_url&#39;</span><span class="p">:</span> <span class="n">urllib</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">good_url</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">login</span><span class="p">()</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">safe_url</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">302</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">good_url</span> <span class="ow">in</span> <span class="n">response</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                            <span class="s">&quot;</span><span class="si">%s</span><span class="s"> should be allowed&quot;</span> <span class="o">%</span> <span class="n">good_url</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">confirm_logged_out</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

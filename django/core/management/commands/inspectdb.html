@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › core › management › commands › inspectdb.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>inspectdb.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">keyword</span>
+<span class="kn">from</span> <span class="nn">optparse</span> <span class="kn">import</span> <span class="n">make_option</span>
+
+<span class="kn">from</span> <span class="nn">django.core.management.base</span> <span class="kn">import</span> <span class="n">NoArgsCommand</span><span class="p">,</span> <span class="n">CommandError</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+
+<span class="k">class</span> <span class="nc">Command</span><span class="p">(</span><span class="n">NoArgsCommand</span><span class="p">):</span>
+    <span class="n">help</span> <span class="o">=</span> <span class="s">&quot;Introspects the database tables in the given database and outputs a Django model module.&quot;</span>
+
+    <span class="n">option_list</span> <span class="o">=</span> <span class="n">NoArgsCommand</span><span class="o">.</span><span class="n">option_list</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="n">make_option</span><span class="p">(</span><span class="s">&#39;--database&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&#39;store&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;database&#39;</span><span class="p">,</span>
+            <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">&#39;Nominates a database to &#39;</span>
+                <span class="s">&#39;introspect.  Defaults to using the &quot;default&quot; database.&#39;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="n">requires_model_validation</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="n">db_module</span> <span class="o">=</span> <span class="s">&#39;django.db&#39;</span>
+
+    <span class="k">def</span> <span class="nf">handle_noargs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle_inspection</span><span class="p">(</span><span class="n">options</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">line</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span><span class="s">&quot;Database inspection isn&#39;t supported for the currently selected database backend.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle_inspection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="p">):</span>
+        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;database&#39;</span><span class="p">)]</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>'table<em>name</em>filter' is a stealth option</p></td><td class="code"><div class="highlight"><pre>        <span class="n">table_name_filter</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;table_name_filter&#39;</span><span class="p">)</span>
+
+        <span class="n">table2model</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">table_name</span><span class="p">:</span> <span class="n">table_name</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;_&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;-&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">yield</span> <span class="s">&quot;# This is an auto-generated Django model module.&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;# You&#39;ll have to do the following manually to clean this up:&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;#     * Rearrange models&#39; order&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;#     * Make sure each model has one field with primary_key=True&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;# Feel free to rename the models, but don&#39;t rename db_table values or field names.&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;#&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;# Also note: You&#39;ll have to insert the output of &#39;django-admin.py sqlcustom [appname]&#39;&quot;</span>
+        <span class="k">yield</span> <span class="s">&quot;# into your database.&quot;</span>
+        <span class="k">yield</span> <span class="s">&#39;&#39;</span>
+        <span class="k">yield</span> <span class="s">&#39;from </span><span class="si">%s</span><span class="s"> import models&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">db_module</span>
+        <span class="k">yield</span> <span class="s">&#39;&#39;</span>
+        <span class="n">known_models</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">table_name</span> <span class="ow">in</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">table_names</span><span class="p">(</span><span class="n">cursor</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">table_name_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="nb">callable</span><span class="p">(</span><span class="n">table_name_filter</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">table_name_filter</span><span class="p">(</span><span class="n">table_name</span><span class="p">):</span>
+                    <span class="k">continue</span>
+            <span class="k">yield</span> <span class="s">&#39;class </span><span class="si">%s</span><span class="s">(models.Model):&#39;</span> <span class="o">%</span> <span class="n">table2model</span><span class="p">(</span><span class="n">table_name</span><span class="p">)</span>
+            <span class="n">known_models</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">table2model</span><span class="p">(</span><span class="n">table_name</span><span class="p">))</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">relations</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_relations</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+                <span class="n">relations</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">indexes</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_indexes</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+                <span class="n">indexes</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)):</span>
+                <span class="n">column_name</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">att_name</span> <span class="o">=</span> <span class="n">column_name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="n">comment_notes</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Holds Field notes, to be displayed in a Python comment.</span>
+                <span class="n">extra_params</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c"># Holds Field parameters such as &#39;db_column&#39;.</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>If the column name can't be used verbatim as a Python
+attribute, set the "db_column" for this Field.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="s">&#39; &#39;</span> <span class="ow">in</span> <span class="n">att_name</span> <span class="ow">or</span> <span class="s">&#39;-&#39;</span> <span class="ow">in</span> <span class="n">att_name</span> <span class="ow">or</span> <span class="n">keyword</span><span class="o">.</span><span class="n">iskeyword</span><span class="p">(</span><span class="n">att_name</span><span class="p">)</span> <span class="ow">or</span> <span class="n">column_name</span> <span class="o">!=</span> <span class="n">att_name</span><span class="p">:</span>
+                    <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;db_column&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">column_name</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Add primary_key and unique, if necessary.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">indexes</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">indexes</span><span class="p">[</span><span class="n">column_name</span><span class="p">][</span><span class="s">&#39;primary_key&#39;</span><span class="p">]:</span>
+                        <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;primary_key&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                    <span class="k">elif</span> <span class="n">indexes</span><span class="p">[</span><span class="n">column_name</span><span class="p">][</span><span class="s">&#39;unique&#39;</span><span class="p">]:</span>
+                        <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;unique&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Modify the field name to make it Python-compatible.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="s">&#39; &#39;</span> <span class="ow">in</span> <span class="n">att_name</span><span class="p">:</span>
+                    <span class="n">att_name</span> <span class="o">=</span> <span class="n">att_name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">,</span> <span class="s">&#39;_&#39;</span><span class="p">)</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;Field renamed to remove spaces.&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="s">&#39;-&#39;</span> <span class="ow">in</span> <span class="n">att_name</span><span class="p">:</span>
+                    <span class="n">att_name</span> <span class="o">=</span> <span class="n">att_name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;-&#39;</span><span class="p">,</span> <span class="s">&#39;_&#39;</span><span class="p">)</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;Field renamed to remove dashes.&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">column_name</span> <span class="o">!=</span> <span class="n">att_name</span><span class="p">:</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;Field name made lowercase.&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">relations</span><span class="p">:</span>
+                    <span class="n">rel_to</span> <span class="o">=</span> <span class="n">relations</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">table_name</span> <span class="ow">and</span> <span class="s">&quot;&#39;self&#39;&quot;</span> <span class="ow">or</span> <span class="n">table2model</span><span class="p">(</span><span class="n">relations</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+
+                    <span class="k">if</span> <span class="n">rel_to</span> <span class="ow">in</span> <span class="n">known_models</span><span class="p">:</span>
+                        <span class="n">field_type</span> <span class="o">=</span> <span class="s">&#39;ForeignKey(</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">rel_to</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">field_type</span> <span class="o">=</span> <span class="s">&quot;ForeignKey(&#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="n">rel_to</span>
+
+                    <span class="k">if</span> <span class="n">att_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;_id&#39;</span><span class="p">):</span>
+                        <span class="n">att_name</span> <span class="o">=</span> <span class="n">att_name</span><span class="p">[:</span><span class="o">-</span><span class="mi">3</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;db_column&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">column_name</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Calling <code>get_field_type</code> to get the field type string and any
+additional paramters and notes.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">field_type</span><span class="p">,</span> <span class="n">field_params</span><span class="p">,</span> <span class="n">field_notes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">row</span><span class="p">)</span>
+                    <span class="n">extra_params</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">field_params</span><span class="p">)</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">field_notes</span><span class="p">)</span>
+
+                    <span class="n">field_type</span> <span class="o">+=</span> <span class="s">&#39;(&#39;</span>
+
+                <span class="k">if</span> <span class="n">keyword</span><span class="o">.</span><span class="n">iskeyword</span><span class="p">(</span><span class="n">att_name</span><span class="p">):</span>
+                    <span class="n">att_name</span> <span class="o">+=</span> <span class="s">&#39;_field&#39;</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;Field renamed because it was a Python reserved word.&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">att_name</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
+                    <span class="n">att_name</span> <span class="o">=</span> <span class="s">&#39;number_</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">att_name</span>
+                    <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;db_column&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">column_name</span><span class="p">)</span>
+                    <span class="n">comment_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;Field renamed because it wasn&#39;t a &quot;</span>
+                        <span class="s">&quot;valid Python identifier.&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Don't output 'id = meta.AutoField(primary_key=True)', because
+that's assumed if it doesn't exist.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">att_name</span> <span class="o">==</span> <span class="s">&#39;id&#39;</span> <span class="ow">and</span> <span class="n">field_type</span> <span class="o">==</span> <span class="s">&#39;AutoField(&#39;</span> <span class="ow">and</span> <span class="n">extra_params</span> <span class="o">==</span> <span class="p">{</span><span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}:</span>
+                    <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Add 'null' and 'blank', if the 'null_ok' flag was present in the
+table description.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">6</span><span class="p">]:</span> <span class="c"># If it&#39;s NULL...</span>
+                    <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;blank&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">field_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;TextField(&#39;</span><span class="p">,</span> <span class="s">&#39;CharField(&#39;</span><span class="p">):</span>
+                        <span class="n">extra_params</span><span class="p">[</span><span class="s">&#39;null&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+
+                <span class="n">field_desc</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s"> = models.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">att_name</span><span class="p">,</span> <span class="n">field_type</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">extra_params</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">field_desc</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;(&#39;</span><span class="p">):</span>
+                        <span class="n">field_desc</span> <span class="o">+=</span> <span class="s">&#39;, &#39;</span>
+                    <span class="n">field_desc</span> <span class="o">+=</span> <span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">=</span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">extra_params</span><span class="o">.</span><span class="n">items</span><span class="p">()])</span>
+                <span class="n">field_desc</span> <span class="o">+=</span> <span class="s">&#39;)&#39;</span>
+                <span class="k">if</span> <span class="n">comment_notes</span><span class="p">:</span>
+                    <span class="n">field_desc</span> <span class="o">+=</span> <span class="s">&#39; # &#39;</span> <span class="o">+</span> <span class="s">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">comment_notes</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="s">&#39;    </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">field_desc</span>
+            <span class="k">for</span> <span class="n">meta_line</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_meta</span><span class="p">(</span><span class="n">table_name</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">meta_line</span>
+
+    <span class="k">def</span> <span class="nf">get_field_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">row</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Given the database connection, the table name, and the cursor row</span>
+<span class="sd">        description, this routine will return the given field type name, as</span>
+<span class="sd">        well as any additional keyword parameters and notes for the field.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">field_params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">field_notes</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">field_type</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">row</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">field_type</span> <span class="o">=</span> <span class="s">&#39;TextField&#39;</span>
+            <span class="n">field_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;This field type is a guess.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>This is a hook for DATA<em>TYPES</em>REVERSE to return a tuple of
+(field<em>type, field</em>params_dict).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">field_type</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span><span class="p">:</span>
+            <span class="n">field_type</span><span class="p">,</span> <span class="n">new_params</span> <span class="o">=</span> <span class="n">field_type</span>
+            <span class="n">field_params</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_params</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Add max_length for all CharFields.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">field_type</span> <span class="o">==</span> <span class="s">&#39;CharField&#39;</span> <span class="ow">and</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]:</span>
+            <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;max_length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">field_type</span> <span class="o">==</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">:</span>
+            <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;max_digits&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span>
+            <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;decimal_places&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">field_params</span><span class="p">,</span> <span class="n">field_notes</span>
+
+    <span class="k">def</span> <span class="nf">get_meta</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return a sequence comprising the lines of code necessary</span>
+<span class="sd">        to construct the inner Meta class for the model corresponding</span>
+<span class="sd">        to the given database table name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s">&#39;    class Meta:&#39;</span><span class="p">,</span>
+                <span class="s">&#39;        db_table = </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">table_name</span><span class="p">,</span>
+                <span class="s">&#39;&#39;</span><span class="p">]</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

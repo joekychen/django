@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › maps › google › zoom.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>zoom.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">GEOSGeometry</span><span class="p">,</span> <span class="n">LinearRing</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">,</span> <span class="n">Point</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.maps.google.gmap</span> <span class="kn">import</span> <span class="n">GoogleMapException</span>
+<span class="kn">from</span> <span class="nn">math</span> <span class="kn">import</span> <span class="n">pi</span><span class="p">,</span> <span class="n">sin</span><span class="p">,</span> <span class="n">log</span><span class="p">,</span> <span class="n">exp</span><span class="p">,</span> <span class="n">atan</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Constants used for degree to radian conversion, and vice-versa.</p></td><td class="code"><div class="highlight"><pre><span class="n">DTOR</span> <span class="o">=</span> <span class="n">pi</span> <span class="o">/</span> <span class="mf">180.</span>
+<span class="n">RTOD</span> <span class="o">=</span> <span class="mf">180.</span> <span class="o">/</span> <span class="n">pi</span>
+
+<span class="k">class</span> <span class="nc">GoogleZoom</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GoogleZoom is a utility for performing operations related to the zoom</span>
+<span class="sd">    levels on Google Maps.</span>
+
+<span class="sd">    This class is inspired by the OpenStreetMap Mapnik tile generation routine</span>
+<span class="sd">    `generate_tiles.py`, and the article &quot;How Big Is the World&quot; (Hack #16) in</span>
+<span class="sd">    &quot;Google Maps Hacks&quot; by Rich Gibson and Schuyler Erle.</span>
+
+<span class="sd">    `generate_tiles.py` may be found at:</span>
+<span class="sd">      http://trac.openstreetmap.org/browser/applications/rendering/mapnik/generate_tiles.py</span>
+
+<span class="sd">    &quot;Google Maps Hacks&quot; may be found at http://safari.oreilly.com/0596101619</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">num_zoom</span><span class="o">=</span><span class="mi">19</span><span class="p">,</span> <span class="n">tilesize</span><span class="o">=</span><span class="mi">256</span><span class="p">):</span>
+        <span class="s">&quot;Initializes the Google Zoom object.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Google's tilesize is 256x256, square tiles are assumed.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_tilesize</span> <span class="o">=</span> <span class="n">tilesize</span>
+        </pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The number of zoom levels</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_nzoom</span> <span class="o">=</span> <span class="n">num_zoom</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Initializing arrays to hold the parameters for each one of the 
+zoom levels.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_degpp</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Degrees per pixel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_radpp</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Radians per pixel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_npix</span>  <span class="o">=</span> <span class="p">[]</span> <span class="c"># 1/2 the number of pixels for a tile at the given zoom level</span>
+        </pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Incrementing through the zoom levels and populating the parameter arrays.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">z</span> <span class="o">=</span> <span class="n">tilesize</span> <span class="c"># The number of pixels per zoom level.</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">num_zoom</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Getting the degrees and radians per pixel, and the 1/2 the number of
+for every zoom level.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">_degpp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">z</span> <span class="o">/</span> <span class="mf">360.</span><span class="p">)</span> <span class="c"># degrees per pixel</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_radpp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">z</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">pi</span><span class="p">))</span> <span class="c"># radians per pixel</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_npix</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">z</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span> <span class="c"># number of pixels to center of tile</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Multiplying <code>z</code> by 2 for the next iteration.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">z</span> <span class="o">*=</span> <span class="mi">2</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the number of zoom levels.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nzoom</span>
+
+    <span class="k">def</span> <span class="nf">get_lon_lat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lonlat</span><span class="p">):</span>
+        <span class="s">&quot;Unpacks longitude, latitude from GEOS Points and 2-tuples.&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lonlat</span><span class="p">,</span> <span class="n">Point</span><span class="p">):</span>
+            <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="n">lonlat</span><span class="o">.</span><span class="n">coords</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="n">lonlat</span>
+        <span class="k">return</span> <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span>
+
+    <span class="k">def</span> <span class="nf">lonlat_to_pixel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lonlat</span><span class="p">,</span> <span class="n">zoom</span><span class="p">):</span>
+        <span class="s">&quot;Converts a longitude, latitude coordinate pair for the given zoom level.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Setting up, unpacking the longitude, latitude values and getting the
+number of pixels for the given zoom level.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lon</span><span class="p">,</span> <span class="n">lat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_lon_lat</span><span class="p">(</span><span class="n">lonlat</span><span class="p">)</span>
+        <span class="n">npix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_npix</span><span class="p">[</span><span class="n">zoom</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Calculating the pixel x coordinate by multiplying the longitude value
+with with the number of degrees/pixel at the given zoom level.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">px_x</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">npix</span> <span class="o">+</span> <span class="p">(</span><span class="n">lon</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_degpp</span><span class="p">[</span><span class="n">zoom</span><span class="p">]))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Creating the factor, and ensuring that 1 or -1 is not passed in as the 
+base to the logarithm.  Here's why:
+ if fac = -1, we'll get log(0) which is undefined; 
+ if fac =  1, our logarithm base will be divided by 0, also undefined.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">fac</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">sin</span><span class="p">(</span><span class="n">DTOR</span> <span class="o">*</span> <span class="n">lat</span><span class="p">),</span> <span class="o">-</span><span class="mf">0.9999</span><span class="p">),</span> <span class="mf">0.9999</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Calculating the pixel y coordinate.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">px_y</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">npix</span> <span class="o">+</span> <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">log</span><span class="p">((</span><span class="mi">1</span> <span class="o">+</span> <span class="n">fac</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fac</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="mf">1.0</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_radpp</span><span class="p">[</span><span class="n">zoom</span><span class="p">])))</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Returning the pixel x, y to the caller of the function.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="p">(</span><span class="n">px_x</span><span class="p">,</span> <span class="n">px_y</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">pixel_to_lonlat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">px</span><span class="p">,</span> <span class="n">zoom</span><span class="p">):</span>
+        <span class="s">&quot;Converts a pixel to a longitude, latitude pair at the given zoom level.&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">px</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Pixel should be a sequence of two elements.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Getting the number of pixels for the given zoom level.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">npix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_npix</span><span class="p">[</span><span class="n">zoom</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Calculating the longitude value, using the degrees per pixel.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lon</span> <span class="o">=</span> <span class="p">(</span><span class="n">px</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">npix</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">_degpp</span><span class="p">[</span><span class="n">zoom</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Calculating the latitude value.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lat</span> <span class="o">=</span> <span class="n">RTOD</span> <span class="o">*</span> <span class="p">(</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">atan</span><span class="p">(</span><span class="n">exp</span><span class="p">((</span><span class="n">px</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">npix</span><span class="p">)</span><span class="o">/</span> <span class="p">(</span><span class="o">-</span><span class="mf">1.0</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_radpp</span><span class="p">[</span><span class="n">zoom</span><span class="p">])))</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">pi</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Returning the longitude, latitude coordinate pair.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">)</span>
+    
+    <span class="k">def</span> <span class="nf">tile</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lonlat</span><span class="p">,</span> <span class="n">zoom</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a Polygon  corresponding to the region represented by a fictional</span>
+<span class="sd">        Google Tile for the given longitude/latitude pair and zoom level. This</span>
+<span class="sd">        tile is used to determine the size of a tile at the given point.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>The given lonlat is the center of the tile.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">delta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tilesize</span> <span class="o">/</span> <span class="mi">2</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Getting the pixel coordinates corresponding to the
+the longitude/latitude.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">px</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lonlat_to_pixel</span><span class="p">(</span><span class="n">lonlat</span><span class="p">,</span> <span class="n">zoom</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Getting the lower-left and upper-right lat/lon coordinates
+for the bounding box of the tile.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pixel_to_lonlat</span><span class="p">((</span><span class="n">px</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">-</span><span class="n">delta</span><span class="p">,</span> <span class="n">px</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="n">delta</span><span class="p">),</span> <span class="n">zoom</span><span class="p">)</span>
+        <span class="n">ur</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pixel_to_lonlat</span><span class="p">((</span><span class="n">px</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="n">delta</span><span class="p">,</span> <span class="n">px</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="n">delta</span><span class="p">),</span> <span class="n">zoom</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Constructing the Polygon, representing the tile and returning.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">Polygon</span><span class="p">(</span><span class="n">LinearRing</span><span class="p">(</span><span class="n">ll</span><span class="p">,</span> <span class="p">(</span><span class="n">ll</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ur</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">ur</span><span class="p">,</span> <span class="p">(</span><span class="n">ur</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ll</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">ll</span><span class="p">),</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+        
+    <span class="k">def</span> <span class="nf">get_zoom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">):</span>
+        <span class="s">&quot;Returns the optimal Zoom level for the given geometry.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Checking the input type.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">geom</span><span class="p">,</span> <span class="n">GEOSGeometry</span><span class="p">)</span> <span class="ow">or</span> <span class="n">geom</span><span class="o">.</span><span class="n">srid</span> <span class="o">!=</span> <span class="mi">4326</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;get_zoom() expects a GEOS Geometry with an SRID of 4326.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Getting the envelope for the geometry, and its associated width, height
+and centroid.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">env</span> <span class="o">=</span> <span class="n">geom</span><span class="o">.</span><span class="n">envelope</span>
+        <span class="n">env_w</span><span class="p">,</span> <span class="n">env_h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_width_height</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">extent</span><span class="p">)</span>
+        <span class="n">center</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">centroid</span>
+
+        <span class="k">for</span> <span class="n">z</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nzoom</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Getting the tile at the zoom level.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">tile_w</span><span class="p">,</span> <span class="n">tile_h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_width_height</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span><span class="n">center</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span><span class="o">.</span><span class="n">extent</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>When we span more than one tile, this is an approximately good
+zoom level.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="p">(</span><span class="n">env_w</span> <span class="o">&gt;</span> <span class="n">tile_w</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">env_h</span> <span class="o">&gt;</span> <span class="n">tile_h</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">z</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span> 
+                    <span class="k">raise</span> <span class="n">GoogleMapException</span><span class="p">(</span><span class="s">&#39;Geometry width and height should not exceed that of the Earth.&#39;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">z</span><span class="o">-</span><span class="mi">1</span>
+        </pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Otherwise, we've zoomed in to the max.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nzoom</span><span class="o">-</span><span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">get_width_height</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">extent</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the width and height for the given extent.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>Getting the lower-left, upper-left, and upper-right
+coordinates from the extent.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ll</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="n">extent</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+        <span class="n">ul</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="n">extent</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">extent</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+        <span class="n">ur</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="n">extent</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Calculating the width and height.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">height</span> <span class="o">=</span> <span class="n">ll</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">ul</span><span class="p">)</span>
+        <span class="n">width</span>  <span class="o">=</span> <span class="n">ul</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">ur</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">width</span><span class="p">,</span> <span class="n">height</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

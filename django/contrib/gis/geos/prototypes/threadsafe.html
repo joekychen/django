@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › prototypes › threadsafe.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>threadsafe.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.libgeos</span> <span class="kn">import</span> <span class="n">lgeos</span><span class="p">,</span> <span class="n">notice_h</span><span class="p">,</span> <span class="n">error_h</span><span class="p">,</span> <span class="n">CONTEXT_PTR</span>
+
+<span class="k">class</span> <span class="nc">GEOSContextHandle</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Python object representing a GEOS context handle.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Initializing the context handler for this thread with
+the notice and error handler.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">lgeos</span><span class="o">.</span><span class="n">initGEOS_r</span><span class="p">(</span><span class="n">notice_h</span><span class="p">,</span> <span class="n">error_h</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">:</span> <span class="n">lgeos</span><span class="o">.</span><span class="n">finishGEOS_r</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Defining a thread-local object and creating an instance
+to hold a reference to GEOSContextHandle for this thread.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">GEOSContext</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">):</span>
+    <span class="n">handle</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="n">thread_context</span> <span class="o">=</span> <span class="n">GEOSContext</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">GEOSFunc</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class that serves as a wrapper for GEOS C Functions, and will</span>
+<span class="sd">    use thread-safe function variants when available.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func_name</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>GEOS thread-safe function signatures end with '_r', and
+take an additional context handle parameter.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">lgeos</span><span class="p">,</span> <span class="n">func_name</span> <span class="o">+</span> <span class="s">&#39;_r&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">threaded</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Create a reference here to thread_context so it's not
+garbage-collected before an attempt to call this object.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">thread_context</span> <span class="o">=</span> <span class="n">thread_context</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Otherwise, use usual function.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">lgeos</span><span class="p">,</span> <span class="n">func_name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">threaded</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">threaded</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>If a context handle does not exist for this thread, initialize one.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">thread_context</span><span class="o">.</span><span class="n">handle</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">thread_context</span><span class="o">.</span><span class="n">handle</span> <span class="o">=</span> <span class="n">GEOSContextHandle</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Call the threaded GEOS routine with pointer of the context handle
+as the first argument.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">thread_context</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">__name__</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>argtypes property</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_argtypes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">argtypes</span>
+
+    <span class="k">def</span> <span class="nf">_set_argtypes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">argtypes</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">threaded</span><span class="p">:</span>
+            <span class="n">new_argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">CONTEXT_PTR</span><span class="p">]</span>
+            <span class="n">new_argtypes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">argtypes</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="n">new_argtypes</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="n">argtypes</span>
+
+    <span class="n">argtypes</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_argtypes</span><span class="p">,</span> <span class="n">_set_argtypes</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>restype property</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_restype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">restype</span>
+
+    <span class="k">def</span> <span class="nf">_set_restype</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">restype</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">restype</span>
+
+    <span class="n">restype</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_restype</span><span class="p">,</span> <span class="n">_set_restype</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>errcheck property</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_get_errcheck</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">errcheck</span>
+
+    <span class="k">def</span> <span class="nf">_set_errcheck</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">errcheck</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cfunc</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">errcheck</span>
+
+    <span class="n">errcheck</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_errcheck</span><span class="p">,</span> <span class="n">_set_errcheck</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

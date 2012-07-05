@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › backends › postgresql_psycopg2 › base.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>base.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">PostgreSQL database backend for Django.</span>
+
+<span class="sd">Requires psycopg 2: http://initd.org/projects/psycopg2</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">utils</span>
+<span class="kn">from</span> <span class="nn">django.db.backends</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.signals</span> <span class="kn">import</span> <span class="n">connection_created</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.operations</span> <span class="kn">import</span> <span class="n">DatabaseOperations</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.client</span> <span class="kn">import</span> <span class="n">DatabaseClient</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.creation</span> <span class="kn">import</span> <span class="n">DatabaseCreation</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.version</span> <span class="kn">import</span> <span class="n">get_version</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.introspection</span> <span class="kn">import</span> <span class="n">DatabaseIntrospection</span>
+<span class="kn">from</span> <span class="nn">django.utils.log</span> <span class="kn">import</span> <span class="n">getLogger</span>
+<span class="kn">from</span> <span class="nn">django.utils.safestring</span> <span class="kn">import</span> <span class="n">SafeUnicode</span><span class="p">,</span> <span class="n">SafeString</span>
+<span class="kn">from</span> <span class="nn">django.utils.timezone</span> <span class="kn">import</span> <span class="n">utc</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">psycopg2</span> <span class="kn">as</span> <span class="nn">Database</span>
+    <span class="kn">import</span> <span class="nn">psycopg2.extensions</span>
+<span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+    <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;Error loading psycopg2 module: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span><span class="p">)</span>
+
+<span class="n">DatabaseError</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span>
+<span class="n">IntegrityError</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span>
+
+<span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">register_type</span><span class="p">(</span><span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">UNICODE</span><span class="p">)</span>
+<span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">register_adapter</span><span class="p">(</span><span class="n">SafeString</span><span class="p">,</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">QuotedString</span><span class="p">)</span>
+<span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">register_adapter</span><span class="p">(</span><span class="n">SafeUnicode</span><span class="p">,</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">QuotedString</span><span class="p">)</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;django.db.backends&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">utc_tzinfo_factory</span><span class="p">(</span><span class="n">offset</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">offset</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">AssertionError</span><span class="p">(</span><span class="s">&quot;database connection isn&#39;t set to UTC&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">utc</span>
+
+<span class="k">class</span> <span class="nc">CursorWrapper</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A thin wrapper around psycopg2&#39;s normal cursor class so that we can catch</span>
+<span class="sd">    particular exception instances and reraise them with the right types.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="n">cursor</span>
+
+    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">executemany</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">attr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="n">attr</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DatabaseFeatures</span><span class="p">(</span><span class="n">BaseDatabaseFeatures</span><span class="p">):</span>
+    <span class="n">needs_datetime_string_cast</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">can_return_id_from_insert</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">requires_rollback_on_dirty_transaction</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_real_datatype</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">can_defer_constraint_checks</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_select_for_update</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_select_for_update_nowait</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_bulk_insert</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">supports_tablespaces</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">can_distinct_on_fields</span> <span class="o">=</span> <span class="bp">True</span>
+
+<span class="k">class</span> <span class="nc">DatabaseWrapper</span><span class="p">(</span><span class="n">BaseDatabaseWrapper</span><span class="p">):</span>
+    <span class="n">vendor</span> <span class="o">=</span> <span class="s">&#39;postgresql&#39;</span>
+    <span class="n">operators</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;exact&#39;</span><span class="p">:</span> <span class="s">&#39;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;iexact&#39;</span><span class="p">:</span> <span class="s">&#39;= UPPER(</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,</span>
+        <span class="s">&#39;contains&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;icontains&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE UPPER(</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,</span>
+        <span class="s">&#39;regex&#39;</span><span class="p">:</span> <span class="s">&#39;~ </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;iregex&#39;</span><span class="p">:</span> <span class="s">&#39;~* </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;gt&#39;</span><span class="p">:</span> <span class="s">&#39;&gt; </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;gte&#39;</span><span class="p">:</span> <span class="s">&#39;&gt;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;lt&#39;</span><span class="p">:</span> <span class="s">&#39;&lt; </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;lte&#39;</span><span class="p">:</span> <span class="s">&#39;&lt;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;startswith&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;endswith&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;istartswith&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE UPPER(</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,</span>
+        <span class="s">&#39;iendswith&#39;</span><span class="p">:</span> <span class="s">&#39;LIKE UPPER(</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">DatabaseWrapper</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">features</span> <span class="o">=</span> <span class="n">DatabaseFeatures</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">autocommit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&quot;OPTIONS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;autocommit&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">uses_autocommit</span> <span class="o">=</span> <span class="n">autocommit</span>
+        <span class="k">if</span> <span class="n">autocommit</span><span class="p">:</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">ISOLATION_LEVEL_AUTOCOMMIT</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">ISOLATION_LEVEL_READ_COMMITTED</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_isolation_level</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ops</span> <span class="o">=</span> <span class="n">DatabaseOperations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">DatabaseClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">creation</span> <span class="o">=</span> <span class="n">DatabaseCreation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">introspection</span> <span class="o">=</span> <span class="n">DatabaseIntrospection</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validation</span> <span class="o">=</span> <span class="n">BaseDatabaseValidation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pg_version</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">check_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_names</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        To check constraints, we set constraints to immediate. Then, when, we&#39;re done we must ensure they</span>
+<span class="sd">        are returned to deferred.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SET CONSTRAINTS ALL IMMEDIATE&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SET CONSTRAINTS ALL DEFERRED&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_thread_sharing</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">Error</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>In some cases (database restart, network connection lost etc...)
+the connection to the database is lost without giving Django a
+notification. If we don't set self.connection to None, the error
+will occur a every request.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s">&#39;psycopg2 error while closing the connection.&#39;</span><span class="p">,</span>
+                <span class="n">exc_info</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="k">raise</span>
+
+    <span class="k">def</span> <span class="nf">_get_pg_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pg_version</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pg_version</span> <span class="o">=</span> <span class="n">get_version</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pg_version</span>
+    <span class="n">pg_version</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_pg_version</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_cursor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings_dict</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;&#39;</span><span class="p">:</span>
+                <span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+                <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;You need to specify NAME in your Django settings file.&quot;</span><span class="p">)</span>
+            <span class="n">conn_params</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;database&#39;</span><span class="p">:</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">],</span>
+            <span class="p">}</span>
+            <span class="n">conn_params</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">])</span>
+            <span class="k">if</span> <span class="s">&#39;autocommit&#39;</span> <span class="ow">in</span> <span class="n">conn_params</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;autocommit&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;USER&#39;</span><span class="p">]:</span>
+                <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;USER&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PASSWORD&#39;</span><span class="p">]:</span>
+                <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;password&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PASSWORD&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;HOST&#39;</span><span class="p">]:</span>
+                <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;host&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;HOST&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PORT&#39;</span><span class="p">]:</span>
+                <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;port&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PORT&#39;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="o">**</span><span class="n">conn_params</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">set_client_encoding</span><span class="p">(</span><span class="s">&#39;UTF8&#39;</span><span class="p">)</span>
+            <span class="n">tz</span> <span class="o">=</span> <span class="s">&#39;UTC&#39;</span> <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="k">else</span> <span class="n">settings_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;TIME_ZONE&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tz</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">get_parameter_status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">get_parameter_status</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>psycopg2 &lt; 2.0.12 doesn't have get<em>parameter</em>status</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">conn_tz</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">conn_tz</span> <span class="o">=</span> <span class="n">get_parameter_status</span><span class="p">(</span><span class="s">&#39;TimeZone&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">conn_tz</span> <span class="o">!=</span> <span class="n">tz</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Set the time zone in autocommit mode (see #17062)</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">set_isolation_level</span><span class="p">(</span>
+                            <span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">ISOLATION_LEVEL_AUTOCOMMIT</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">set_time_zone_sql</span><span class="p">(),</span> <span class="p">[</span><span class="n">tz</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">set_isolation_level</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_pg_version</span><span class="p">()</span>
+            <span class="n">connection_created</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">tzinfo_factory</span> <span class="o">=</span> <span class="n">utc_tzinfo_factory</span> <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="k">else</span> <span class="bp">None</span>
+        <span class="k">return</span> <span class="n">CursorWrapper</span><span class="p">(</span><span class="n">cursor</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_enter_transaction_management</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">managed</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Switch the isolation level when needing transaction support, so that</span>
+<span class="sd">        the same transaction is visible across all the queries.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">uses_autocommit</span> <span class="ow">and</span> <span class="n">managed</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_isolation_level</span><span class="p">(</span><span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">ISOLATION_LEVEL_READ_COMMITTED</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_leave_transaction_management</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">managed</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If the normal operating mode is &quot;autocommit&quot;, switch back to that when</span>
+<span class="sd">        leaving transaction management.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">uses_autocommit</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">managed</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_isolation_level</span><span class="p">(</span><span class="n">psycopg2</span><span class="o">.</span><span class="n">extensions</span><span class="o">.</span><span class="n">ISOLATION_LEVEL_AUTOCOMMIT</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_set_isolation_level</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">level</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Do all the related feature configurations for changing isolation</span>
+<span class="sd">        levels. This doesn&#39;t touch the uses_autocommit feature, since that</span>
+<span class="sd">        controls the movement *between* isolation levels.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">level</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">set_isolation_level</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">isolation_level</span> <span class="o">=</span> <span class="n">level</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">uses_savepoints</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

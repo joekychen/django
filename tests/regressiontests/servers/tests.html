@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › servers › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Tests for django.core.servers.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">urllib2</span>
+
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">LiveServerTestCase</span>
+<span class="kn">from</span> <span class="nn">django.core.servers.basehttp</span> <span class="kn">import</span> <span class="n">WSGIServerException</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Person</span>
+
+
+<span class="n">TEST_ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">)</span>
+<span class="n">TEST_SETTINGS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;MEDIA_URL&#39;</span><span class="p">:</span> <span class="s">&#39;/media/&#39;</span><span class="p">,</span>
+    <span class="s">&#39;MEDIA_ROOT&#39;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;media&#39;</span><span class="p">),</span>
+    <span class="s">&#39;STATIC_URL&#39;</span><span class="p">:</span> <span class="s">&#39;/static/&#39;</span><span class="p">,</span>
+    <span class="s">&#39;STATIC_ROOT&#39;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">),</span>
+<span class="p">}</span>
+
+
+<span class="k">class</span> <span class="nc">LiveServerBase</span><span class="p">(</span><span class="n">LiveServerTestCase</span><span class="p">):</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;regressiontests.servers.urls&#39;</span>
+    <span class="n">fixtures</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;testdata.json&#39;</span><span class="p">]</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">setUpClass</span><span class="p">(</span><span class="n">cls</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Override settings</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cls</span><span class="o">.</span><span class="n">settings_override</span> <span class="o">=</span> <span class="n">override_settings</span><span class="p">(</span><span class="o">**</span><span class="n">TEST_SETTINGS</span><span class="p">)</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">settings_override</span><span class="o">.</span><span class="n">enable</span><span class="p">()</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LiveServerBase</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">setUpClass</span><span class="p">()</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">tearDownClass</span><span class="p">(</span><span class="n">cls</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Restore original settings</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cls</span><span class="o">.</span><span class="n">settings_override</span><span class="o">.</span><span class="n">disable</span><span class="p">()</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LiveServerBase</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">tearDownClass</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">urlopen</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">urllib2</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">live_server_url</span> <span class="o">+</span> <span class="n">url</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LiveServerAddress</span><span class="p">(</span><span class="n">LiveServerBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Ensure that the address set in the environment variable is valid.</span>
+<span class="sd">    Refs #2879.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">setUpClass</span><span class="p">(</span><span class="n">cls</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Backup original environment variable</p></td><td class="code"><div class="highlight"><pre>        <span class="n">address_predefined</span> <span class="o">=</span> <span class="s">&#39;DJANGO_LIVE_TEST_SERVER_ADDRESS&#39;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+        <span class="n">old_address</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;DJANGO_LIVE_TEST_SERVER_ADDRESS&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Just the host is not accepted</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>The host must be valid</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;blahblahblah:8081&#39;</span><span class="p">,</span> <span class="n">WSGIServerException</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>The list of ports must be in a valid format</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081,&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081,blah&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081-&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081-blah&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081-8082-8083&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If contrib.staticfiles isn't configured properly, the exception
+should bubble up to the main thread.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">old_STATIC_URL</span> <span class="o">=</span> <span class="n">TEST_SETTINGS</span><span class="p">[</span><span class="s">&#39;STATIC_URL&#39;</span><span class="p">]</span>
+        <span class="n">TEST_SETTINGS</span><span class="p">[</span><span class="s">&#39;STATIC_URL&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">cls</span><span class="o">.</span><span class="n">raises_exception</span><span class="p">(</span><span class="s">&#39;localhost:8081&#39;</span><span class="p">,</span> <span class="n">ImproperlyConfigured</span><span class="p">)</span>
+        <span class="n">TEST_SETTINGS</span><span class="p">[</span><span class="s">&#39;STATIC_URL&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_STATIC_URL</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Restore original environment variable</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">address_predefined</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;DJANGO_LIVE_TEST_SERVER_ADDRESS&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_address</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;DJANGO_LIVE_TEST_SERVER_ADDRESS&#39;</span><span class="p">]</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">raises_exception</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">exception</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;DJANGO_LIVE_TEST_SERVER_ADDRESS&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">address</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">LiveServerAddress</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">setUpClass</span><span class="p">()</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;The line above should have raised an exception&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">test_test_test</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Intentionally empty method so that the test is picked up by the
+test runner and the overriden setUpClass() method is executed.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">LiveServerViews</span><span class="p">(</span><span class="n">LiveServerBase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_404</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the LiveServerTestCase serves 404s.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">urllib2</span><span class="o">.</span><span class="n">HTTPError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">err</span><span class="o">.</span><span class="n">code</span><span class="p">,</span> <span class="mi">404</span><span class="p">,</span> <span class="s">&#39;Expected 404 response&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;Expected 404 response&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_view</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the LiveServerTestCase serves views.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/example_view/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;example view&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_static_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the LiveServerTestCase serves static files.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/static/example_static_file.txt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;example static file&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_media_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the LiveServerTestCase serves media files.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/media/example_media_file.txt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;example media file&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LiveServerDatabase</span><span class="p">(</span><span class="n">LiveServerBase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_fixtures_loaded</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that fixtures are properly loaded and visible to the</span>
+<span class="sd">        live server thread.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/model_view/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(),</span> <span class="p">[</span><span class="s">&#39;jane&#39;</span><span class="p">,</span> <span class="s">&#39;robert&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_database_writes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that data written to the database by a view can be read.</span>
+<span class="sd">        Refs #2879.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">urlopen</span><span class="p">(</span><span class="s">&#39;/create_model_instance/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">),</span>
+            <span class="p">[</span><span class="s">&#39;jane&#39;</span><span class="p">,</span> <span class="s">&#39;robert&#39;</span><span class="p">,</span> <span class="s">&#39;emily&#39;</span><span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="n">b</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

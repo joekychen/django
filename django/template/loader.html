@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › template › loader.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>loader.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>Wrapper for loading templates from storage of some sort (e.g. filesystem, database).</p>
+
+<p>This uses the TEMPLATE_LOADERS setting, which is a list of loaders to use.
+Each loader is expected to have this interface:</p>
+
+<p>callable(name, dirs=[])</p>
+
+<p>name is the template name.
+dirs is an optional list of directories to search instead of TEMPLATE_DIRS.</p>
+
+<p>The loader should return a tuple of (template_source, path). The path returned
+might be shown to the user for debugging purposes, so it should identify where
+the template was loaded from.</p>
+
+<p>A loader may return an already-compiled template instead of the actual
+template source. In that case the path returned should be None, since the
+path information is associated with the template during the compilation,
+which has already been done.</p>
+
+<p>Each loader should have an "is_usable" attribute set. This is a boolean that
+specifies whether the loader can be used in this Python installation. Each
+loader is responsible for setting this when it's initialized.</p>
+
+<p>For example, the eggs loader (which is capable of loading templates from
+Python eggs) sets is<em>usable to False if the "pkg</em>resources" module isn't
+installed, because pkg_resources is necessary to read eggs.</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.template.base</span> <span class="kn">import</span> <span class="n">Origin</span><span class="p">,</span> <span class="n">Template</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">TemplateDoesNotExist</span><span class="p">,</span> <span class="n">add_to_builtins</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+
+<span class="n">template_source_loaders</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="k">class</span> <span class="nc">BaseLoader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="n">is_usable</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">load_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">source</span><span class="p">,</span> <span class="n">display_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="p">)</span>
+        <span class="n">origin</span> <span class="o">=</span> <span class="n">make_origin</span><span class="p">(</span><span class="n">display_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">,</span> <span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">template</span> <span class="o">=</span> <span class="n">get_template_from_string</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">template_name</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">template</span><span class="p">,</span> <span class="bp">None</span>
+        <span class="k">except</span> <span class="n">TemplateDoesNotExist</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>If compiling the template we found raises TemplateDoesNotExist, back off to
+returning the source and display name for the template we were asked to load.
+This allows for correct identification (later) of the actual template that does
+not exist.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">source</span><span class="p">,</span> <span class="n">display_name</span>
+
+    <span class="k">def</span> <span class="nf">load_template_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template_name</span><span class="p">,</span> <span class="n">template_dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a tuple containing the source and origin for the given template</span>
+<span class="sd">        name.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
+
+    <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resets any state maintained by the loader instance (e.g., cached</span>
+<span class="sd">        templates or cached loader modules).</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">LoaderOrigin</span><span class="p">(</span><span class="n">Origin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">display_name</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">LoaderOrigin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">display_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">loader</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">loadname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dirs</span> <span class="o">=</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span>
+
+    <span class="k">def</span> <span class="nf">reload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">loader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">loadname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dirs</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="nf">make_origin</span><span class="p">(</span><span class="n">display_name</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DEBUG</span> <span class="ow">and</span> <span class="n">display_name</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">LoaderOrigin</span><span class="p">(</span><span class="n">display_name</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+<span class="k">def</span> <span class="nf">find_template_loader</span><span class="p">(</span><span class="n">loader</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">)):</span>
+        <span class="n">loader</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">loader</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">loader</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+        <span class="n">module</span><span class="p">,</span> <span class="n">attr</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mod</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Error importing template source loader </span><span class="si">%s</span><span class="s">: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">TemplateLoader</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Error importing template source loader </span><span class="si">%s</span><span class="s">: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">loader</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">TemplateLoader</span><span class="p">,</span> <span class="s">&#39;load_template_source&#39;</span><span class="p">):</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="n">TemplateLoader</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Try loading module the old way - string is full path to callable</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">args</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;Error importing template source loader </span><span class="si">%s</span><span class="s"> - can&#39;t pass arguments to function-based loader.&quot;</span> <span class="o">%</span> <span class="n">loader</span><span class="p">)</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="n">TemplateLoader</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">func</span><span class="o">.</span><span class="n">is_usable</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">warnings</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;Your TEMPLATE_LOADERS setting includes </span><span class="si">%r</span><span class="s">, but your Python installation doesn&#39;t support that type of template loading. Consider removing that line from TEMPLATE_LOADERS.&quot;</span> <span class="o">%</span> <span class="n">loader</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">func</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Loader does not define a &quot;load_template&quot; callable template source loader&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">find_template</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Calculate template<em>source</em>loaders the first time the function is executed
+because putting this logic in the module-level namespace may cause
+circular import errors. See Django ticket #1292.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">global</span> <span class="n">template_source_loaders</span>
+    <span class="k">if</span> <span class="n">template_source_loaders</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">loaders</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">loader_name</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span><span class="p">:</span>
+            <span class="n">loader</span> <span class="o">=</span> <span class="n">find_template_loader</span><span class="p">(</span><span class="n">loader_name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">loader</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">loaders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loader</span><span class="p">)</span>
+        <span class="n">template_source_loaders</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">loaders</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">loader</span> <span class="ow">in</span> <span class="n">template_source_loaders</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">source</span><span class="p">,</span> <span class="n">display_name</span> <span class="o">=</span> <span class="n">loader</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">make_origin</span><span class="p">(</span><span class="n">display_name</span><span class="p">,</span> <span class="n">loader</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">dirs</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">TemplateDoesNotExist</span><span class="p">:</span>
+            <span class="k">pass</span>
+    <span class="k">raise</span> <span class="n">TemplateDoesNotExist</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a compiled Template object for the given template name,</span>
+<span class="sd">    handling template inheritance recursively.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">template</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="n">find_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="s">&#39;render&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>template needs to be compiled</p></td><td class="code"><div class="highlight"><pre>        <span class="n">template</span> <span class="o">=</span> <span class="n">get_template_from_string</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">template_name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">template</span>
+
+<span class="k">def</span> <span class="nf">get_template_from_string</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a compiled Template object for the given template code,</span>
+<span class="sd">    handling template inheritance recursively.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Template</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">render_to_string</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="n">dictionary</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">context_instance</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Loads the given template_name and renders it with the given dictionary as</span>
+<span class="sd">    context. The template_name may be a string to load a single template using</span>
+<span class="sd">    get_template, or it may be a tuple to use select_template to find one of</span>
+<span class="sd">    the templates in the list. Returns a string.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dictionary</span> <span class="o">=</span> <span class="n">dictionary</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">select_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">get_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">context_instance</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">Context</span><span class="p">(</span><span class="n">dictionary</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Add the dictionary to the context stack, ensuring it gets removed again
+to keep the context_instance in the same state it started in.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">context_instance</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">dictionary</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context_instance</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">context_instance</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">select_template</span><span class="p">(</span><span class="n">template_name_list</span><span class="p">):</span>
+    <span class="s">&quot;Given a list of template names, returns the first that can be loaded.&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">template_name_list</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">TemplateDoesNotExist</span><span class="p">(</span><span class="s">&quot;No template names provided&quot;</span><span class="p">)</span>
+    <span class="n">not_found</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">template_name</span> <span class="ow">in</span> <span class="n">template_name_list</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">get_template</span><span class="p">(</span><span class="n">template_name</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">TemplateDoesNotExist</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">not_found</span><span class="p">:</span>
+                <span class="n">not_found</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>If we get here, none of the templates could be loaded</p></td><td class="code"><div class="highlight"><pre>    <span class="k">raise</span> <span class="n">TemplateDoesNotExist</span><span class="p">(</span><span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">not_found</span><span class="p">))</span>
+
+<span class="n">add_to_builtins</span><span class="p">(</span><span class="s">&#39;django.template.loader_tags&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

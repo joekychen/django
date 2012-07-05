@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › backends › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-
+Unit and doctests for specific database backends.</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.management.color</span> <span class="kn">import</span> <span class="n">no_style</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="p">(</span><span class="n">backend</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="n">connections</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span>
+    <span class="n">IntegrityError</span><span class="p">,</span> <span class="n">transaction</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.signals</span> <span class="kn">import</span> <span class="n">connection_created</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2</span> <span class="kn">import</span> <span class="n">version</span> <span class="k">as</span> <span class="n">pg_version</span>
+<span class="kn">from</span> <span class="nn">django.db.utils</span> <span class="kn">import</span> <span class="n">ConnectionHandler</span><span class="p">,</span> <span class="n">DatabaseError</span><span class="p">,</span> <span class="n">load_backend</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="p">(</span><span class="n">TestCase</span><span class="p">,</span> <span class="n">skipUnlessDBFeature</span><span class="p">,</span> <span class="n">skipIfDBFeature</span><span class="p">,</span>
+    <span class="n">TransactionTestCase</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">models</span>
+
+
+<span class="k">class</span> <span class="nc">OracleChecks</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;oracle&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;No need to check Oracle cursor semantics&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_dbms_session</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>If the backend is Oracle, test that we can call a standard
+stored procedure through our cursor wrapper.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">convert_unicode</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">convert_unicode</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">callproc</span><span class="p">(</span><span class="n">convert_unicode</span><span class="p">(</span><span class="s">&#39;DBMS_SESSION.SET_IDENTIFIER&#39;</span><span class="p">),</span>
+                        <span class="p">[</span><span class="n">convert_unicode</span><span class="p">(</span><span class="s">&#39;_django_testing!&#39;</span><span class="p">),])</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;oracle&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;No need to check Oracle cursor semantics&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_cursor_var</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>If the backend is Oracle, test that we can pass cursor variables
+as query parameters.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">Database</span><span class="o">.</span><span class="n">STRING</span><span class="p">)</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;BEGIN </span><span class="si">%s</span><span class="s"> := &#39;X&#39;; END; &quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">var</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">var</span><span class="o">.</span><span class="n">getvalue</span><span class="p">(),</span> <span class="s">&#39;X&#39;</span><span class="p">)</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;oracle&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;No need to check Oracle cursor semantics&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_long_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>If the backend is Oracle, test that we can save a text longer
+than 4000 chars and read it properly</p></td><td class="code"><div class="highlight"><pre>        <span class="n">c</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;CREATE TABLE ltext (&quot;TEXT&quot; NCLOB)&#39;</span><span class="p">)</span>
+        <span class="n">long_str</span> <span class="o">=</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">unicode</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">4000</span><span class="p">)])</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;INSERT INTO ltext VALUES (</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,[</span><span class="n">long_str</span><span class="p">])</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT text FROM ltext&#39;</span><span class="p">)</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">long_str</span><span class="p">,</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;DROP TABLE ltext&#39;</span><span class="p">)</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;oracle&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;No need to check Oracle connection semantics&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_client_encoding</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>If the backend is Oracle, test that the client encoding is set
+correctly.  This was broken under Cygwin prior to r14781.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>  <span class="c"># Ensure the connection is initialized.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">encoding</span><span class="p">,</span> <span class="s">&quot;UTF-8&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">nencoding</span><span class="p">,</span> <span class="s">&quot;UTF-8&quot;</span><span class="p">)</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;oracle&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;No need to check Oracle connection semantics&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_order_of_nls_parameters</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>an 'almost right' datetime should work with configured
+NLS parameters as per #18465.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">c</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&quot;select 1 from dual where &#39;1936-12-29 00:00&#39; &lt; sysdate&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Test that the query succeeds without errors - pre #18465 this
+wasn't the case.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">MySQLTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;mysql&#39;</span><span class="p">,</span>
+                        <span class="s">&quot;Test valid only for MySQL&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_autoincrement</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that auto_increment fields are reset correctly by sql_flush().</span>
+<span class="sd">        Before MySQL version 5.0.13 TRUNCATE did not do auto_increment reset.</span>
+<span class="sd">        Refs #16961.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">statements</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">sql_flush</span><span class="p">(</span><span class="n">no_style</span><span class="p">(),</span>
+                                              <span class="n">tables</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;test&#39;</span><span class="p">],</span>
+                                              <span class="n">sequences</span><span class="o">=</span><span class="p">[{</span>
+                                                  <span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="s">&#39;test&#39;</span><span class="p">,</span>
+                                                  <span class="s">&#39;col&#39;</span><span class="p">:</span> <span class="s">&#39;somecol&#39;</span><span class="p">,</span>
+                                              <span class="p">}])</span>
+        <span class="n">found_reset</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">for</span> <span class="n">sql</span> <span class="ow">in</span> <span class="n">statements</span><span class="p">:</span>
+            <span class="n">found_reset</span> <span class="o">=</span> <span class="n">found_reset</span> <span class="ow">or</span> <span class="s">&#39;ALTER TABLE&#39;</span> <span class="ow">in</span> <span class="n">sql</span>
+        <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">mysql_version</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">13</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">found_reset</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">found_reset</span><span class="p">)</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;mysql&#39;</span><span class="p">,</span>
+                        <span class="s">&quot;Test valid only for MySQL&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_server_version_connections</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">connection</span><span class="o">.</span><span class="n">mysql_version</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DateQuotingTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_django_date_trunc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the custom ``django_date_trunc method``, in particular against</span>
+<span class="sd">        fields which clash with strings passed to it (e.g. &#39;year&#39;) - see</span>
+
+<span class="sd">#DIVIDER</span>
+
+<span class="sd">        __: http://code.djangoproject.com/ticket/12818</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">SchoolClass</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">year</span><span class="o">=</span><span class="mi">2009</span><span class="p">,</span> <span class="n">last_updated</span><span class="o">=</span><span class="n">updated</span><span class="p">)</span>
+        <span class="n">years</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">SchoolClass</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">dates</span><span class="p">(</span><span class="s">&#39;last_updated&#39;</span><span class="p">,</span> <span class="s">&#39;year&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">years</span><span class="p">),</span> <span class="p">[</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">test_django_extract</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the custom ``django_extract method``, in particular against fields</span>
+<span class="sd">        which clash with strings passed to it (e.g. &#39;day&#39;) - see #12818__.</span>
+
+<span class="sd">        __: http://code.djangoproject.com/ticket/12818</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">SchoolClass</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">year</span><span class="o">=</span><span class="mi">2009</span><span class="p">,</span> <span class="n">last_updated</span><span class="o">=</span><span class="n">updated</span><span class="p">)</span>
+        <span class="n">classes</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">SchoolClass</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">last_updated__day</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">classes</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">LastExecutedQueryTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="nd">@override_settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_debug_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">list</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Tag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">))</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">queries</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="s">&#39;sql&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">sql</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;select&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Tag</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span> <span class="n">sql</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_query_encoding</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that last_executed_query() returns an Unicode string</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tags</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Tag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">extra</span><span class="p">(</span><span class="n">select</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;föö&#39;</span><span class="p">:</span><span class="mi">1</span><span class="p">})</span>
+        <span class="n">sql</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">tags</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">sql_with_params</span><span class="p">()</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">tags</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span><span class="s">&#39;default&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">execute_sql</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="n">last_sql</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">last_executed_query</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sql</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">last_sql</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">))</span>
+
+
+<span class="k">class</span> <span class="nc">ParameterHandlingTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_bad_parameter_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An executemany call with too many/not enough parameters will raise an exception (Refs #12612)&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;INSERT INTO </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">, </span><span class="si">%s</span><span class="s">) VALUES (</span><span class="si">%%</span><span class="s">s, </span><span class="si">%%</span><span class="s">s)&#39;</span> <span class="o">%</span> <span class="p">(</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">table_name_converter</span><span class="p">(</span><span class="s">&#39;backends_square&#39;</span><span class="p">),</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="s">&#39;root&#39;</span><span class="p">),</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="s">&#39;square&#39;</span><span class="p">)</span>
+        <span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">Exception</span><span class="p">,</span> <span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="p">[(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">),])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">Exception</span><span class="p">,</span> <span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="p">[(</span><span class="mi">1</span><span class="p">,),])</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>12818__.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">LongNameTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Long primary keys and model names can result in a sequence name</span>
+<span class="sd">    that exceeds the database limits, which will result in truncation</span>
+<span class="sd">    on certain databases (e.g., Postgres). The backend needs to use</span>
+<span class="sd">    the correct sequence name in last_insert_id and other places, so</span>
+<span class="sd">    check it is. Refs #8901.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_long_model_names&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_sequence_name_length_limits_create</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test creation of model with long name and long pk name doesn&#39;t error. Ref #8901&quot;&quot;&quot;</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">VeryLongModelNameZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_long_model_names&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_sequence_name_length_limits_m2m</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test an m2m save of a model with a long name and a long m2m field name doesn&#39;t error as on Django &gt;=1.2 this now uses object saves. Ref #8901&quot;&quot;&quot;</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">VeryLongModelNameZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+        <span class="n">rel_obj</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&#39;Django&#39;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&#39;Reinhardt&#39;</span><span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">m2m_also_quite_long_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">rel_obj</span><span class="p">)</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_long_model_names&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_sequence_name_length_limits_flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test that sequence resetting as part of a flush with model with long name and long pk name doesn&#39;t error. Ref #8901&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Unfortunately, the following tests would be a good test to run on all
+backends, but it breaks MySQL hard. Until #13711 is fixed, it can't be run
+everywhere (although it would be an effective test of #13711).</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>A full flush is expensive to the full test, so we dig into the
+internals to generate the likely offending SQL and run it manually</p></td><td class="code"><div class="highlight"><pre>        <span class="n">VLM</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">VeryLongModelNameZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ</span>
+        <span class="n">VLM_m2m</span> <span class="o">=</span> <span class="n">VLM</span><span class="o">.</span><span class="n">m2m_also_quite_long_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz</span><span class="o">.</span><span class="n">through</span>
+        <span class="n">tables</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">VLM</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span>
+            <span class="n">VLM_m2m</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="n">sequences</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s">&#39;column&#39;</span><span class="p">:</span> <span class="n">VLM</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">column</span><span class="p">,</span>
+                <span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="n">VLM</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span>
+            <span class="p">},</span>
+        <span class="p">]</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">statement</span> <span class="ow">in</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">sql_flush</span><span class="p">(</span><span class="n">no_style</span><span class="p">(),</span> <span class="n">tables</span><span class="p">,</span> <span class="n">sequences</span><span class="p">):</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">statement</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SequenceResetTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_generic_relation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Sequence names are correct when resetting generic relations (Ref #13941)&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Some convenience aliases</p></td><td class="code"><div class="highlight"><pre>        <span class="n">models</span><span class="o">.</span><span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&#39;1st post&#39;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s">&#39;hello world&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Create an object with a manually specified PK</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">commands</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">sequence_reset_sql</span><span class="p">(</span><span class="n">no_style</span><span class="p">(),</span> <span class="p">[</span><span class="n">models</span><span class="o">.</span><span class="n">Post</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">sql</span> <span class="ow">in</span> <span class="n">commands</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Reset the sequences for the database</p></td><td class="code"><div class="highlight"><pre>        <span class="n">obj</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Post</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;New post&#39;</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="s">&#39;goodbye world&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">pk</span> <span class="o">&gt;</span> <span class="mi">10</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostgresVersionTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">assert_parses</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">version_string</span><span class="p">,</span> <span class="n">version</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">pg_version</span><span class="o">.</span><span class="n">_parse_version</span><span class="p">(</span><span class="n">version_string</span><span class="p">),</span> <span class="n">version</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_parsing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test PostgreSQL version parsing from `SELECT version()` output&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;PostgreSQL 8.3 beta4&quot;</span><span class="p">,</span> <span class="mi">80300</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;PostgreSQL 8.3&quot;</span><span class="p">,</span> <span class="mi">80300</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;EnterpriseDB 8.3&quot;</span><span class="p">,</span> <span class="mi">80300</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;PostgreSQL 8.3.6&quot;</span><span class="p">,</span> <span class="mi">80306</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;PostgreSQL 8.4beta1&quot;</span><span class="p">,</span> <span class="mi">80400</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assert_parses</span><span class="p">(</span><span class="s">&quot;PostgreSQL 8.3.1 on i386-apple-darwin9.2.2, compiled by GCC i686-apple-darwin9-gcc-4.0.1 (GCC) 4.0.1 (Apple Inc. build 5478)&quot;</span><span class="p">,</span> <span class="mi">80301</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_version_detection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test PostgreSQL version detection&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>If we create a new object now, it should have a PK greater
+than the PK we specified manually.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">CursorMock</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="s">&quot;Very simple mock of DB-API cursor&quot;</span>
+            <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+                <span class="k">pass</span>
+
+            <span class="k">def</span> <span class="nf">fetchone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="p">[</span><span class="s">&quot;PostgreSQL 8.3&quot;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">OlderConnectionMock</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="s">&quot;Mock of psycopg2 (&lt; 2.0.12) connection&quot;</span>
+            <span class="k">def</span> <span class="nf">cursor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">CursorMock</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Helper mocks</p></td><td class="code"><div class="highlight"><pre>        <span class="n">conn</span> <span class="o">=</span> <span class="n">OlderConnectionMock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">pg_version</span><span class="o">.</span><span class="n">get_version</span><span class="p">(</span><span class="n">conn</span><span class="p">),</span> <span class="mi">80300</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostgresNewConnectionTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">#DIVIDER</span>
+<span class="sd">    transaction is rolled back.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span>
+        <span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;postgresql&#39;</span> <span class="ow">and</span> <span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s">&quot;This test applies only to PostgreSQL without autocommit&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_connect_and_rollback</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">new_connections</span> <span class="o">=</span> <span class="n">ConnectionHandler</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">DATABASES</span><span class="p">)</span>
+        <span class="n">new_connection</span> <span class="o">=</span> <span class="n">new_connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>psycopg2 &lt; 2.0.12 code path</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cursor</span> <span class="o">=</span> <span class="n">new_connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;RESET TIMEZONE&quot;</span><span class="p">)</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SHOW TIMEZONE&quot;</span><span class="p">)</span>
+            <span class="n">db_default_tz</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">new_tz</span> <span class="o">=</span> <span class="s">&#39;Europe/Paris&#39;</span> <span class="k">if</span> <span class="n">db_default_tz</span> <span class="o">==</span> <span class="s">&#39;UTC&#39;</span> <span class="k">else</span> <span class="s">&#39;UTC&#39;</span>
+            <span class="n">new_connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>17062: PostgreSQL shouldn't roll back SET TIME ZONE, even if the first</p></td><td class="code"><div class="highlight"><pre>            <span class="n">new_connection</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;TIME_ZONE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_tz</span>
+            <span class="n">new_connection</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+            <span class="n">cursor</span> <span class="o">=</span> <span class="n">new_connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+            <span class="n">new_connection</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Ensure the database default time zone is different than
+the time zone in new<em>connection.settings</em>dict. We can
+get the default time zone by reset &amp; show.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SHOW TIMEZONE&quot;</span><span class="p">)</span>
+            <span class="n">tz</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">new_tz</span><span class="p">,</span> <span class="n">tz</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">new_connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">DatabaseError</span><span class="p">:</span>
+                <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Fetch a new connection with the new_tz as default
+time zone, run a query and rollback.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">ConnectionCreatedSignalTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;test_db_allows_multiple_connections&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_signal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">def</span> <span class="nf">receiver</span><span class="p">(</span><span class="n">sender</span><span class="p">,</span> <span class="n">connection</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">data</span><span class="p">[</span><span class="s">&quot;connection&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">connection</span>
+
+        <span class="n">connection_created</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver</span><span class="p">)</span>
+        <span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s">&quot;connection&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+
+        <span class="n">connection_created</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">receiver</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">data</span> <span class="o">==</span> <span class="p">{})</span>
+
+
+<span class="k">class</span> <span class="nc">EscapingChecks</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="nd">@unittest.skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;sqlite&#39;</span><span class="p">,</span>
+                         <span class="s">&quot;This is a sqlite-specific issue&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_parameter_escaping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Now let's see if the rollback rolled back the SET TIME ZONE.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="s">&quot;select strftime(&#39;</span><span class="si">%%</span><span class="s">s&#39;, date(&#39;now&#39;))&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Unfortunately with sqlite3 the in-memory test database cannot be
+closed, and so it cannot be re-opened during testing, and so we
+sadly disable this test for now.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">response</span><span class="p">))</span>
+
+
+<span class="k">class</span> <span class="nc">BackendTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">create_squares_with_executemany</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">_meta</span>
+        <span class="n">tbl</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">table_name_converter</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="n">f1</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="s">&#39;root&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">column</span><span class="p">)</span>
+        <span class="n">f2</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="s">&#39;square&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">column</span><span class="p">)</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;INSERT INTO </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">, </span><span class="si">%s</span><span class="s">) VALUES (</span><span class="si">%%</span><span class="s">s, </span><span class="si">%%</span><span class="s">s)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">tbl</span><span class="p">,</span> <span class="n">f1</span><span class="p">,</span> <span class="n">f2</span><span class="p">)</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cursor_executemany</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>13648: '%s' escaping support for sqlite3</p></td><td class="code"><div class="highlight"><pre>        <span class="n">args</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">)]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">create_squares_with_executemany</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">11</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">):</span>
+            <span class="n">square</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">root</span><span class="o">=</span><span class="n">i</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">square</span><span class="o">.</span><span class="n">square</span><span class="p">,</span> <span class="n">i</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cursor_executemany_with_empty_params_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>response should be an non-zero integer</p></td><td class="code"><div class="highlight"><pre>        <span class="n">args</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">create_squares_with_executemany</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cursor_executemany_with_iterator</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>4896: Test cursor.executemany</p></td><td class="code"><div class="highlight"><pre>        <span class="n">args</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">create_squares_with_executemany</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">5</span><span class="p">)</span>
+
+        <span class="n">args</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">))</span>
+        <span class="k">with</span> <span class="n">override_settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>4765: executemany with params=[] does nothing</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">create_squares_with_executemany</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">9</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="nf">test_unicode_fetches</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>10320: executemany accepts iterators</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qn</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;Jane&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;Mary&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Agnelline&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;Peter&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Parker&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;Clark&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Kent&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">opts2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="o">.</span><span class="n">_meta</span>
+        <span class="n">f3</span><span class="p">,</span> <span class="n">f4</span> <span class="o">=</span> <span class="n">opts2</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="s">&#39;first_name&#39;</span><span class="p">),</span> <span class="n">opts2</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="s">&#39;last_name&#39;</span><span class="p">)</span>
+        <span class="n">query2</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;SELECT </span><span class="si">%s</span><span class="s">, </span><span class="si">%s</span><span class="s"> FROM </span><span class="si">%s</span><span class="s"> ORDER BY </span><span class="si">%s</span><span class="s">&#39;</span>
+          <span class="o">%</span> <span class="p">(</span><span class="n">qn</span><span class="p">(</span><span class="n">f3</span><span class="o">.</span><span class="n">column</span><span class="p">),</span> <span class="n">qn</span><span class="p">(</span><span class="n">f4</span><span class="o">.</span><span class="n">column</span><span class="p">),</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">table_name_converter</span><span class="p">(</span><span class="n">opts2</span><span class="o">.</span><span class="n">db_table</span><span class="p">),</span>
+             <span class="n">qn</span><span class="p">(</span><span class="n">f3</span><span class="o">.</span><span class="n">column</span><span class="p">)))</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">(),</span> <span class="p">(</span><span class="s">&#39;Clark&#39;</span><span class="p">,</span> <span class="s">&#39;Kent&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchmany</span><span class="p">(</span><span class="mi">2</span><span class="p">)),</span> <span class="p">[(</span><span class="s">&#39;Jane&#39;</span><span class="p">,</span> <span class="s">&#39;Doe&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;John&#39;</span><span class="p">,</span> <span class="s">&#39;Doe&#39;</span><span class="p">)])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()),</span> <span class="p">[(</span><span class="s">&#39;Mary&#39;</span><span class="p">,</span> <span class="s">&#39;Agnelline&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;Peter&#39;</span><span class="p">,</span> <span class="s">&#39;Parker&#39;</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">test_database_operations_helper_class</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>same test for DebugCursorWrapper</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="s">&#39;ops&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="s">&#39;connection&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="p">,</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cached_db_features</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">supports_transactions</span><span class="p">,</span> <span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">supports_stddev</span><span class="p">,</span> <span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">can_introspect_foreign_keys</span><span class="p">,</span> <span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="bp">False</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_duplicate_table_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Test that creating an existing table returns a DatabaseError &quot;&quot;&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="s">&#39;CREATE TABLE </span><span class="si">%s</span><span class="s"> (id INTEGER);&#39;</span> <span class="o">%</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">DatabaseError</span><span class="p">):</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>6254: fetchone, fetchmany, fetchall return strings as unicode objects</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">FkConstraintsTests</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Ticket #13630</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">r</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Reporter</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&#39;John&#39;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&#39;Smith&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_integrity_checks_on_creation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Try to create a model instance that violates a FK constraint. If it</span>
+<span class="sd">        fails it should fail with IntegrityError.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;This is a test&quot;</span><span class="p">,</span> <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span> <span class="n">reporter_id</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">IntegrityError</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">skipTest</span><span class="p">(</span><span class="s">&quot;This backend does not support integrity checks.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_integrity_checks_on_update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Try to update a model instance introducing a FK constraint violation.</span>
+<span class="sd">        If it fails it should fail with IntegrityError.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>We don't make these tests conditional because that means we would need to
+check and differentiate between:
+* MySQL+InnoDB, MySQL+MYISAM (something we currently can't do).
+* if sqlite3 (if/once we get #14204 fixed) has referential integrity turned
+  on or not, something that would be controlled by runtime support and user
+  preference.
+verify if its type is django.database.db.IntegrityError.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">,</span> <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">reporter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Create a Reporter.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">a</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">)</span>
+        <span class="n">a</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="mi">30</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">IntegrityError</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">skipTest</span><span class="p">(</span><span class="s">&quot;This backend does not support integrity checks.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_disable_constraint_checks_manually</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When constraint checks are disabled, should be able to write bad data without IntegrityErrors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">transaction</span><span class="o">.</span><span class="n">commit_manually</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Create an Article.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">,</span> <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">reporter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Retrive it from the DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">a</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">)</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="mi">30</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">connection</span><span class="o">.</span><span class="n">disable_constraint_checking</span><span class="p">()</span>
+                <span class="n">a</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+                <span class="n">connection</span><span class="o">.</span><span class="n">enable_constraint_checking</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">IntegrityError</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;IntegrityError should not have occurred.&quot;</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_disable_constraint_checks_context_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When constraint checks are disabled (using context manager), should be able to write bad data without IntegrityErrors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">transaction</span><span class="o">.</span><span class="n">commit_manually</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Create an Article.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">,</span> <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">reporter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Retrive it from the DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">a</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">)</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="mi">30</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">connection</span><span class="o">.</span><span class="n">constraint_checks_disabled</span><span class="p">():</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">IntegrityError</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;IntegrityError should not have occurred.&quot;</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_check_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Constraint checks should raise an IntegrityError when bad data is in the DB.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">transaction</span><span class="o">.</span><span class="n">commit_manually</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Create an Article.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">,</span> <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">reporter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">r</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Retrive it from the DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">a</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Test article&quot;</span><span class="p">)</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">reporter_id</span> <span class="o">=</span> <span class="mi">30</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">connection</span><span class="o">.</span><span class="n">constraint_checks_disabled</span><span class="p">():</span>
+                    <span class="n">a</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+                    <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">IntegrityError</span><span class="p">):</span>
+                        <span class="n">connection</span><span class="o">.</span><span class="n">check_constraints</span><span class="p">()</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">ThreadTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_default_connection_thread_local</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the default connection (i.e. django.db.connection) is</span>
+<span class="sd">        different for each thread.</span>
+<span class="sd">        Refs #17258.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">connections_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">connections_set</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">runner</span><span class="p">():</span>
+            <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span>
+            <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+            <span class="n">connections_set</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner</span><span class="p">)</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">connections_set</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Create an Article.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">conn</span> <span class="ow">in</span> <span class="n">connections_set</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">conn</span> <span class="o">!=</span> <span class="n">connection</span><span class="o">.</span><span class="n">connection</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_connections_thread_local</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the connections are different for each thread.</span>
+<span class="sd">        Refs #17258.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">connections_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">conn</span> <span class="ow">in</span> <span class="n">connections</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="n">connections_set</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">runner</span><span class="p">():</span>
+            <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span>
+            <span class="k">for</span> <span class="n">conn</span> <span class="ow">in</span> <span class="n">connections</span><span class="o">.</span><span class="n">all</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Retrive it from the DB</p></td><td class="code"><div class="highlight"><pre>                <span class="n">conn</span><span class="o">.</span><span class="n">allow_thread_sharing</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="n">connections_set</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">2</span><span class="p">):</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner</span><span class="p">)</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">connections_set</span><span class="p">),</span> <span class="mi">6</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Finish by closing the connections opened by the other threads (the
+connection opened in the main thread will automatically be closed on
+teardown).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">conn</span> <span class="ow">in</span> <span class="n">connections_set</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">conn</span> <span class="o">!=</span> <span class="n">connection</span><span class="p">:</span>
+                <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_pass_connection_between_threads</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that a connection can be passed from one thread to the other.</span>
+<span class="sd">        Refs #17258.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">do_thread</span><span class="p">():</span>
+            <span class="k">def</span> <span class="nf">runner</span><span class="p">(</span><span class="n">main_thread_connection</span><span class="p">):</span>
+                <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span>
+                <span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">main_thread_connection</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">models</span><span class="o">.</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s">&quot;John&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s">&quot;Doe&quot;</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">exceptions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]])</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>Allow thread sharing so the connection can be closed by the
+main thread.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">exceptions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">do_thread</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>Finish by closing the connections opened by the other threads (the
+connection opened in the main thread will automatically be closed on
+teardown).</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">exceptions</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">DatabaseError</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>Without touching allow<em>thread</em>sharing, which should be False by default.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">allow_thread_sharing</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">exceptions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">do_thread</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>Forbidden!</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">exceptions</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">DatabaseError</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>If explicitly setting allow<em>thread</em>sharing to False</p></td><td class="code"><div class="highlight"><pre>        <span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">allow_thread_sharing</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">exceptions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">do_thread</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Forbidden!</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">exceptions</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_closing_non_shared_connections</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that a connection that is not explicitly shareable cannot be</span>
+<span class="sd">        closed by another thread.</span>
+<span class="sd">        Refs #17258.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>If explicitly setting allow<em>thread</em>sharing to True</p></td><td class="code"><div class="highlight"><pre>        <span class="n">exceptions</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">def</span> <span class="nf">runner1</span><span class="p">():</span>
+            <span class="k">def</span> <span class="nf">runner2</span><span class="p">(</span><span class="n">other_thread_connection</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">other_thread_connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">exceptions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="n">t2</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner2</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]])</span>
+            <span class="n">t2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="n">t2</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner1</span><span class="p">)</span>
+        <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">t1</span><span class="o">.</span><span class="n">join</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>All good</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">exceptions</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>First, without explicitly enabling the connection for sharing.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">exceptions</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">def</span> <span class="nf">runner1</span><span class="p">():</span>
+            <span class="k">def</span> <span class="nf">runner2</span><span class="p">(</span><span class="n">other_thread_connection</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">other_thread_connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">exceptions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">e</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>The exception was raised</p></td><td class="code"><div class="highlight"><pre>            <span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">allow_thread_sharing</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="n">t2</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner2</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">connections</span><span class="p">[</span><span class="s">&#39;default&#39;</span><span class="p">]])</span>
+            <span class="n">t2</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+            <span class="n">t2</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">runner1</span><span class="p">)</span>
+        <span class="n">t1</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="n">t1</span><span class="o">.</span><span class="n">join</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Then, with explicitly enabling the connection for sharing.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">exceptions</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">BackendLoadingTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_old_style_backends_raise_useful_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;Try using django.db.backends.sqlite3 instead&quot;</span><span class="p">,</span>
+            <span class="n">load_backend</span><span class="p">,</span> <span class="s">&#39;sqlite3&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">MySQLPKZeroTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Zero as id for AutoField should raise exception in MySQL, because MySQL</span>
+<span class="sd">    does not allow zero for automatic primary key.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@skipIfDBFeature</span><span class="p">(</span><span class="s">&#39;allows_primary_key_0&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_zero_as_autoval</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
+            <span class="n">models</span><span class="o">.</span><span class="n">Square</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">square</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>Enable thread sharing</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>No exception was raised</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

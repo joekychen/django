@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › gdal › layer.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>layer.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>Needed ctypes routines</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">byref</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Other GDAL imports.</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.base</span> <span class="kn">import</span> <span class="n">GDALBase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.envelope</span> <span class="kn">import</span> <span class="n">Envelope</span><span class="p">,</span> <span class="n">OGREnvelope</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.error</span> <span class="kn">import</span> <span class="n">OGRException</span><span class="p">,</span> <span class="n">OGRIndexError</span><span class="p">,</span> <span class="n">SRSException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.feature</span> <span class="kn">import</span> <span class="n">Feature</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.field</span> <span class="kn">import</span> <span class="n">OGRFieldTypes</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.geomtype</span> <span class="kn">import</span> <span class="n">OGRGeomType</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.geometries</span> <span class="kn">import</span> <span class="n">OGRGeometry</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.srs</span> <span class="kn">import</span> <span class="n">SpatialReference</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>GDAL ctypes function prototypes.</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.prototypes</span> <span class="kn">import</span> <span class="n">ds</span> <span class="k">as</span> <span class="n">capi</span><span class="p">,</span> <span class="n">geom</span> <span class="k">as</span> <span class="n">geom_api</span><span class="p">,</span> <span class="n">srs</span> <span class="k">as</span> <span class="n">srs_api</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>For more information, see the OGR C API source code:
+ http://www.gdal.org/ogr/ogr<em>_api</em>8h.html</p>
+
+<p>The OGR<em>L</em>* routines are relevant here.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">Layer</span><span class="p">(</span><span class="n">GDALBase</span><span class="p">):</span>
+    <span class="s">&quot;A class that wraps an OGR Layer, needs to be instantiated from a DataSource object.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><h3>Python 'magic' routines</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">layer_ptr</span><span class="p">,</span> <span class="n">ds</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initializes on an OGR C pointer to the Layer and the `DataSource` object</span>
+<span class="sd">        that owns this layer.  The `DataSource` object is required so that a </span>
+<span class="sd">        reference to it is kept with this Layer.  This prevents garbage </span>
+<span class="sd">        collection of the `DataSource` while this Layer is still active.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">layer_ptr</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">OGRException</span><span class="p">(</span><span class="s">&#39;Cannot create Layer, invalid pointer given&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">layer_ptr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ds</span> <span class="o">=</span> <span class="n">ds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_layer_defn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Does the Layer support random reading?</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_random_read</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_capability</span><span class="p">(</span><span class="s">&#39;RandomRead&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="s">&quot;Gets the Feature at the specified index.&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>An integer index was given -- we cannot do a check based on the
+number of features because the beginning and ending feature IDs
+are not guaranteed to be 0 and len(layer)-1, respectively.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span> <span class="k">raise</span> <span class="n">OGRIndexError</span><span class="p">(</span><span class="s">&#39;Negative indices are not allowed on OGR Layers.&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_feature</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>A slice was given</p></td><td class="code"><div class="highlight"><pre>            <span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">,</span> <span class="n">stride</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">indices</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_feat</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_make_feature</span><span class="p">(</span><span class="n">fid</span><span class="p">)</span> <span class="k">for</span> <span class="n">fid</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">,</span> <span class="n">stride</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Integers and slices may only be used when indexing OGR Layers.&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Iterates over each Feature in the Layer.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>ResetReading() must be called before iteration is to begin.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">capi</span><span class="o">.</span><span class="n">reset_reading</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_feat</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">Feature</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_next_feature</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;The length is the number of features.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_feat</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;The string name of the layer.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+
+    <span class="k">def</span> <span class="nf">_make_feature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">feat_id</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper routine for __getitem__ that constructs a Feature from the given</span>
+<span class="sd">        Feature ID.  If the OGR Layer does not support random-access reading,</span>
+<span class="sd">        then each feature of the layer will be incremented through until the</span>
+<span class="sd">        a Feature is found matching the given feature ID.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_random_read</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>If the Layer supports random reading, return.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">Feature</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_feature</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">feat_id</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">OGRException</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Random access isn't supported, have to increment through
+each feature until the given feature ID is encountered.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">fid</span> <span class="o">==</span> <span class="n">feat_id</span><span class="p">:</span> <span class="k">return</span> <span class="n">feat</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Should have returned a Feature, raise an OGRIndexError.    </p></td><td class="code"><div class="highlight"><pre>        <span class="k">raise</span> <span class="n">OGRIndexError</span><span class="p">(</span><span class="s">&#39;Invalid feature id: </span><span class="si">%s</span><span class="s">.&#39;</span> <span class="o">%</span> <span class="n">feat_id</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><h3>Layer properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">extent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the extent (an Envelope) of this layer.&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">OGREnvelope</span><span class="p">()</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">get_extent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Envelope</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the name of this layer in the Data Source.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_fd_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">num_feat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="s">&quot;Returns the number of features in the Layer.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_feature_count</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">force</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">num_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the number of fields in the Layer.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_field_count</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">geom_type</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the geometry type (OGRGeomType) of the Layer.&quot;</span>
+        <span class="k">return</span> <span class="n">OGRGeomType</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_fd_geom_type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">srs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the Spatial Reference used in this Layer.&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ptr</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_layer_srs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">SpatialReference</span><span class="p">(</span><span class="n">srs_api</span><span class="o">.</span><span class="n">clone_srs</span><span class="p">(</span><span class="n">ptr</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">SRSException</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list of string names corresponding to each of the Fields</span>
+<span class="sd">        available in this Layer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_name</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_defn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span> 
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_fields</span><span class="p">)</span> <span class="p">]</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">field_types</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list of the types of fields in this Layer.  For example,</span>
+<span class="sd">        the list [OFTInteger, OFTReal, OFTString] would be returned for</span>
+<span class="sd">        an OGR layer that had an integer, a floating-point, and string</span>
+<span class="sd">        fields.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">OGRFieldTypes</span><span class="p">[</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_defn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">,</span> <span class="n">i</span><span class="p">))]</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_fields</span><span class="p">)]</span>
+
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">field_widths</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns a list of the maximum field widths for the features.&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_width</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_defn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_fields</span><span class="p">)]</span>
+
+    <span class="nd">@property</span> 
+    <span class="k">def</span> <span class="nf">field_precisions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the field precisions for the features.&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_precision</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_field_defn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ldefn</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_fields</span><span class="p">)]</span>
+
+    <span class="k">def</span> <span class="nf">_get_spatial_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">OGRGeometry</span><span class="p">(</span><span class="n">geom_api</span><span class="o">.</span><span class="n">clone_geom</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">get_spatial_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="n">OGRException</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_set_spatial_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">filter</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">filter</span><span class="p">,</span> <span class="n">OGRGeometry</span><span class="p">):</span>
+            <span class="n">capi</span><span class="o">.</span><span class="n">set_spatial_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="nb">filter</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">filter</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="nb">filter</span><span class="p">)</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Spatial filter list/tuple must have 4 elements.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Map c_double onto params -- if a bad type is passed in it
+will be caught here.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="n">c_double</span><span class="p">,</span> <span class="nb">filter</span><span class="p">)</span>
+            <span class="n">capi</span><span class="o">.</span><span class="n">set_spatial_filter_rect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">filter</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">capi</span><span class="o">.</span><span class="n">set_spatial_filter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Spatial filter must be either an OGRGeometry instance, a 4-tuple, or None.&#39;</span><span class="p">)</span>
+
+    <span class="n">spatial_filter</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_spatial_filter</span><span class="p">,</span> <span class="n">_set_spatial_filter</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><h3>Layer Methods</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">get_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list containing the given field name for every Feature</span>
+<span class="sd">        in the Layer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">OGRException</span><span class="p">(</span><span class="s">&#39;invalid field name: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">field_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">feat</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">get_geoms</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geos</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list containing the OGRGeometry for every Feature in</span>
+<span class="sd">        the Layer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">geos</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">GEOSGeometry</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">geom</span><span class="o">.</span><span class="n">wkb</span><span class="p">)</span> <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">feat</span><span class="o">.</span><span class="n">geom</span> <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">test_capability</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">capability</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a bool indicating whether the this Layer supports the given</span>
+<span class="sd">        capability (a string).  Valid capability strings include:</span>
+<span class="sd">          &#39;RandomRead&#39;, &#39;SequentialWrite&#39;, &#39;RandomWrite&#39;, &#39;FastSpatialFilter&#39;,</span>
+<span class="sd">          &#39;FastFeatureCount&#39;, &#39;FastGetExtent&#39;, &#39;CreateField&#39;, &#39;Transactions&#39;,</span>
+<span class="sd">          &#39;DeleteFeature&#39;, and &#39;FastSetNextByIndex&#39;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">test_capability</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">capability</span><span class="p">))</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

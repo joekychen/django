@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › staticfiles_tests › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- encoding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">codecs</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">posixpath</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span>
+
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">loader</span><span class="p">,</span> <span class="n">Context</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.cache.backends.base</span> <span class="kn">import</span> <span class="n">BaseCache</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.core.files.storage</span> <span class="kn">import</span> <span class="n">default_storage</span>
+<span class="kn">from</span> <span class="nn">django.core.management</span> <span class="kn">import</span> <span class="n">call_command</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_unicode</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="kn">import</span> <span class="n">empty</span>
+<span class="kn">from</span> <span class="nn">django.utils._os</span> <span class="kn">import</span> <span class="n">rmtree_errorhandler</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.staticfiles</span> <span class="kn">import</span> <span class="n">finders</span><span class="p">,</span> <span class="n">storage</span>
+
+<span class="n">TEST_ROOT</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">)</span>
+<span class="n">TEST_SETTINGS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;DEBUG&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+    <span class="s">&#39;MEDIA_URL&#39;</span><span class="p">:</span> <span class="s">&#39;/media/&#39;</span><span class="p">,</span>
+    <span class="s">&#39;STATIC_URL&#39;</span><span class="p">:</span> <span class="s">&#39;/static/&#39;</span><span class="p">,</span>
+    <span class="s">&#39;MEDIA_ROOT&#39;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;site_media&#39;</span><span class="p">,</span> <span class="s">&#39;media&#39;</span><span class="p">),</span>
+    <span class="s">&#39;STATIC_ROOT&#39;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;site_media&#39;</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">),</span>
+    <span class="s">&#39;STATICFILES_DIRS&#39;</span><span class="p">:</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;documents&#39;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s">&#39;prefix&#39;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;prefixed&#39;</span><span class="p">)),</span>
+    <span class="p">),</span>
+    <span class="s">&#39;STATICFILES_FINDERS&#39;</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s">&#39;django.contrib.staticfiles.finders.FileSystemFinder&#39;</span><span class="p">,</span>
+        <span class="s">&#39;django.contrib.staticfiles.finders.AppDirectoriesFinder&#39;</span><span class="p">,</span>
+        <span class="s">&#39;django.contrib.staticfiles.finders.DefaultStorageFinder&#39;</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">}</span>
+<span class="kn">from</span> <span class="nn">django.contrib.staticfiles.management.commands.collectstatic</span> <span class="kn">import</span> <span class="n">Command</span> <span class="k">as</span> <span class="n">CollectstaticCommand</span>
+
+
+<span class="k">class</span> <span class="nc">BaseStaticFilesTestCase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test case with a couple utility assertions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Clear the cached default<em>storage out, this is because when it first
+gets accessed (by some other test), it evaluates settings.MEDIA</em>ROOT,
+since we're planning on changing that we need to clear out the cache.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">default_storage</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">empty</span>
+        <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">empty</span>
+
+        <span class="n">testfiles_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;apps&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>To make sure SVN doesn't hangs itself with the non-ASCII characters
+during checkout, we actually create one file dynamically.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_nonascii_filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">testfiles_path</span><span class="p">,</span> <span class="s">&#39;fi</span><span class="se">\u015f</span><span class="s">ier.txt&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">codecs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nonascii_filepath</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">,</span> <span class="s">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;fi</span><span class="se">\u015f</span><span class="s">ier in the app dir&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>And also create the stupid hidden file to dwarf the setup.py's
+package data handling.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_hidden_filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">testfiles_path</span><span class="p">,</span> <span class="s">&#39;.hidden&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">codecs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_hidden_filepath</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">,</span> <span class="s">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;should be ignored&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_backup_filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;documents&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;backup~&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">codecs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backup_filepath</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">,</span> <span class="s">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&quot;should be ignored&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nonascii_filepath</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_hidden_filepath</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_backup_filepath</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertFileContains</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_file</span><span class="p">(</span><span class="n">smart_unicode</span><span class="p">(</span><span class="n">filepath</span><span class="p">)),</span>
+                        <span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39; not in &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">filepath</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">assertFileNotFound</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">IOError</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_file</span><span class="p">,</span> <span class="n">filepath</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">render_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="n">template</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">get_template_from_string</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">template</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">Context</span><span class="p">(</span><span class="n">kwargs</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">static_template_snippet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;{</span><span class="si">%%</span><span class="s"> load static from staticfiles </span><span class="si">%%</span><span class="s">}{</span><span class="si">%%</span><span class="s"> static &#39;</span><span class="si">%s</span><span class="s">&#39; </span><span class="si">%%</span><span class="s">}&quot;</span> <span class="o">%</span> <span class="n">path</span>
+
+    <span class="k">def</span> <span class="nf">assertStaticRenders</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">static_template_snippet</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">render_template</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">),</span> <span class="n">result</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertStaticRaises</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="nd">@override_settings</span><span class="p">(</span><span class="o">**</span><span class="n">TEST_SETTINGS</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">StaticFilesTestCase</span><span class="p">(</span><span class="n">BaseStaticFilesTestCase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">BaseCollectionTestCase</span><span class="p">(</span><span class="n">BaseStaticFilesTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests shared by all file finding features (collectstatic,</span>
+<span class="sd">    findstatic, and static serve view).</span>
+
+<span class="sd">    This relies on the asserts defined in BaseStaticFilesTestCase, but</span>
+<span class="sd">    is separated because some test cases need those asserts without</span>
+<span class="sd">    all these tests.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseCollectionTestCase</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_root</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="nb">dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;DJANGO_TEST_TEMP_DIR&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Use our own error handler that can handle .svn dirs on Windows</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">addCleanup</span><span class="p">(</span><span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span><span class="p">,</span>
+                        <span class="n">ignore_errors</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">onerror</span><span class="o">=</span><span class="n">rmtree_errorhandler</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_root</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseCollectionTestCase</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">tearDown</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">run_collectstatic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;collectstatic&#39;</span><span class="p">,</span> <span class="n">interactive</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">verbosity</span><span class="o">=</span><span class="s">&#39;0&#39;</span><span class="p">,</span>
+                     <span class="n">ignore_patterns</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;*.ignoreme&#39;</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">filepath</span><span class="p">,</span> <span class="s">&#39;filepath is empty.&#39;</span>
+        <span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span><span class="p">,</span> <span class="n">filepath</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">codecs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">filepath</span><span class="p">,</span> <span class="s">&quot;r&quot;</span><span class="p">,</span> <span class="s">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">CollectionTestCase</span><span class="p">(</span><span class="n">BaseCollectionTestCase</span><span class="p">,</span> <span class="n">StaticFilesTestCase</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">TestDefaults</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A few standard test cases.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">test_staticfiles_dirs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Can find a file in a STATICFILES_DIRS directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test.txt&#39;</span><span class="p">,</span> <span class="s">&#39;Can we find&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;prefix&#39;</span><span class="p">,</span> <span class="s">&#39;test.txt&#39;</span><span class="p">),</span> <span class="s">&#39;Prefix&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_staticfiles_dirs_subdir</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Can find a file in a subdirectory of a STATICFILES_DIRS</span>
+<span class="sd">        directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;subdir/test.txt&#39;</span><span class="p">,</span> <span class="s">&#39;Can we find&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_staticfiles_dirs_priority</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        File in STATICFILES_DIRS has priority over file in app.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/file.txt&#39;</span><span class="p">,</span> <span class="s">&#39;STATICFILES_DIRS&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_app_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Can find a file in an app static/ directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/file1.txt&#39;</span><span class="p">,</span> <span class="s">&#39;file1 in the app dir&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nonascii_filenames</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Can find a file with non-ASCII character in an app static/ directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/fişier.txt&#39;</span><span class="p">,</span> <span class="s">&#39;fişier in the app dir&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_camelcase_filenames</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Can find a file with capital letters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/camelCase.txt&#39;</span><span class="p">,</span> <span class="s">&#39;camelCase&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestFindStatic</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test ``findstatic`` management command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">_get_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;findstatic&#39;</span><span class="p">,</span> <span class="n">filepath</span><span class="p">,</span> <span class="nb">all</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">out</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">readlines</span><span class="p">()]</span>
+        <span class="n">contents</span> <span class="o">=</span> <span class="n">codecs</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+            <span class="n">smart_unicode</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()),</span> <span class="s">&quot;r&quot;</span><span class="p">,</span> <span class="s">&quot;utf-8&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">contents</span>
+
+    <span class="k">def</span> <span class="nf">test_all_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that findstatic returns all candidate files if run without --first.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="n">call_command</span><span class="p">(</span><span class="s">&#39;findstatic&#39;</span><span class="p">,</span> <span class="s">&#39;test/file.txt&#39;</span><span class="p">,</span> <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">out</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">readlines</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span>  <span class="c"># three because there is also the &quot;Found &lt;file&gt; here&quot; line</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;apps&#39;</span><span class="p">,</span> <span class="n">lines</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">TestCollection</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test ``collectstatic`` management command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">test_ignore</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that -i patterns are ignored.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileNotFound</span><span class="p">(</span><span class="s">&#39;test/test.ignoreme&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_common_ignore_patterns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Common ignore patterns (*~, .*, CVS) are ignored.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileNotFound</span><span class="p">(</span><span class="s">&#39;test/.hidden&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileNotFound</span><span class="p">(</span><span class="s">&#39;test/backup~&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileNotFound</span><span class="p">(</span><span class="s">&#39;test/CVS&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestCollectionClear</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test the ``--clear`` option of the ``collectstatic`` managemenet command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">run_collectstatic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">clear_filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span><span class="p">,</span> <span class="s">&#39;cleared.txt&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">clear_filepath</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;should be cleared&#39;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionClear</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">(</span><span class="n">clear</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cleared_not_found</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileNotFound</span><span class="p">(</span><span class="s">&#39;cleared.txt&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestCollectionExcludeNoDefaultIgnore</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test ``--exclude-dirs`` and ``--no-default-ignore`` options of the</span>
+<span class="sd">    ``collectstatic`` management command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">run_collectstatic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionExcludeNoDefaultIgnore</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">(</span>
+            <span class="n">use_default_ignore_patterns</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_common_ignore_patterns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        With --no-default-ignore, common ignore patterns (*~, .*, CVS)</span>
+<span class="sd">        are not ignored.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/.hidden&#39;</span><span class="p">,</span> <span class="s">&#39;should be ignored&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/backup~&#39;</span><span class="p">,</span> <span class="s">&#39;should be ignored&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;test/CVS&#39;</span><span class="p">,</span> <span class="s">&#39;should be ignored&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestNoFilesCreated</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_no_files_created</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure no files were create in the destination directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span><span class="p">),</span> <span class="p">[])</span>
+
+
+<span class="k">class</span> <span class="nc">TestCollectionDryRun</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestNoFilesCreated</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test ``--dry-run`` option for ``collectstatic`` management command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">run_collectstatic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionDryRun</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">(</span><span class="n">dry_run</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestCollectionFilesOverride</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test overriding duplicated files by ``collectstatic`` management command.</span>
+<span class="sd">    Check for proper handling of apps order in INSTALLED_APPS even if file modification</span>
+<span class="sd">    dates are in different order:</span>
+
+<span class="sd">        &#39;regressiontests.staticfiles_tests.apps.test&#39;,</span>
+<span class="sd">        &#39;regressiontests.staticfiles_tests.apps.no_label&#39;,</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;apps&#39;</span><span class="p">,</span> <span class="s">&#39;no_label&#39;</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">,</span> <span class="s">&#39;file2.txt&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>get modification and access times for no_label/static/file2.txt</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">orig_mtime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getmtime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_atime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getatime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>prepare duplicate of file2.txt from no<em>label app
+this file will have modification time older than no</em>label/static/file2.txt
+anyway it should be taken to STATIC<em>ROOT because 'test' app is before
+'no</em>label' app in INSTALLED_APPS</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;apps&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">,</span> <span class="s">&#39;file2.txt&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">,</span> <span class="s">&#39;w+&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;duplicate of file2.txt&#39;</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">utime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_atime</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">orig_mtime</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionFilesOverride</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>set back original modification time</p></td><td class="code"><div class="highlight"><pre>        <span class="n">os</span><span class="o">.</span><span class="n">utime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_path</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_atime</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">orig_mtime</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionFilesOverride</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">tearDown</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_ordering_override</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test if collectstatic takes files in proper order</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;file2.txt&#39;</span><span class="p">,</span> <span class="s">&#39;duplicate of file2.txt&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>run collectstatic again</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;file2.txt&#39;</span><span class="p">,</span> <span class="s">&#39;duplicate of file2.txt&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>and now change modification time of no<em>label/static/file2.txt
+test app is first in INSTALLED</em>APPS so file2.txt should remain unmodified</p></td><td class="code"><div class="highlight"><pre>        <span class="n">mtime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getmtime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">)</span>
+        <span class="n">atime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getatime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testfile_path</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">utime</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_path</span><span class="p">,</span> <span class="p">(</span><span class="n">mtime</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">atime</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>run collectstatic again</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;file2.txt&#39;</span><span class="p">,</span> <span class="s">&#39;duplicate of file2.txt&#39;</span><span class="p">)</span>
+
+
+<span class="nd">@override_settings</span><span class="p">(</span>
+    <span class="n">STATICFILES_STORAGE</span><span class="o">=</span><span class="s">&#39;regressiontests.staticfiles_tests.storage.DummyStorage&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="k">class</span> <span class="nc">TestCollectionNonLocalStorage</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestNoFilesCreated</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for #15035</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>we set DEBUG to False here since the template tag wouldn't work otherwise</p></td><td class="code"><div class="highlight"><pre><span class="nd">@override_settings</span><span class="p">(</span><span class="o">**</span><span class="nb">dict</span><span class="p">(</span><span class="n">TEST_SETTINGS</span><span class="p">,</span>
+    <span class="n">STATICFILES_STORAGE</span><span class="o">=</span><span class="s">&#39;django.contrib.staticfiles.storage.CachedStaticFilesStorage&#39;</span><span class="p">,</span>
+    <span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+<span class="p">))</span>
+<span class="k">class</span> <span class="nc">TestCollectionCachedStorage</span><span class="p">(</span><span class="n">BaseCollectionTestCase</span><span class="p">,</span>
+        <span class="n">BaseStaticFilesTestCase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for the Cache busting storage</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">cached_file_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="n">fullpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_template</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">static_template_snippet</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">fullpath</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_return</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the CachedStaticFilesStorage backend.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span>
+                                <span class="s">&quot;does/not/exist.png&quot;</span><span class="p">,</span>
+                                <span class="s">&quot;/static/does/not/exist.png&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;test/file.txt&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/test/file.dad0999e4f8f.txt&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;cached/styles.css&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/cached/styles.93b1147e8552.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;path/&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/path/&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;path/?query&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/path/?query&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_simple_content</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/styles.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/styles.93b1147e8552.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;cached/other.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;other.d41d8cd98f00.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_path_with_querystring</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/styles.css?spam=eggs&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span>
+                         <span class="s">&quot;cached/styles.93b1147e8552.css?spam=eggs&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+                <span class="s">&quot;cached/styles.93b1147e8552.css&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;cached/other.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;other.d41d8cd98f00.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_path_with_fragment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/styles.css#eggs&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/styles.93b1147e8552.css#eggs&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span>
+                <span class="s">&quot;cached/styles.93b1147e8552.css&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;cached/other.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;other.d41d8cd98f00.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_path_with_querystring_and_fragment</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/css/fragments.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/css/fragments.75433540b096.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;fonts/font.a4b0478549d0.eot?#iefix&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;fonts/font.b8d603e42714.svg#webfontIyfZbseF&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;data:font/woff;charset=utf-8;base64,d09GRgABAAAAADJoAA0AAAAAR2QAAQAAAAAAAAAAAAA&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;#default#VML&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_absolute</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/absolute.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/absolute.23f087ad823a.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;/static/cached/styles.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;/static/cached/styles.93b1147e8552.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;/static/cached/img/relative.acae32e4532b.png&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_denorm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/denorm.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/denorm.c5bd139ad821.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;..//cached///styles.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;../cached/styles.93b1147e8552.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;url(img/relative.png )&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;url(&quot;img/relative.acae32e4532b.png&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_relative</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/relative.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/relative.2217ea7273c2.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;../cached/styles.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;@import &quot;styles.css&quot;&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;url(img/relative.png)&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;url(&quot;img/relative.acae32e4532b.png&quot;)&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;../cached/styles.93b1147e8552.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_deep_relative</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/css/window.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/css/window.9db38d5169f3.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;url(img/window.png)&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;url(&quot;img/window.acae32e4532b.png&quot;)&#39;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/url.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/url.615e21601e4b.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">b</span><span class="s">&quot;https://&quot;</span><span class="p">,</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_cache_invalidation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s">&quot;cached/styles.css&quot;</span>
+        <span class="n">hashed_name</span> <span class="o">=</span> <span class="s">&quot;cached/styles.93b1147e8552.css&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>check if the cache is filled correctly as expected</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cache_key</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache_key</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">cached_name</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">cached_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>clearing the cache to make sure we re-set it correctly in the url method</p></td><td class="code"><div class="highlight"><pre>        <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="n">cached_name</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cached_name</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="n">hashed_name</span><span class="p">)</span>
+        <span class="n">cached_name</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cached_name</span><span class="p">,</span> <span class="n">hashed_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_post_processing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test that post_processing behaves correctly.</span>
+
+<span class="sd">        Files that are alterable should always be post-processed; files that</span>
+<span class="sd">        aren&#39;t should be skipped.</span>
+
+<span class="sd">        collectstatic has already been called once in setUp() for this testcase,</span>
+<span class="sd">        therefore we check by verifying behavior on a second run.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">collectstatic_args</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;interactive&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;verbosity&#39;</span><span class="p">:</span> <span class="s">&#39;0&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;clear&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;dry_run&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;post_process&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+            <span class="s">&#39;use_default_ignore_patterns&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+            <span class="s">&#39;ignore_patterns&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;*.ignoreme&#39;</span><span class="p">],</span>
+        <span class="p">}</span>
+
+        <span class="n">collectstatic_cmd</span> <span class="o">=</span> <span class="n">CollectstaticCommand</span><span class="p">()</span>
+        <span class="n">collectstatic_cmd</span><span class="o">.</span><span class="n">set_options</span><span class="p">(</span><span class="o">**</span><span class="n">collectstatic_args</span><span class="p">)</span>
+        <span class="n">stats</span> <span class="o">=</span> <span class="n">collectstatic_cmd</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;cached&#39;</span><span class="p">,</span> <span class="s">&#39;css&#39;</span><span class="p">,</span> <span class="s">&#39;window.css&#39;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">stats</span><span class="p">[</span><span class="s">&#39;post_processed&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;cached&#39;</span><span class="p">,</span> <span class="s">&#39;css&#39;</span><span class="p">,</span> <span class="s">&#39;img&#39;</span><span class="p">,</span> <span class="s">&#39;window.png&#39;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">stats</span><span class="p">[</span><span class="s">&#39;unmodified&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_cache_key_memcache_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle cache key creation correctly, see #17861.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;/some crazy/long filename/ with spaces Here and ?#%#$/other/stuff/some crazy/long filename/ with spaces Here and ?#%#$/other/stuff/some crazy/long filename/ with spaces Here and ?#%#$/other/stuff/some crazy/long filename/ with spaces Here and ?#%#$/other/stuff/some crazy/long filename/ with spaces Here and ?#%#$/other/stuff/some crazy/&quot;</span> <span class="o">+</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">22</span><span class="p">)</span> <span class="o">+</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">180</span><span class="p">)</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">cache_key</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">cache_validator</span> <span class="o">=</span> <span class="n">BaseCache</span><span class="p">({})</span>
+        <span class="n">cache_validator</span><span class="o">.</span><span class="n">validate_key</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="s">&#39;staticfiles:e95bbc36387084582df2a70750d7b351&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>we set DEBUG to False here since the template tag wouldn't work otherwise</p></td><td class="code"><div class="highlight"><pre><span class="nd">@override_settings</span><span class="p">(</span><span class="o">**</span><span class="nb">dict</span><span class="p">(</span><span class="n">TEST_SETTINGS</span><span class="p">,</span>
+    <span class="n">STATICFILES_STORAGE</span><span class="o">=</span><span class="s">&#39;regressiontests.staticfiles_tests.storage.SimpleCachedStaticFilesStorage&#39;</span><span class="p">,</span>
+    <span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+<span class="p">))</span>
+<span class="k">class</span> <span class="nc">TestCollectionSimpleCachedStorage</span><span class="p">(</span><span class="n">BaseCollectionTestCase</span><span class="p">,</span>
+        <span class="n">BaseStaticFilesTestCase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for the Cache busting storage</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">cached_file_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="n">fullpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_template</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">static_template_snippet</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">fullpath</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_return</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the CachedStaticFilesStorage backend.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span>
+                                <span class="s">&quot;does/not/exist.png&quot;</span><span class="p">,</span>
+                                <span class="s">&quot;/static/does/not/exist.png&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;test/file.txt&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/test/file.deploy12345.txt&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;cached/styles.css&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/cached/styles.deploy12345.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;path/&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/path/&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;path/?query&quot;</span><span class="p">,</span>
+                                 <span class="s">&quot;/static/path/?query&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag_simple_content</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">relpath</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cached_file_path</span><span class="p">(</span><span class="s">&quot;cached/styles.css&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relpath</span><span class="p">,</span> <span class="s">&quot;cached/styles.deploy12345.css&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">storage</span><span class="o">.</span><span class="n">staticfiles_storage</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">relpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">relfile</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">relfile</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&quot;cached/other.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&quot;other.deploy12345.css&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">!=</span> <span class="s">&#39;win32&#39;</span><span class="p">:</span>
+
+    <span class="k">class</span> <span class="nc">TestCollectionLinks</span><span class="p">(</span><span class="n">CollectionTestCase</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test ``--link`` option for ``collectstatic`` management command.</span>
+
+<span class="sd">        Note that by inheriting ``TestDefaults`` we repeat all</span>
+<span class="sd">        the standard file resolving tests here, to make sure using</span>
+<span class="sd">        ``--link`` does not change the file-selection semantics.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">run_collectstatic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">TestCollectionLinks</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">run_collectstatic</span><span class="p">(</span><span class="n">link</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">test_links_created</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            With ``--link``, symbolic links are created.</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">islink</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_ROOT</span><span class="p">,</span> <span class="s">&#39;test.txt&#39;</span><span class="p">)))</span>
+
+
+<span class="k">class</span> <span class="nc">TestServeStatic</span><span class="p">(</span><span class="n">StaticFilesTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test static asset serving view.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;regressiontests.staticfiles_tests.urls.default&#39;</span>
+
+    <span class="k">def</span> <span class="nf">_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">posixpath</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span><span class="p">,</span> <span class="n">filepath</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">assertFileContains</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_response</span><span class="p">(</span><span class="n">filepath</span><span class="p">),</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertFileNotFound</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_response</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">404</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestServeDisabled</span><span class="p">(</span><span class="n">TestServeStatic</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test serving static files disabled when DEBUG is False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestServeDisabled</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">test_disabled_serving</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span> <span class="s">&#39;The staticfiles view &#39;</span>
+            <span class="s">&#39;can only be used in debug mode &#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_response</span><span class="p">,</span> <span class="s">&#39;test.txt&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestServeStaticWithDefaultURL</span><span class="p">(</span><span class="n">TestServeStatic</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test static asset serving view with manually configured URLconf.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">TestServeStaticWithURLHelper</span><span class="p">(</span><span class="n">TestServeStatic</span><span class="p">,</span> <span class="n">TestDefaults</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test static asset serving view with staticfiles_urlpatterns helper.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;regressiontests.staticfiles_tests.urls.helper&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">TestServeAdminMedia</span><span class="p">(</span><span class="n">TestServeStatic</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test serving media from django.contrib.admin.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filepath</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">posixpath</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">STATIC_URL</span><span class="p">,</span> <span class="s">&#39;admin/&#39;</span><span class="p">,</span> <span class="n">filepath</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_serve_admin_media</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFileContains</span><span class="p">(</span><span class="s">&#39;css/base.css&#39;</span><span class="p">,</span> <span class="s">&#39;body&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">FinderTestCase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base finder test mixin.</span>
+
+<span class="sd">    On Windows, sometimes the case of the path we ask the finders for and the</span>
+<span class="sd">    path(s) they find can differ. Compare them using os.path.normcase() to</span>
+<span class="sd">    avoid false negatives.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">test_find_first</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">src</span><span class="p">,</span> <span class="n">dst</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_first</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finder</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">found</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">dst</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_find_all</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">src</span><span class="p">,</span> <span class="n">dst</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_all</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finder</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="nb">all</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">found</span><span class="p">]</span>
+        <span class="n">dst</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">dst</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">found</span><span class="p">,</span> <span class="n">dst</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestFileSystemFinder</span><span class="p">(</span><span class="n">StaticFilesTestCase</span><span class="p">,</span> <span class="n">FinderTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test FileSystemFinder.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestFileSystemFinder</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">finder</span> <span class="o">=</span> <span class="n">finders</span><span class="o">.</span><span class="n">FileSystemFinder</span><span class="p">()</span>
+        <span class="n">test_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;project&#39;</span><span class="p">,</span> <span class="s">&#39;documents&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file.txt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_first</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file.txt&#39;</span><span class="p">),</span> <span class="n">test_file_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_all</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file.txt&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">test_file_path</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">TestAppDirectoriesFinder</span><span class="p">(</span><span class="n">StaticFilesTestCase</span><span class="p">,</span> <span class="n">FinderTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test AppDirectoriesFinder.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestAppDirectoriesFinder</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">finder</span> <span class="o">=</span> <span class="n">finders</span><span class="o">.</span><span class="n">AppDirectoriesFinder</span><span class="p">()</span>
+        <span class="n">test_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">TEST_ROOT</span><span class="p">,</span> <span class="s">&#39;apps&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;static&#39;</span><span class="p">,</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file1.txt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_first</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file1.txt&#39;</span><span class="p">),</span> <span class="n">test_file_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_all</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;file1.txt&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">test_file_path</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">TestDefaultStorageFinder</span><span class="p">(</span><span class="n">StaticFilesTestCase</span><span class="p">,</span> <span class="n">FinderTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test DefaultStorageFinder.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TestDefaultStorageFinder</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">finder</span> <span class="o">=</span> <span class="n">finders</span><span class="o">.</span><span class="n">DefaultStorageFinder</span><span class="p">(</span>
+            <span class="n">storage</span><span class="o">=</span><span class="n">storage</span><span class="o">.</span><span class="n">StaticFilesStorage</span><span class="p">(</span><span class="n">location</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">MEDIA_ROOT</span><span class="p">))</span>
+        <span class="n">test_file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">MEDIA_ROOT</span><span class="p">,</span> <span class="s">&#39;media-file.txt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_first</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;media-file.txt&#39;</span><span class="p">,</span> <span class="n">test_file_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">find_all</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;media-file.txt&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">test_file_path</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">TestMiscFinder</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A few misc finder tests.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">default_storage</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">empty</span>
+
+    <span class="k">def</span> <span class="nf">test_get_finder</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="n">finders</span><span class="o">.</span><span class="n">get_finder</span><span class="p">(</span>
+            <span class="s">&#39;django.contrib.staticfiles.finders.FileSystemFinder&#39;</span><span class="p">),</span>
+            <span class="n">finders</span><span class="o">.</span><span class="n">FileSystemFinder</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_finder_bad_classname</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span> <span class="n">finders</span><span class="o">.</span><span class="n">get_finder</span><span class="p">,</span>
+                          <span class="s">&#39;django.contrib.staticfiles.finders.FooBarFinder&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_finder_bad_module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="n">finders</span><span class="o">.</span><span class="n">get_finder</span><span class="p">,</span> <span class="s">&#39;foo.bar.FooBarFinder&#39;</span><span class="p">)</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span><span class="n">STATICFILES_DIRS</span><span class="o">=</span><span class="s">&#39;a string&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_non_tuple_raises_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        We can&#39;t determine if STATICFILES_DIRS is set correctly just by</span>
+<span class="sd">        looking at the type, but we can determine if it&#39;s definitely wrong.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span> <span class="n">finders</span><span class="o">.</span><span class="n">FileSystemFinder</span><span class="p">)</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span><span class="n">MEDIA_ROOT</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_location_empty</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span> <span class="n">finders</span><span class="o">.</span><span class="n">DefaultStorageFinder</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestTemplateTag</span><span class="p">(</span><span class="n">StaticFilesTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_template_tag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;does/not/exist.png&quot;</span><span class="p">,</span>
+                                   <span class="s">&quot;/static/does/not/exist.png&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertStaticRenders</span><span class="p">(</span><span class="s">&quot;testfile.txt&quot;</span><span class="p">,</span> <span class="s">&quot;/static/testfile.txt&quot;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

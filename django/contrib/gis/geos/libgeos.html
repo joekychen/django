@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › libgeos.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>libgeos.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd"> This module houses the ctypes initialization procedures, as well</span>
+<span class="sd"> as the notice and error handler function callbacks (get called</span>
+<span class="sd"> when an error occurs in GEOS).</span>
+
+<span class="sd"> This module also houses GEOS Pointer utilities, including</span>
+<span class="sd"> get_pointer_arr(), and GEOM_PTR.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">Structure</span><span class="p">,</span> <span class="n">CDLL</span><span class="p">,</span> <span class="n">CFUNCTYPE</span><span class="p">,</span> <span class="n">POINTER</span>
+<span class="kn">from</span> <span class="nn">ctypes.util</span> <span class="kn">import</span> <span class="n">find_library</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.error</span> <span class="kn">import</span> <span class="n">GEOSException</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Custom library path set?</p></td><td class="code"><div class="highlight"><pre><span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+    <span class="n">lib_path</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">GEOS_LIBRARY_PATH</span>
+<span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">EnvironmentError</span><span class="p">,</span> <span class="ne">ImportError</span><span class="p">):</span>
+    <span class="n">lib_path</span> <span class="o">=</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Setting the appropriate names for the GEOS-C library.</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="n">lib_path</span><span class="p">:</span>
+    <span class="n">lib_names</span> <span class="o">=</span> <span class="bp">None</span>
+<span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&#39;nt&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Windows NT libraries</p></td><td class="code"><div class="highlight"><pre>    <span class="n">lib_names</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;geos_c&#39;</span><span class="p">,</span> <span class="s">&#39;libgeos_c-1&#39;</span><span class="p">]</span>
+<span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&#39;posix&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>*NIX libraries</p></td><td class="code"><div class="highlight"><pre>    <span class="n">lib_names</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;geos_c&#39;</span><span class="p">,</span> <span class="s">&#39;GEOS&#39;</span><span class="p">]</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s">&#39;Unsupported OS &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Using the ctypes <code>find_library</code> utility to find the path to the GEOS
+shared library.  This is better than manually specifiying each library name
+and extension (e.g., libgeos_c.[so|so.1|dylib].).</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="n">lib_names</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">lib_name</span> <span class="ow">in</span> <span class="n">lib_names</span><span class="p">:</span>
+        <span class="n">lib_path</span> <span class="o">=</span> <span class="n">find_library</span><span class="p">(</span><span class="n">lib_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">lib_path</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> <span class="k">break</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>No GEOS library could be found.</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="n">lib_path</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s">&#39;Could not find the GEOS library (tried &quot;</span><span class="si">%s</span><span class="s">&quot;). &#39;</span>
+                        <span class="s">&#39;Try setting GEOS_LIBRARY_PATH in your settings.&#39;</span> <span class="o">%</span>
+                        <span class="s">&#39;&quot;, &quot;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lib_names</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Getting the GEOS C library.  The C interface (CDLL) is used for
+both *NIX and Windows.
+See the GEOS C API source code for more details on the library function calls:
+ http://geos.refractions.net/ro/doxygen<em>docs/html/geos</em><em>c</em>8h-source.html</p></td><td class="code"><div class="highlight"><pre><span class="n">lgeos</span> <span class="o">=</span> <span class="n">CDLL</span><span class="p">(</span><span class="n">lib_path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>The notice and error handler C function callback definitions.
+Supposed to mimic the GEOS message handler (C below):
+ typedef void (*GEOSMessageHandler)(const char *fmt, ...);</p></td><td class="code"><div class="highlight"><pre><span class="n">NOTICEFUNC</span> <span class="o">=</span> <span class="n">CFUNCTYPE</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">notice_h</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">lst</span><span class="p">,</span> <span class="n">output_h</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">warn_msg</span> <span class="o">=</span> <span class="n">fmt</span> <span class="o">%</span> <span class="n">lst</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="n">warn_msg</span> <span class="o">=</span> <span class="n">fmt</span>
+    <span class="n">output_h</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;GEOS_NOTICE: </span><span class="si">%s</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">warn_msg</span><span class="p">)</span>
+<span class="n">notice_h</span> <span class="o">=</span> <span class="n">NOTICEFUNC</span><span class="p">(</span><span class="n">notice_h</span><span class="p">)</span>
+
+<span class="n">ERRORFUNC</span> <span class="o">=</span> <span class="n">CFUNCTYPE</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">error_h</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">lst</span><span class="p">,</span> <span class="n">output_h</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">err_msg</span> <span class="o">=</span> <span class="n">fmt</span> <span class="o">%</span> <span class="n">lst</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="n">err_msg</span> <span class="o">=</span> <span class="n">fmt</span>
+    <span class="n">output_h</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;GEOS_ERROR: </span><span class="si">%s</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">err_msg</span><span class="p">)</span>
+<span class="n">error_h</span> <span class="o">=</span> <span class="n">ERRORFUNC</span><span class="p">(</span><span class="n">error_h</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><h3>GEOS Geometry C data structures, and utility functions.</h3></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Opaque GEOS geometry structures, used for GEOM<em>PTR and CS</em>PTR</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">GEOSGeom_t</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">GEOSPrepGeom_t</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">GEOSCoordSeq_t</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span>
+<span class="k">class</span> <span class="nc">GEOSContextHandle_t</span><span class="p">(</span><span class="n">Structure</span><span class="p">):</span> <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Pointers to opaque GEOS geometry structures.</p></td><td class="code"><div class="highlight"><pre><span class="n">GEOM_PTR</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">GEOSGeom_t</span><span class="p">)</span>
+<span class="n">PREPGEOM_PTR</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">GEOSPrepGeom_t</span><span class="p">)</span>
+<span class="n">CS_PTR</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">GEOSCoordSeq_t</span><span class="p">)</span>
+<span class="n">CONTEXT_PTR</span>  <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">GEOSContextHandle_t</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Used specifically by the GEOSGeom<em>createPolygon and GEOSGeom</em>createCollection
+ GEOS routines</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">get_pointer_arr</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="s">&quot;Gets a ctypes pointer array (of length `n`) for GEOSGeom_t opaque pointer.&quot;</span>
+    <span class="n">GeomArr</span> <span class="o">=</span> <span class="n">GEOM_PTR</span> <span class="o">*</span> <span class="n">n</span>
+    <span class="k">return</span> <span class="n">GeomArr</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Returns the string version of the GEOS library. Have to set the restype
+explicitly to c<em>char</em>p to ensure compatibility accross 32 and 64-bit platforms.</p></td><td class="code"><div class="highlight"><pre><span class="n">geos_version</span> <span class="o">=</span> <span class="n">lgeos</span><span class="o">.</span><span class="n">GEOSversion</span>
+<span class="n">geos_version</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="bp">None</span>
+<span class="n">geos_version</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">c_char_p</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Regular expression should be able to parse version strings such as
+'3.0.0rc4-CAPI-1.3.3', '3.0.0-CAPI-1.4.1' or '3.4.0dev-CAPI-1.8.0'</p></td><td class="code"><div class="highlight"><pre><span class="n">version_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^(?P&lt;version&gt;(?P&lt;major&gt;\d+)\.(?P&lt;minor&gt;\d+)\.(?P&lt;subminor&gt;\d+))((rc(?P&lt;release_candidate&gt;\d+))|dev)?-CAPI-(?P&lt;capi_version&gt;\d+\.\d+\.\d+)$&#39;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">geos_version_info</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a dictionary containing the various version metadata parsed from</span>
+<span class="sd">    the GEOS version string, including the version number, whether the version</span>
+<span class="sd">    is a release candidate (and what number release candidate), and the C API</span>
+<span class="sd">    version.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ver</span> <span class="o">=</span> <span class="n">geos_version</span><span class="p">()</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">version_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span> <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Could not parse version info string &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">ver</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">((</span><span class="n">key</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="n">key</span><span class="p">))</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;version&#39;</span><span class="p">,</span> <span class="s">&#39;release_candidate&#39;</span><span class="p">,</span> <span class="s">&#39;capi_version&#39;</span><span class="p">,</span> <span class="s">&#39;major&#39;</span><span class="p">,</span> <span class="s">&#39;minor&#39;</span><span class="p">,</span> <span class="s">&#39;subminor&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Version numbers and whether or not prepared geometry support is available.</p></td><td class="code"><div class="highlight"><pre><span class="n">_verinfo</span> <span class="o">=</span> <span class="n">geos_version_info</span><span class="p">()</span>
+<span class="n">GEOS_MAJOR_VERSION</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">_verinfo</span><span class="p">[</span><span class="s">&#39;major&#39;</span><span class="p">])</span>
+<span class="n">GEOS_MINOR_VERSION</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">_verinfo</span><span class="p">[</span><span class="s">&#39;minor&#39;</span><span class="p">])</span>
+<span class="n">GEOS_SUBMINOR_VERSION</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">_verinfo</span><span class="p">[</span><span class="s">&#39;subminor&#39;</span><span class="p">])</span>
+<span class="k">del</span> <span class="n">_verinfo</span>
+<span class="n">GEOS_VERSION</span> <span class="o">=</span> <span class="p">(</span><span class="n">GEOS_MAJOR_VERSION</span><span class="p">,</span> <span class="n">GEOS_MINOR_VERSION</span><span class="p">,</span> <span class="n">GEOS_SUBMINOR_VERSION</span><span class="p">)</span>
+<span class="n">GEOS_PREPARE</span> <span class="o">=</span> <span class="n">GEOS_VERSION</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">GEOS_PREPARE</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Here we set up the prototypes for the initGEOS<em>r and finishGEOS</em>r
+routines.  These functions aren't actually called until they are
+attached to a GEOS context handle -- this actually occurs in
+geos/prototypes/threadsafe.py.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">lgeos</span><span class="o">.</span><span class="n">initGEOS_r</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">CONTEXT_PTR</span>
+    <span class="n">lgeos</span><span class="o">.</span><span class="n">finishGEOS_r</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">CONTEXT_PTR</span><span class="p">]</span>
+<span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>When thread-safety isn't available, the initGEOS routine must be called
+first.  This function takes the notice and error functions, defined
+as Python callbacks above, as parameters. Here is the C code that is
+wrapped:
+ extern void GEOS<em>DLL initGEOS(GEOSMessageHandler notice</em>function, GEOSMessageHandler error_function);</p></td><td class="code"><div class="highlight"><pre>    <span class="n">lgeos</span><span class="o">.</span><span class="n">initGEOS</span><span class="p">(</span><span class="n">notice_h</span><span class="p">,</span> <span class="n">error_h</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Calling finishGEOS() upon exit of the interpreter.</p></td><td class="code"><div class="highlight"><pre>    <span class="kn">import</span> <span class="nn">atexit</span>
+    <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">lgeos</span><span class="o">.</span><span class="n">finishGEOS</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

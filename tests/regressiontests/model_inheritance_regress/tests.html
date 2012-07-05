@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › model_inheritance_regress › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Regression tests for Model inheritance behavior.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">from</span> <span class="nn">operator</span> <span class="kn">import</span> <span class="n">attrgetter</span>
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Place</span><span class="p">,</span> <span class="n">Restaurant</span><span class="p">,</span> <span class="n">ItalianRestaurant</span><span class="p">,</span> <span class="n">ParkingLot</span><span class="p">,</span>
+    <span class="n">ParkingLot2</span><span class="p">,</span> <span class="n">ParkingLot3</span><span class="p">,</span> <span class="n">Supplier</span><span class="p">,</span> <span class="n">Wholesaler</span><span class="p">,</span> <span class="n">Child</span><span class="p">,</span> <span class="n">SelfRefParent</span><span class="p">,</span>
+    <span class="n">SelfRefChild</span><span class="p">,</span> <span class="n">ArticleWithAuthor</span><span class="p">,</span> <span class="n">M2MChild</span><span class="p">,</span> <span class="n">QualityControl</span><span class="p">,</span> <span class="n">DerivedM</span><span class="p">,</span>
+    <span class="n">Person</span><span class="p">,</span> <span class="n">BirthdayParty</span><span class="p">,</span> <span class="n">BachelorParty</span><span class="p">,</span> <span class="n">MessyBachelorParty</span><span class="p">,</span>
+    <span class="n">InternalCertificationAudit</span><span class="p">,</span> <span class="n">BusStation</span><span class="p">,</span> <span class="n">TrainStation</span><span class="p">,</span> <span class="n">User</span><span class="p">,</span> <span class="n">Profile</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ModelInheritanceTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_model_inheritance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Regression for #7350, #7202
+Check that when you create a Parent object with a specific reference
+to an existent child instance, saving the Parent doesn't duplicate
+the child. This behavior is only activated during a raw save - it
+is mostly relevant to deserialization, but any sort of CORBA style
+'narrow()' API would require a similar approach.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Create a child-parent-grandparent chain</p></td><td class="code"><div class="highlight"><pre>        <span class="n">place1</span> <span class="o">=</span> <span class="n">Place</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&quot;Guido&#39;s House of Pasta&quot;</span><span class="p">,</span>
+            <span class="n">address</span><span class="o">=</span><span class="s">&#39;944 W. Fullerton&#39;</span><span class="p">)</span>
+        <span class="n">place1</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">restaurant</span> <span class="o">=</span> <span class="n">Restaurant</span><span class="p">(</span>
+            <span class="n">place_ptr</span><span class="o">=</span><span class="n">place1</span><span class="p">,</span>
+            <span class="n">serves_hot_dogs</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">serves_pizza</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">italian_restaurant</span> <span class="o">=</span> <span class="n">ItalianRestaurant</span><span class="p">(</span>
+            <span class="n">restaurant_ptr</span><span class="o">=</span><span class="n">restaurant</span><span class="p">,</span>
+            <span class="n">serves_gnocchi</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Create a child-parent chain with an explicit parent link</p></td><td class="code"><div class="highlight"><pre>        <span class="n">place2</span> <span class="o">=</span> <span class="n">Place</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Main St&#39;</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="s">&#39;111 Main St&#39;</span><span class="p">)</span>
+        <span class="n">place2</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">park</span> <span class="o">=</span> <span class="n">ParkingLot</span><span class="p">(</span><span class="n">parent</span><span class="o">=</span><span class="n">place2</span><span class="p">,</span> <span class="n">capacity</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+        <span class="n">park</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Check that no extra parent objects have been created.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">places</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Place</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">places</span><span class="p">,</span> <span class="p">[</span><span class="n">place1</span><span class="p">,</span> <span class="n">place2</span><span class="p">])</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Restaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&quot;Guido&#39;s House of Pasta&quot;</span><span class="p">,</span>
+            <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">:</span> <span class="bp">True</span>
+        <span class="p">}])</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span>
+            <span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">,</span><span class="s">&#39;serves_gnocchi&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&quot;Guido&#39;s House of Pasta&quot;</span><span class="p">,</span>
+            <span class="s">&#39;serves_gnocchi&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+            <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+        <span class="p">}])</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ParkingLot</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;capacity&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;capacity&#39;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Main St&#39;</span><span class="p">,</span>
+        <span class="p">}])</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>You can also update objects when using a raw save.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">place1</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;Guido&#39;s All New House of Pasta&quot;</span>
+        <span class="n">place1</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">restaurant</span><span class="o">.</span><span class="n">serves_hot_dogs</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">serves_gnocchi</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">place2</span><span class="o">.</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Derelict lot&#39;</span>
+        <span class="n">place2</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">park</span><span class="o">.</span><span class="n">capacity</span> <span class="o">=</span> <span class="mi">50</span>
+        <span class="n">park</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>No extra parent objects after an update, either.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">places</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Place</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">places</span><span class="p">,</span> <span class="p">[</span><span class="n">place2</span><span class="p">,</span> <span class="n">place1</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">places</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;Derelict lot&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">places</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&quot;Guido&#39;s All New House of Pasta&quot;</span><span class="p">)</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Restaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&quot;Guido&#39;s All New House of Pasta&quot;</span><span class="p">,</span>
+            <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+        <span class="p">}])</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span>
+            <span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">,</span> <span class="s">&#39;serves_gnocchi&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&quot;Guido&#39;s All New House of Pasta&quot;</span><span class="p">,</span>
+            <span class="s">&#39;serves_gnocchi&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+        <span class="p">}])</span>
+
+        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ParkingLot</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;capacity&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;capacity&#39;</span><span class="p">:</span> <span class="mi">50</span><span class="p">,</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Derelict lot&#39;</span><span class="p">,</span>
+        <span class="p">}])</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If you try to raw_save a parent attribute onto a child object,
+the attribute will be ignored.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;Lorenzo&#39;s Pasta Hut&quot;</span>
+        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Note that the name has not changed
+- name is an attribute of Place, not ItalianRestaurant</p></td><td class="code"><div class="highlight"><pre>        <span class="n">dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span>
+            <span class="s">&#39;name&#39;</span><span class="p">,</span><span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">,</span><span class="s">&#39;serves_gnocchi&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dicts</span><span class="p">,</span> <span class="p">[{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&quot;Guido&#39;s All New House of Pasta&quot;</span><span class="p">,</span>
+            <span class="s">&#39;serves_gnocchi&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+            <span class="s">&#39;serves_hot_dogs&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+        <span class="p">}])</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_7105</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Regressions tests for #7105: dates() queries should be able to use
+fields from the parent model as easily as the child.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">obj</span> <span class="o">=</span> <span class="n">Child</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;child&#39;</span><span class="p">,</span>
+            <span class="n">created</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">26</span><span class="p">,</span> <span class="mi">17</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">dates</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Child</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">dates</span><span class="p">(</span><span class="s">&#39;created&#39;</span><span class="p">,</span> <span class="s">&#39;month&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">dates</span><span class="p">,</span> <span class="p">[</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_7276</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Regression test for #7276: calling delete() on a model with
+multi-table inheritance should delete the associated rows from any
+ancestor tables, as well as any descendent objects.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">place1</span> <span class="o">=</span> <span class="n">Place</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&quot;Guido&#39;s House of Pasta&quot;</span><span class="p">,</span>
+            <span class="n">address</span><span class="o">=</span><span class="s">&#39;944 W. Fullerton&#39;</span><span class="p">)</span>
+        <span class="n">place1</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">restaurant</span> <span class="o">=</span> <span class="n">Restaurant</span><span class="p">(</span>
+            <span class="n">place_ptr</span><span class="o">=</span><span class="n">place1</span><span class="p">,</span>
+            <span class="n">serves_hot_dogs</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">serves_pizza</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">italian_restaurant</span> <span class="o">=</span> <span class="n">ItalianRestaurant</span><span class="p">(</span>
+            <span class="n">restaurant_ptr</span><span class="o">=</span><span class="n">restaurant</span><span class="p">,</span>
+            <span class="n">serves_gnocchi</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">italian_restaurant</span><span class="o">.</span><span class="n">save_base</span><span class="p">(</span><span class="n">raw</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="n">ident</span> <span class="o">=</span> <span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Place</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">ident</span><span class="p">),</span> <span class="n">place1</span><span class="p">)</span>
+        <span class="n">xx</span> <span class="o">=</span> <span class="n">Restaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;a&#39;</span><span class="p">,</span>
+            <span class="n">address</span><span class="o">=</span><span class="s">&#39;xx&#39;</span><span class="p">,</span>
+            <span class="n">serves_hot_dogs</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">serves_pizza</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>This should delete both Restuarants, plus the related places, plus
+the ItalianRestaurant.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">Restaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="n">Place</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">Place</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">pk</span><span class="o">=</span><span class="n">ident</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">ItalianRestaurant</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">pk</span><span class="o">=</span><span class="n">ident</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_6755</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #6755</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">Restaurant</span><span class="p">(</span><span class="n">serves_pizza</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">place_ptr_id</span><span class="p">)</span>
+        <span class="n">orig_id</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">id</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">Restaurant</span><span class="p">(</span><span class="n">place_ptr_id</span><span class="o">=</span><span class="n">orig_id</span><span class="p">,</span> <span class="n">serves_pizza</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">r</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">orig_id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">place_ptr_id</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_7488</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Regression test for #7488. This looks a little crazy, but it's the
+equivalent of what the admin interface has to do for the edit-inline
+case.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">suppliers</span> <span class="o">=</span> <span class="n">Supplier</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">restaurant</span><span class="o">=</span><span class="n">Restaurant</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;xx&#39;</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="s">&#39;yy&#39;</span><span class="p">))</span>
+        <span class="n">suppliers</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">suppliers</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">suppliers</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_11764</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #11764</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">wholesalers</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Wholesaler</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">select_related</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">wholesalers</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_issue_7853</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #7853</span>
+<span class="sd">        If the parent class has a self-referential link, make sure that any</span>
+<span class="sd">        updates to that link via the child update the right table.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">SelfRefChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">child_data</span><span class="o">=</span><span class="mi">37</span><span class="p">,</span> <span class="n">parent_data</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_get_next_previous_by_date</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression tests for #8076</span>
+<span class="sd">        get_(next/previous)_by_date should work</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">c1</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="p">(</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&#39;ArticleWithAuthor 1&#39;</span><span class="p">,</span>
+            <span class="n">author</span><span class="o">=</span><span class="s">&quot;Person 1&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">c1</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">c2</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="p">(</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&#39;ArticleWithAuthor 2&#39;</span><span class="p">,</span>
+            <span class="n">author</span><span class="o">=</span><span class="s">&quot;Person 2&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">c2</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">c3</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="p">(</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&#39;ArticleWithAuthor 3&#39;</span><span class="p">,</span>
+            <span class="n">author</span><span class="o">=</span><span class="s">&quot;Person 3&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+        <span class="n">c3</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c1</span><span class="o">.</span><span class="n">get_next_by_pub_date</span><span class="p">(),</span> <span class="n">c2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c2</span><span class="o">.</span><span class="n">get_next_by_pub_date</span><span class="p">(),</span> <span class="n">c3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">c3</span><span class="o">.</span><span class="n">get_next_by_pub_date</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c3</span><span class="o">.</span><span class="n">get_previous_by_pub_date</span><span class="p">(),</span> <span class="n">c2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c2</span><span class="o">.</span><span class="n">get_previous_by_pub_date</span><span class="p">(),</span> <span class="n">c1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">c1</span><span class="o">.</span><span class="n">get_previous_by_pub_date</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inherited_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #8825 and #9390</span>
+<span class="sd">        Make sure all inherited fields (esp. m2m fields, in this case) appear</span>
+<span class="sd">        on the child class.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">m2mchildren</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">M2MChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">articles__isnull</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">m2mchildren</span><span class="p">,</span> <span class="p">[])</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Ordering should not include any database column more than once (this
+is most likely to ocurr naturally with model inheritance, so we
+check it here). Regression test for #9390. This necessarily pokes at
+the SQL string for the query, since the duplicate problems are only
+apparent at that late stage.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;pub_date&#39;</span><span class="p">,</span> <span class="s">&#39;pk&#39;</span><span class="p">)</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span><span class="n">qs</span><span class="o">.</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">as_sql</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">fragment</span> <span class="o">=</span> <span class="n">sql</span><span class="p">[</span><span class="n">sql</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;ORDER BY&#39;</span><span class="p">):]</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">fragment</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;pub_date&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">fragment</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;pub_date&#39;</span><span class="p">,</span> <span class="n">pos</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_queryset_update_on_parent_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #10362</span>
+<span class="sd">        It is possible to call update() and only change a field in</span>
+<span class="sd">        an ancestor model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">article</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">author</span><span class="o">=</span><span class="s">&quot;fred&quot;</span><span class="p">,</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&quot;Hey there!&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2009</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">update</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">author</span><span class="o">=</span><span class="s">&quot;fred&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Oh, no!&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">update</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">update</span> <span class="o">=</span> <span class="n">ArticleWithAuthor</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">pk</span><span class="o">=</span><span class="n">article</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="s">&quot;Oh, no!&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">update</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">derivedm1</span> <span class="o">=</span> <span class="n">DerivedM</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">customPK</span><span class="o">=</span><span class="mi">44</span><span class="p">,</span>
+            <span class="n">base_name</span><span class="o">=</span><span class="s">&quot;b1&quot;</span><span class="p">,</span>
+            <span class="n">derived_name</span><span class="o">=</span><span class="s">&quot;d1&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">derivedm1</span><span class="o">.</span><span class="n">customPK</span><span class="p">,</span> <span class="mi">44</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">derivedm1</span><span class="o">.</span><span class="n">base_name</span><span class="p">,</span> <span class="s">&#39;b1&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">derivedm1</span><span class="o">.</span><span class="n">derived_name</span><span class="p">,</span> <span class="s">&#39;d1&#39;</span><span class="p">)</span>
+        <span class="n">derivedms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">DerivedM</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">derivedms</span><span class="p">,</span> <span class="p">[</span><span class="n">derivedm1</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_use_explicit_o2o_to_parent_as_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression tests for #10406</span>
+<span class="sd">        If there&#39;s a one-to-one link between a child model and the parent and</span>
+<span class="sd">        no explicit pk declared, we can use the one-to-one link as the pk on</span>
+<span class="sd">        the child.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ParkingLot2</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&quot;parent&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>However, the connector from child to parent need not be the pk on
+the child at all.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ParkingLot3</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&quot;primary_key&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>the child->parent link</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">ParkingLot3</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_ancestor_link</span><span class="p">(</span><span class="n">Place</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s">&quot;parent&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_all_fields_from_abstract_base_class</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression tests for #7588</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>All fields from an ABC, including those inherited non-abstractly
+should be available on child classes (#7588). Creating this instance
+should work without error.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">QualityControl</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&quot;Problems in Django&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(),</span>
+            <span class="n">quality</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+            <span class="n">assignee</span><span class="o">=</span><span class="s">&quot;adrian&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_abstract_base_class_m2m_relation_inheritance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Check that many-to-many relations defined on an abstract base class
+are correctly inherited (and created) on the child class.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">p1</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Alice&#39;</span><span class="p">)</span>
+        <span class="n">p2</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Bob&#39;</span><span class="p">)</span>
+        <span class="n">p3</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Carol&#39;</span><span class="p">)</span>
+        <span class="n">p4</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Dave&#39;</span><span class="p">)</span>
+
+        <span class="n">birthday</span> <span class="o">=</span> <span class="n">BirthdayParty</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Birthday party for Alice&#39;</span><span class="p">)</span>
+        <span class="n">birthday</span><span class="o">.</span><span class="n">attendees</span> <span class="o">=</span> <span class="p">[</span><span class="n">p1</span><span class="p">,</span> <span class="n">p3</span><span class="p">]</span>
+
+        <span class="n">bachelor</span> <span class="o">=</span> <span class="n">BachelorParty</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Bachelor party for Bob&#39;</span><span class="p">)</span>
+        <span class="n">bachelor</span><span class="o">.</span><span class="n">attendees</span> <span class="o">=</span> <span class="p">[</span><span class="n">p2</span><span class="p">,</span> <span class="n">p4</span><span class="p">]</span>
+
+        <span class="n">parties</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">p1</span><span class="o">.</span><span class="n">birthdayparty_set</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">parties</span><span class="p">,</span> <span class="p">[</span><span class="n">birthday</span><span class="p">])</span>
+
+        <span class="n">parties</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">p1</span><span class="o">.</span><span class="n">bachelorparty_set</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">parties</span><span class="p">,</span> <span class="p">[])</span>
+
+        <span class="n">parties</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">p2</span><span class="o">.</span><span class="n">bachelorparty_set</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">parties</span><span class="p">,</span> <span class="p">[</span><span class="n">bachelor</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Check that a subclass of a subclass of an abstract model doesn't get
+it's own accessor.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="nb">hasattr</span><span class="p">(</span><span class="n">p2</span><span class="p">,</span> <span class="s">&#39;messybachelorparty_set&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>... but it does inherit the m2m from it's parent</p></td><td class="code"><div class="highlight"><pre>        <span class="n">messy</span> <span class="o">=</span> <span class="n">MessyBachelorParty</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Bachelor party for Dave&#39;</span><span class="p">)</span>
+        <span class="n">messy</span><span class="o">.</span><span class="n">attendees</span> <span class="o">=</span> <span class="p">[</span><span class="n">p4</span><span class="p">]</span>
+        <span class="n">messy_parent</span> <span class="o">=</span> <span class="n">messy</span><span class="o">.</span><span class="n">bachelorparty_ptr</span>
+
+        <span class="n">parties</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">p4</span><span class="o">.</span><span class="n">bachelorparty_set</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">parties</span><span class="p">,</span> <span class="p">[</span><span class="n">bachelor</span><span class="p">,</span> <span class="n">messy_parent</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_abstract_verbose_name_plural_inheritance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        verbose_name_plural correctly inherited from ABC if inheritance chain</span>
+<span class="sd">        includes an abstract model.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Regression test for #11369: verbose<em>name</em>plural should be inherited
+from an ABC even when there are one or more intermediate
+abstract models in the inheritance chain, for consistency with
+verbose_name.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+                <span class="n">InternalCertificationAudit</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">verbose_name_plural</span><span class="p">,</span>
+                <span class="s">&#39;Audits&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inherited_nullable_exclude</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">SelfRefChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">child_data</span><span class="o">=</span><span class="mi">37</span><span class="p">,</span> <span class="n">parent_data</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">SelfRefParent</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">self_data</span><span class="o">=</span><span class="mi">72</span><span class="p">),</span> <span class="p">[</span>
+                <span class="n">obj</span><span class="o">.</span><span class="n">pk</span>
+            <span class="p">],</span>
+            <span class="n">attrgetter</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">SelfRefChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">self_data</span><span class="o">=</span><span class="mi">72</span><span class="p">),</span> <span class="p">[</span>
+                <span class="n">obj</span><span class="o">.</span><span class="n">pk</span>
+            <span class="p">],</span>
+            <span class="n">attrgetter</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_concrete_abstract_concrete_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Primary key set correctly with concrete-&gt;abstract-&gt;concrete inheritance.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Regression test for #13987: Primary key is incorrectly determined
+when more than one model has a concrete->abstract->concrete
+inheritance hierarchy.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">len</span><span class="p">([</span><span class="n">field</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">BusStation</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">local_fields</span>
+                       <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">primary_key</span><span class="p">]),</span>
+            <span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">len</span><span class="p">([</span><span class="n">field</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">TrainStation</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">local_fields</span>
+                       <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">primary_key</span><span class="p">]),</span>
+            <span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIs</span><span class="p">(</span><span class="n">BusStation</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">BusStation</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIs</span><span class="p">(</span><span class="n">TrainStation</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">TrainStation</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inherited_unique_field_with_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that a model which has different primary key for the parent model</span>
+<span class="sd">        passes unique field checking correctly. Refs #17615.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">ProfileForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Profile</span>
+        <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;user_only&quot;</span><span class="p">)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">Profile</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;user_with_profile&quot;</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ProfileForm</span><span class="p">({</span><span class="s">&#39;username&#39;</span><span class="p">:</span> <span class="s">&quot;user_with_profile&quot;</span><span class="p">,</span> <span class="s">&#39;extra&#39;</span><span class="p">:</span> <span class="s">&quot;hello&quot;</span><span class="p">},</span>
+                           <span class="n">instance</span><span class="o">=</span><span class="n">p</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › backends › oracle › introspection.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../../index.html"></a><h1>introspection.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">cx_Oracle</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.oracle.introspection</span> <span class="kn">import</span> <span class="n">DatabaseIntrospection</span>
+
+<span class="k">class</span> <span class="nc">OracleIntrospection</span><span class="p">(</span><span class="n">DatabaseIntrospection</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Associating any OBJECTVAR instances with GeometryField.  Of course,
+this won't work right on Oracle objects that aren't MDSYS.SDO_GEOMETRY,
+but it is the only object type supported within Django anyways.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">data_types_reverse</span> <span class="o">=</span> <span class="n">DatabaseIntrospection</span><span class="o">.</span><span class="n">data_types_reverse</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">data_types_reverse</span><span class="p">[</span><span class="n">cx_Oracle</span><span class="o">.</span><span class="n">OBJECT</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;GeometryField&#39;</span>
+
+    <span class="k">def</span> <span class="nf">get_geometry_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Querying USER<em>SDO</em>GEOM_METADATA to get the SRID and dimension information.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT &quot;DIMINFO&quot;, &quot;SRID&quot; FROM &quot;USER_SDO_GEOM_METADATA&quot; WHERE &quot;TABLE_NAME&quot;=</span><span class="si">%s</span><span class="s"> AND &quot;COLUMN_NAME&quot;=</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+                               <span class="p">(</span><span class="n">table_name</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="n">geo_col</span><span class="o">.</span><span class="n">upper</span><span class="p">()))</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">msg</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Could not find entry in USER_SDO_GEOM_METADATA corresponding to &quot;</span><span class="si">%s</span><span class="s">&quot;.&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&#39;</span>
+                                <span class="s">&#39;Error message: </span><span class="si">%s</span><span class="s">.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">,</span> <span class="n">msg</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>TODO: Research way to find a more specific geometry field type for
+the column's contents.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_type</span> <span class="o">=</span> <span class="s">&#39;GeometryField&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Getting the field parameters.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_params</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">dim</span><span class="p">,</span> <span class="n">srid</span> <span class="o">=</span> <span class="n">row</span>
+            <span class="k">if</span> <span class="n">srid</span> <span class="o">!=</span> <span class="mi">4326</span><span class="p">:</span>
+                <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;srid&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">srid</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Length of object array ( SDO<em>DIM</em>ARRAY ) is number of dimensions.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">dim</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">dim</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dim</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">field_params</span><span class="p">[</span><span class="s">&#39;dim&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dim</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">field_type</span><span class="p">,</span> <span class="n">field_params</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:6}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../../javascript/docco.min.js"></script>
+</html>

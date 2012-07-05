@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › layermap › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+<span class="kn">from</span> <span class="nn">decimal</span> <span class="kn">import</span> <span class="n">Decimal</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal</span> <span class="kn">import</span> <span class="n">DataSource</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.tests.utils</span> <span class="kn">import</span> <span class="n">mysql</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.utils.layermapping</span> <span class="kn">import</span> <span class="p">(</span><span class="n">LayerMapping</span><span class="p">,</span> <span class="n">LayerMapError</span><span class="p">,</span>
+    <span class="n">InvalidDecimal</span><span class="p">,</span> <span class="n">MissingForeignKey</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">City</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">CountyFeat</span><span class="p">,</span> <span class="n">Interstate</span><span class="p">,</span> <span class="n">ICity1</span><span class="p">,</span> <span class="n">ICity2</span><span class="p">,</span> <span class="n">Invalid</span><span class="p">,</span> <span class="n">State</span><span class="p">,</span>
+    <span class="n">city_mapping</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">cofeat_mapping</span><span class="p">,</span> <span class="n">inter_mapping</span><span class="p">)</span>
+
+
+<span class="n">shp_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="s">&#39;data&#39;</span><span class="p">))</span>
+<span class="n">city_shp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shp_path</span><span class="p">,</span> <span class="s">&#39;cities&#39;</span><span class="p">,</span> <span class="s">&#39;cities.shp&#39;</span><span class="p">)</span>
+<span class="n">co_shp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shp_path</span><span class="p">,</span> <span class="s">&#39;counties&#39;</span><span class="p">,</span> <span class="s">&#39;counties.shp&#39;</span><span class="p">)</span>
+<span class="n">inter_shp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shp_path</span><span class="p">,</span> <span class="s">&#39;interstates&#39;</span><span class="p">,</span> <span class="s">&#39;interstates.shp&#39;</span><span class="p">)</span>
+<span class="n">invalid_shp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shp_path</span><span class="p">,</span> <span class="s">&#39;invalid&#39;</span><span class="p">,</span> <span class="s">&#39;emptypoints.shp&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Dictionaries to hold what's expected in the county shapefile.</p></td><td class="code"><div class="highlight"><pre><span class="n">NAMES</span>  <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Bexar&#39;</span><span class="p">,</span> <span class="s">&#39;Galveston&#39;</span><span class="p">,</span> <span class="s">&#39;Harris&#39;</span><span class="p">,</span> <span class="s">&#39;Honolulu&#39;</span><span class="p">,</span> <span class="s">&#39;Pueblo&#39;</span><span class="p">]</span>
+<span class="n">NUMS</span>   <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">19</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="c"># Number of polygons for each.</span>
+<span class="n">STATES</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Hawaii&#39;</span><span class="p">,</span> <span class="s">&#39;Colorado&#39;</span><span class="p">]</span>
+
+<span class="k">class</span> <span class="nc">LayerMapTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing LayerMapping initialization.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Model field that does not exist.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bad1</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">city_mapping</span><span class="p">)</span>
+        <span class="n">bad1</span><span class="p">[</span><span class="s">&#39;foobar&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;FooField&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Shapefile field that does not exist.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bad2</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">city_mapping</span><span class="p">)</span>
+        <span class="n">bad2</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Nombre&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Nonexistent geographic field type.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bad3</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">city_mapping</span><span class="p">)</span>
+        <span class="n">bad3</span><span class="p">[</span><span class="s">&#39;point&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;CURVE&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Incrementing through the bad mapping dictionaries and
+ensuring that a LayerMapError is raised.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad_map</span> <span class="ow">in</span> <span class="p">(</span><span class="n">bad1</span><span class="p">,</span> <span class="n">bad2</span><span class="p">,</span> <span class="n">bad3</span><span class="p">):</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">LayerMapError</span><span class="p">):</span>
+                <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">City</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">bad_map</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>A LookupError should be thrown for bogus encodings.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">LookupError</span><span class="p">):</span>
+            <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">City</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">city_mapping</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s">&#39;foobar&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_simple_layermap</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test LayerMapping import of a simple point shapefile.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Setting up for the LayerMapping.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">City</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">city_mapping</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>There should be three cities in the shape file.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Opening up the shapefile, and verifying the values in each
+of the features made it to the model.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ds</span> <span class="o">=</span> <span class="n">DataSource</span><span class="p">(</span><span class="n">city_shp</span><span class="p">)</span>
+        <span class="n">layer</span> <span class="o">=</span> <span class="n">ds</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="n">layer</span><span class="p">:</span>
+            <span class="n">city</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Population&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">population</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Density&#39;</span><span class="p">])),</span> <span class="n">city</span><span class="o">.</span><span class="n">density</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Created&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">dt</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Comparing the geometries.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">pnt1</span><span class="p">,</span> <span class="n">pnt2</span> <span class="o">=</span> <span class="n">feat</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">point</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">pnt1</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">pnt2</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">pnt1</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">pnt2</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_layermap_strict</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `strict` keyword, and import of a LineString shapefile.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>When the <code>strict</code> keyword is set an error encountered will force
+the importation to stop.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">InvalidDecimal</span><span class="p">):</span>
+            <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">Interstate</span><span class="p">,</span> <span class="n">inter_shp</span><span class="p">,</span> <span class="n">inter_mapping</span><span class="p">)</span>
+            <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>This LayerMapping should work b/c <code>strict</code> is not set.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">Interstate</span><span class="p">,</span> <span class="n">inter_shp</span><span class="p">,</span> <span class="n">inter_mapping</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Two interstate should have imported correctly.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Verifying the values in the layer w/the model.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ds</span> <span class="o">=</span> <span class="n">DataSource</span><span class="p">(</span><span class="n">inter_shp</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Only the first two features of this shapefile are valid.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">valid_feats</span> <span class="o">=</span> <span class="n">ds</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">feat</span> <span class="ow">in</span> <span class="n">valid_feats</span><span class="p">:</span>
+            <span class="n">istate</span> <span class="o">=</span> <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">feat</span><span class="o">.</span><span class="n">fid</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="s">&#39;Length&#39;</span><span class="p">])),</span> <span class="n">istate</span><span class="o">.</span><span class="n">length</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">feat</span><span class="o">.</span><span class="n">fid</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Everything but the first two decimal digits were truncated,
+because the Interstate model's <code>length</code> field has decimal_places=2.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Length&#39;</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">istate</span><span class="o">.</span><span class="n">length</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+
+            <span class="k">for</span> <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">feat</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">istate</span><span class="o">.</span><span class="n">path</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">p1</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">p2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">6</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">p1</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">p2</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">6</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">county_helper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">county_feat</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="s">&quot;Helper function for ensuring the integrity of the mapped County models.&quot;</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">st</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">NAMES</span><span class="p">,</span> <span class="n">NUMS</span><span class="p">,</span> <span class="n">STATES</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Should only be one record b/c of <code>unique</code> keyword.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">c</span> <span class="o">=</span> <span class="n">County</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">st</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="c"># Checking ForeignKey mapping.</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Multiple records because <code>unique</code> was not set.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">county_feat</span><span class="p">:</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="n">CountyFeat</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_layermap_unique_multigeometry_fk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `unique`, and `transform`, geometry collection conversion, and ForeignKey mappings.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>All the following should work.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Telling LayerMapping that we want no transformations performed on the data.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Specifying the source spatial reference system via the <code>source_srs</code> keyword.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">source_srs</span><span class="o">=</span><span class="mi">4269</span><span class="p">)</span>
+            <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">source_srs</span><span class="o">=</span><span class="s">&#39;NAD83&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Unique may take tuple or string parameters.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;mpoly&#39;</span><span class="p">)):</span>
+                <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="n">arg</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;No exception should be raised for proper use of keywords.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Testing invalid params for the <code>unique</code> keyword.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">e</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="p">((</span><span class="ne">TypeError</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="s">&#39;foobar&#39;</span><span class="p">),</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;mpolygon&#39;</span><span class="p">))):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">LayerMapping</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="n">arg</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>No source reference system defined in the shapefile, should raise an error.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">mysql</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">LayerMapError</span><span class="p">,</span> <span class="n">LayerMapping</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Passing in invalid ForeignKey mapping parameters -- must be a dictionary
+mapping for the model the ForeignKey points to.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bad_fk_map1</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">co_mapping</span><span class="p">);</span> <span class="n">bad_fk_map1</span><span class="p">[</span><span class="s">&#39;state&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;name&#39;</span>
+        <span class="n">bad_fk_map2</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">co_mapping</span><span class="p">);</span> <span class="n">bad_fk_map2</span><span class="p">[</span><span class="s">&#39;state&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;nombre&#39;</span> <span class="p">:</span> <span class="s">&#39;State&#39;</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">LayerMapping</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">bad_fk_map1</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">LayerMapError</span><span class="p">,</span> <span class="n">LayerMapping</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">bad_fk_map2</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>There exist no State models for the ForeignKey mapping to work -- should raise
+a MissingForeignKey exception (this error would be ignored if the <code>strict</code>
+keyword is not set).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">MissingForeignKey</span><span class="p">,</span> <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">,</span> <span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Now creating the state models so the ForeignKey mapping may work.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">bulk_create</span><span class="p">([</span>
+            <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Colorado&#39;</span><span class="p">),</span> <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Hawaii&#39;</span><span class="p">),</span> <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span>
+        <span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>If a mapping is specified as a collection, all OGR fields that
+are not collections will be converted into them.  For example,
+a Point column would be converted to MultiPoint. Other things being done
+w/the keyword args:
+ <code>transform=False</code>: Specifies that no transform is to be done; this
+   has the effect of ignoring the spatial reference check (because the
+   county shapefile does not have implicit spatial reference info).</p>
+
+<p><code>unique='name'</code>: Creates models on the condition that they have
+   unique county names; geometries from each feature however will be
+   appended to the geometry collection of the unique model.  Thus,
+   all of the various islands in Honolulu county will be in in one
+   database record with a MULTIPOLYGON type.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>A reference that doesn't use the unique keyword; a new database record will
+created for each polygon.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">CountyFeat</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">cofeat_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>The county helper is called to ensure integrity of County models.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">county_helper</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_test_fid_range_step</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Tests the `fid_range` keyword and the `step` keyword of .save().&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Function for clearing out all the counties before testing.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">def</span> <span class="nf">clear_counties</span><span class="p">():</span> <span class="n">County</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+
+        <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">bulk_create</span><span class="p">([</span>
+            <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Colorado&#39;</span><span class="p">),</span> <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Hawaii&#39;</span><span class="p">),</span> <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span>
+        <span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Initializing the LayerMapping object to use in these tests.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="s">&#39;name&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Bad feature id ranges should raise a type error.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bad_ranges</span> <span class="o">=</span> <span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="s">&#39;foo&#39;</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">bad</span> <span class="ow">in</span> <span class="n">bad_ranges</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">,</span> <span class="n">fid_range</span><span class="o">=</span><span class="n">bad</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Step keyword should not be allowed w/<code>fid_range</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">fr</span> <span class="o">=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span> <span class="c"># layer[3:5]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">LayerMapError</span><span class="p">,</span> <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">,</span> <span class="n">fid_range</span><span class="o">=</span><span class="n">fr</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">fid_range</span><span class="o">=</span><span class="n">fr</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Features IDs 3 &amp; 4 are for Galveston County, Texas -- only
+one model is returned because the <code>unique</code> keyword was set.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">County</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Galveston&#39;</span><span class="p">,</span> <span class="n">qs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Features IDs 5 and beyond for Honolulu County, Hawaii, and
+FID 0 is for Pueblo County, Colorado.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">clear_counties</span><span class="p">()</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">fid_range</span><span class="o">=</span><span class="nb">slice</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span> <span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="c"># layer[5:]</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">fid_range</span><span class="o">=</span><span class="nb">slice</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="c"># layer[:1]</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Only Pueblo &amp; Honolulu counties should be present because of
+the <code>unique</code> keyword.  Have to set <code>order_by</code> on this QuerySet
+or else MySQL will return a different ordering than the other dbs.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">County</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="n">hi</span><span class="p">,</span> <span class="n">co</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">qs</span><span class="p">)</span>
+        <span class="n">hi_idx</span><span class="p">,</span> <span class="n">co_idx</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">NAMES</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;Honolulu&#39;</span><span class="p">,</span> <span class="s">&#39;Pueblo&#39;</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Pueblo&#39;</span><span class="p">,</span> <span class="n">co</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">NUMS</span><span class="p">[</span><span class="n">co_idx</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">co</span><span class="o">.</span><span class="n">mpoly</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Honolulu&#39;</span><span class="p">,</span> <span class="n">hi</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">NUMS</span><span class="p">[</span><span class="n">hi_idx</span><span class="p">],</span> <span class="nb">len</span><span class="p">(</span><span class="n">hi</span><span class="o">.</span><span class="n">mpoly</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Testing the <code>step</code> keyword -- should get the same counties
+regardless of we use a step that divides equally, that is odd,
+or that is larger than the dataset.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">st</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span><span class="mi">7</span><span class="p">,</span><span class="mi">1000</span><span class="p">):</span>
+            <span class="n">clear_counties</span><span class="p">()</span>
+            <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">step</span><span class="o">=</span><span class="n">st</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">county_helper</span><span class="p">(</span><span class="n">county_feat</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_model_inheritance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Tests LayerMapping on inherited models.  See #12093.&quot;</span>
+        <span class="n">icity_mapping</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;name&#39;</span> <span class="p">:</span> <span class="s">&#39;Name&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;population&#39;</span> <span class="p">:</span> <span class="s">&#39;Population&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;density&#39;</span> <span class="p">:</span> <span class="s">&#39;Density&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;point&#39;</span> <span class="p">:</span> <span class="s">&#39;POINT&#39;</span><span class="p">,</span>
+                         <span class="s">&#39;dt&#39;</span> <span class="p">:</span> <span class="s">&#39;Created&#39;</span><span class="p">,</span>
+                         <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Parent model has geometry field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm1</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">ICity1</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">icity_mapping</span><span class="p">)</span>
+        <span class="n">lm1</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>Grandparent has geometry field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm2</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">ICity2</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">icity_mapping</span><span class="p">)</span>
+        <span class="n">lm2</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="n">ICity1</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">ICity2</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_invalid_layer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Tests LayerMapping on invalid geometries.  See #15378.&quot;</span>
+        <span class="n">invalid_mapping</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;point&#39;</span><span class="p">:</span> <span class="s">&#39;POINT&#39;</span><span class="p">}</span>
+        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">Invalid</span><span class="p">,</span> <span class="n">invalid_shp</span><span class="p">,</span> <span class="n">invalid_mapping</span><span class="p">,</span>
+                          <span class="n">source_srs</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_textfield</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Tests that String content fits also in a TextField&quot;</span>
+        <span class="n">mapping</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">city_mapping</span><span class="p">)</span>
+        <span class="n">mapping</span><span class="p">[</span><span class="s">&#39;name_txt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Name&#39;</span>
+        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">City</span><span class="p">,</span> <span class="n">city_shp</span><span class="p">,</span> <span class="n">mapping</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name_txt&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name_txt</span><span class="p">,</span> <span class="s">&quot;Houston&quot;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

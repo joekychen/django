@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › file_uploads › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>! -<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">base64</span>
+<span class="kn">import</span> <span class="nn">errno</span>
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">from</span> <span class="nn">StringIO</span> <span class="kn">import</span> <span class="n">StringIO</span>
+
+<span class="kn">from</span> <span class="nn">django.core.files</span> <span class="kn">import</span> <span class="n">temp</span> <span class="k">as</span> <span class="n">tempfile</span>
+<span class="kn">from</span> <span class="nn">django.core.files.uploadedfile</span> <span class="kn">import</span> <span class="n">SimpleUploadedFile</span>
+<span class="kn">from</span> <span class="nn">django.http.multipartparser</span> <span class="kn">import</span> <span class="n">MultiPartParser</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">client</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">uploadhandler</span>
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">FileModel</span><span class="p">,</span> <span class="n">temp_storage</span><span class="p">,</span> <span class="n">UPLOAD_TO</span>
+
+
+<span class="n">UNICODE_FILENAME</span> <span class="o">=</span> <span class="s">&#39;test-0123456789_中文_Orléans.jpg&#39;</span>
+
+<span class="k">class</span> <span class="nc">FileUploadTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_simple_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">__file__</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+            <span class="n">post_data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Ringo&#39;</span><span class="p">,</span>
+                <span class="s">&#39;file_field&#39;</span><span class="p">:</span> <span class="n">fp</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/upload/&#39;</span><span class="p">,</span> <span class="n">post_data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_large_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">tdir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">gettempdir</span><span class="p">()</span>
+
+        <span class="n">file1</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s">&quot;.file1&quot;</span><span class="p">,</span> <span class="nb">dir</span><span class="o">=</span><span class="n">tdir</span><span class="p">)</span>
+        <span class="n">file1</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">21</span><span class="p">))</span>
+        <span class="n">file1</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">file2</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s">&quot;.file2&quot;</span><span class="p">,</span> <span class="nb">dir</span><span class="o">=</span><span class="n">tdir</span><span class="p">)</span>
+        <span class="n">file2</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">10</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">**</span> <span class="mi">20</span><span class="p">))</span>
+        <span class="n">file2</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">post_data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Ringo&#39;</span><span class="p">,</span>
+            <span class="s">&#39;file_field1&#39;</span><span class="p">:</span> <span class="n">file1</span><span class="p">,</span>
+            <span class="s">&#39;file_field2&#39;</span><span class="p">:</span> <span class="n">file2</span><span class="p">,</span>
+            <span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">post_data</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">post_data</span><span class="p">[</span><span class="n">key</span> <span class="o">+</span> <span class="s">&#39;_hash&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">post_data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+                <span class="n">post_data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                <span class="n">post_data</span><span class="p">[</span><span class="n">key</span> <span class="o">+</span> <span class="s">&#39;_hash&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">post_data</span><span class="p">[</span><span class="n">key</span><span class="p">])</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/verify/&#39;</span><span class="p">,</span> <span class="n">post_data</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_base64_upload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">test_string</span> <span class="o">=</span> <span class="s">&quot;This data will be transmitted base64-encoded.&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span><span class="p">,</span>
+            <span class="s">&#39;Content-Disposition: form-data; name=&quot;file&quot;; filename=&quot;test.txt&quot;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Content-Type: application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Content-Transfer-Encoding: base64&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">test_string</span><span class="p">),</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span> <span class="o">+</span> <span class="s">&#39;--&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>   <span class="n">client</span><span class="o">.</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>      <span class="s">&quot;/file_uploads/echo_content/&quot;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>     <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+        <span class="n">received</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">received</span><span class="p">[</span><span class="s">&#39;file&#39;</span><span class="p">],</span> <span class="n">test_string</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_unicode_file_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">tdir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">gettempdir</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>This file contains chinese symbols and an accented char in the name.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tdir</span><span class="p">,</span> <span class="n">UNICODE_FILENAME</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)),</span> <span class="s">&#39;w+b&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file1</span><span class="p">:</span>
+            <span class="n">file1</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;b&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">10</span><span class="p">))</span>
+            <span class="n">file1</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+            <span class="n">post_data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;file_unicode&#39;</span><span class="p">:</span> <span class="n">file1</span><span class="p">,</span>
+                <span class="p">}</span>
+
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/unicode_name/&#39;</span><span class="p">,</span> <span class="n">post_data</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">file1</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dangerous_file_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Uploaded file names should be sanitized before ever reaching the view.&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>This test simulates possible directory traversal attacks by a
+malicious uploader We have to do some monkeybusiness here to construct
+a malicious payload with an invalid file name (containing os.sep or
+os.pardir). This similar to what an attacker would need to do when
+trying such an attack.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">scary_file_names</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s">&quot;/tmp/hax0rd.txt&quot;</span><span class="p">,</span>          <span class="c"># Absolute path, *nix-style.</span>
+            <span class="s">&quot;C:</span><span class="se">\\</span><span class="s">Windows</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>  <span class="c"># Absolute path, win-syle.</span>
+            <span class="s">&quot;C:/Windows/hax0rd.txt&quot;</span><span class="p">,</span>    <span class="c"># Absolute path, broken-style.</span>
+            <span class="s">&quot;</span><span class="se">\\</span><span class="s">tmp</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>        <span class="c"># Absolute path, broken in a different way.</span>
+            <span class="s">&quot;/tmp</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>         <span class="c"># Absolute path, broken by mixing.</span>
+            <span class="s">&quot;subdir/hax0rd.txt&quot;</span><span class="p">,</span>        <span class="c"># Descendant path, *nix-style.</span>
+            <span class="s">&quot;subdir</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>       <span class="c"># Descendant path, win-style.</span>
+            <span class="s">&quot;sub/dir</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>      <span class="c"># Descendant path, mixed.</span>
+            <span class="s">&quot;../../hax0rd.txt&quot;</span><span class="p">,</span>         <span class="c"># Relative path, *nix-style.</span>
+            <span class="s">&quot;..</span><span class="se">\\</span><span class="s">..</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span><span class="p">,</span>       <span class="c"># Relative path, win-style.</span>
+            <span class="s">&quot;../..</span><span class="se">\\</span><span class="s">hax0rd.txt&quot;</span>         <span class="c"># Relative path, mixed.</span>
+        <span class="p">]</span>
+
+        <span class="n">payload</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">scary_file_names</span><span class="p">):</span>
+            <span class="n">payload</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
+                <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span><span class="p">,</span>
+                <span class="s">&#39;Content-Disposition: form-data; name=&quot;file</span><span class="si">%s</span><span class="s">&quot;; filename=&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">name</span><span class="p">),</span>
+                <span class="s">&#39;Content-Type: application/octet-stream&#39;</span><span class="p">,</span>
+                <span class="s">&#39;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;You got pwnd.&#39;</span>
+            <span class="p">])</span>
+        <span class="n">payload</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span> <span class="o">+</span> <span class="s">&#39;--&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">])</span>
+
+        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>   <span class="n">client</span><span class="o">.</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>      <span class="s">&quot;/file_uploads/echo/&quot;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>     <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The filenames should have been sanitized by the time it got to the view.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">recieved</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">scary_file_names</span><span class="p">):</span>
+            <span class="n">got</span> <span class="o">=</span> <span class="n">recieved</span><span class="p">[</span><span class="s">&quot;file</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="s">&quot;hax0rd.txt&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_filename_overflow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;File names over 256 characters (dangerous on some platforms) get fixed up.&quot;&quot;&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">.txt&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="s">&quot;f&quot;</span><span class="o">*</span><span class="mi">500</span><span class="p">)</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span><span class="p">,</span>
+            <span class="s">&#39;Content-Disposition: form-data; name=&quot;file&quot;; filename=&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">name</span><span class="p">,</span>
+            <span class="s">&#39;Content-Type: application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Oops.&#39;</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span> <span class="o">+</span> <span class="s">&#39;--&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>   <span class="n">client</span><span class="o">.</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span>      <span class="s">&quot;/file_uploads/echo/&quot;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span>     <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">got</span><span class="p">[</span><span class="s">&#39;file&#39;</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">256</span><span class="p">,</span> <span class="s">&quot;Got a long file name (</span><span class="si">%s</span><span class="s"> characters).&quot;</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">got</span><span class="p">[</span><span class="s">&#39;file&#39;</span><span class="p">]))</span>
+
+    <span class="k">def</span> <span class="nf">test_truncated_multipart_handled_gracefully</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If passed an incomplete multipart message, MultiPartParser does not</span>
+<span class="sd">        attempt to read beyond the end of the stream, and simply will handle</span>
+<span class="sd">        the part that can be parsed gracefully.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span><span class="p">,</span>
+            <span class="s">&#39;Content-Disposition: form-data; name=&quot;file&quot;; filename=&quot;foo.txt&quot;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Content-Type: application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;file contents&#39;</span>
+            <span class="s">&#39;--&#39;</span> <span class="o">+</span> <span class="n">client</span><span class="o">.</span><span class="n">BOUNDARY</span> <span class="o">+</span> <span class="s">&#39;--&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+        <span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">payload</span><span class="p">[:</span><span class="o">-</span><span class="mi">10</span><span class="p">]</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span> <span class="n">client</span><span class="o">.</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span> <span class="s">&#39;/file_uploads/echo/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_multipart_handled_gracefully</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If passed an empty multipart message, MultiPartParser will return</span>
+<span class="sd">        an empty QueryDict.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span> <span class="n">client</span><span class="o">.</span><span class="n">MULTIPART_CONTENT</span><span class="p">,</span>
+            <span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span> <span class="s">&#39;/file_uploads/echo/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_upload_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>A small file (under the 5M quota)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">smallfile</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">smallfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">21</span><span class="p">))</span>
+        <span class="n">smallfile</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>A big file (over the quota)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bigfile</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">bigfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">10</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">**</span> <span class="mi">20</span><span class="p">))</span>
+        <span class="n">bigfile</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Small file posting should work.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/quota/&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;f&#39;</span><span class="p">:</span> <span class="n">smallfile</span><span class="p">})</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;f&#39;</span> <span class="ow">in</span> <span class="n">got</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Large files don't go through.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/file_uploads/quota/&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;f&#39;</span><span class="p">:</span> <span class="n">bigfile</span><span class="p">})</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;f&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">got</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_broken_custom_upload_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">21</span><span class="p">))</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>AttributeError: You cannot alter upload handlers after the upload has been processed.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="ne">AttributeError</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">,</span>
+            <span class="s">&#39;/file_uploads/quota/broken/&#39;</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;f&#39;</span><span class="p">:</span> <span class="n">f</span><span class="p">}</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fileupload_getlist</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">file1</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">file1</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="mi">23</span><span class="p">))</span>
+        <span class="n">file1</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">file2</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">file2</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">**</span> <span class="mi">18</span><span class="p">))</span>
+        <span class="n">file2</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">file2a</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">()</span>
+        <span class="n">file2a</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="mi">5</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">**</span> <span class="mi">20</span><span class="p">))</span>
+        <span class="n">file2a</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/getlist_count/&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;file1&#39;</span><span class="p">:</span> <span class="n">file1</span><span class="p">,</span>
+            <span class="s">&#39;field1&#39;</span><span class="p">:</span> <span class="s">&#39;test&#39;</span><span class="p">,</span>
+            <span class="s">&#39;field2&#39;</span><span class="p">:</span> <span class="s">&#39;test3&#39;</span><span class="p">,</span>
+            <span class="s">&#39;field3&#39;</span><span class="p">:</span> <span class="s">&#39;test5&#39;</span><span class="p">,</span>
+            <span class="s">&#39;field4&#39;</span><span class="p">:</span> <span class="s">&#39;test6&#39;</span><span class="p">,</span>
+            <span class="s">&#39;field5&#39;</span><span class="p">:</span> <span class="s">&#39;test7&#39;</span><span class="p">,</span>
+            <span class="s">&#39;file2&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">file2</span><span class="p">,</span> <span class="n">file2a</span><span class="p">)</span>
+        <span class="p">})</span>
+        <span class="n">got</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">got</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;file1&#39;</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">got</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;file2&#39;</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_file_error_blocking</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The server should not block when there are upload errors (bug #8622).</span>
+<span class="sd">        This can happen if something -- i.e. an exception handler -- tries to</span>
+<span class="sd">        access POST while handling an error in parsing POST. This shouldn&#39;t</span>
+<span class="sd">        cause an infinite loop!</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">POSTAccessingHandler</span><span class="p">(</span><span class="n">client</span><span class="o">.</span><span class="n">ClientHandler</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;A handler that&#39;ll access POST during an exception.&quot;&quot;&quot;</span>
+            <span class="k">def</span> <span class="nf">handle_uncaught_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">resolver</span><span class="p">,</span> <span class="n">exc_info</span><span class="p">):</span>
+                <span class="n">ret</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">POSTAccessingHandler</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">handle_uncaught_exception</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">resolver</span><span class="p">,</span> <span class="n">exc_info</span><span class="p">)</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">POST</span>
+                <span class="k">return</span> <span class="n">ret</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Maybe this is a little more complicated that it needs to be; but if
+the django.test.client.FakePayload.read() implementation changes then
+this test would fail.  So we need to know exactly what kind of error
+it raises when there is an attempt to read more than the available bytes:</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="n">client</span><span class="o">.</span><span class="n">FakePayload</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;a&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">reference_error</span><span class="p">:</span>
+            <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>install the custom handler that tries to access request.POST</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">handler</span> <span class="o">=</span> <span class="n">POSTAccessingHandler</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">__file__</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+            <span class="n">post_data</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Ringo&#39;</span><span class="p">,</span>
+                <span class="s">&#39;file_field&#39;</span><span class="p">:</span> <span class="n">fp</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/file_uploads/upload_errors/&#39;</span><span class="p">,</span> <span class="n">post_data</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">reference_error</span><span class="o">.</span><span class="n">__class__</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="o">==</span> <span class="nb">str</span><span class="p">(</span><span class="n">reference_error</span><span class="p">),</span>
+                    <span class="s">&quot;Caught a repeated exception that&#39;ll cause an infinite loop in file uploads.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>CustomUploadError is the error that should have been raised</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">err</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span> <span class="n">uploadhandler</span><span class="o">.</span><span class="n">CustomUploadError</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_filename_case_preservation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The storage backend shouldn&#39;t mess with the case of the filenames</span>
+<span class="sd">        uploaded.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Synthesize the contents of a file upload with a mixed case filename
+so we don't have to carry such a file in the Django tests source code
+tree.</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">vars</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;boundary&#39;</span><span class="p">:</span> <span class="s">&#39;oUrBoUnDaRyStRiNg&#39;</span><span class="p">}</span>
+        <span class="n">post_data</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s">&#39;--</span><span class="si">%(boundary)s</span><span class="s">&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Content-Disposition: form-data; name=&quot;file_field&quot;; &#39;</span>
+                <span class="s">&#39;filename=&quot;MiXeD_cAsE.txt&quot;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;Content-Type: application/octet-stream&#39;</span><span class="p">,</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;file contents</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="s">&#39;--</span><span class="si">%(boundary)s</span><span class="s">--</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+            <span class="s">&#39;/file_uploads/filename_case/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;</span><span class="se">\r\n</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">post_data</span><span class="p">)</span> <span class="o">%</span> <span class="nb">vars</span><span class="p">,</span>
+            <span class="s">&#39;multipart/form-data; boundary=</span><span class="si">%(boundary)s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">vars</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+        <span class="nb">id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">FileModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="nb">id</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>The name of the file uploaded and the file stored in the server-side
+shouldn't differ.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">testfile</span><span class="o">.</span><span class="n">path</span><span class="p">),</span> <span class="s">&#39;MiXeD_cAsE.txt&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DirectoryCreationTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for error handling during directory creation</span>
+<span class="sd">    via _save_FIELD_file (ticket #6450)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="o">=</span> <span class="n">FileModel</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">UPLOAD_TO</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="n">UPLOAD_TO</span><span class="p">,</span> <span class="mo">0700</span><span class="p">)</span>
+            <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">UPLOAD_TO</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">,</span> <span class="mo">0700</span><span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_root</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Permission errors are not swallowed&quot;&quot;&quot;</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">,</span> <span class="mo">0500</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">testfile</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s">&#39;foo.txt&#39;</span><span class="p">,</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;foo.txt&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;x&#39;</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">err</span><span class="o">.</span><span class="n">errno</span><span class="p">,</span> <span class="n">errno</span><span class="o">.</span><span class="n">EACCES</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;OSError [Errno </span><span class="si">%s</span><span class="s">] not raised.&quot;</span> <span class="o">%</span> <span class="n">errno</span><span class="o">.</span><span class="n">EACCES</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_not_a_directory</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The correct IOError is raised when the upload directory name exists but isn&#39;t a directory&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Create a file with the upload directory name</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">open</span><span class="p">(</span><span class="n">UPLOAD_TO</span><span class="p">,</span> <span class="s">&#39;wb&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">testfile</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s">&#39;foo.txt&#39;</span><span class="p">,</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;foo.txt&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;x&#39;</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">IOError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>The test needs to be done on a specific string as IOError
+is raised even without the patch (just not early enough)</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">err</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                              <span class="s">&quot;</span><span class="si">%s</span><span class="s"> exists and is not a directory.&quot;</span> <span class="o">%</span> <span class="n">UPLOAD_TO</span><span class="p">)</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;IOError not raised&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">MultiParserTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_upload_handlers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>We're not actually parsing here; just checking if the parser properly
+instantiates with empty upload handlers.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">parser</span> <span class="o">=</span> <span class="n">MultiPartParser</span><span class="p">({</span>
+            <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span>     <span class="s">&#39;multipart/form-data; boundary=_foo&#39;</span><span class="p">,</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span>   <span class="s">&#39;1&#39;</span>
+        <span class="p">},</span> <span class="n">StringIO</span><span class="p">(</span><span class="s">&#39;x&#39;</span><span class="p">),</span> <span class="p">[],</span> <span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

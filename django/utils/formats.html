@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › utils › formats.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>formats.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">decimal</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">dateformat</span><span class="p">,</span> <span class="n">numberformat</span><span class="p">,</span> <span class="n">datetime_safe</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_str</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="kn">import</span> <span class="n">lazy</span>
+<span class="kn">from</span> <span class="nn">django.utils.safestring</span> <span class="kn">import</span> <span class="n">mark_safe</span>
+<span class="kn">from</span> <span class="nn">django.utils.translation</span> <span class="kn">import</span> <span class="n">get_language</span><span class="p">,</span> <span class="n">to_locale</span><span class="p">,</span> <span class="n">check_for_language</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>format<em>cache is a mapping from (format</em>type, lang) to the format string.
+By using the cache, it is possible to avoid running get<em>format</em>modules
+repeatedly.</p></td><td class="code"><div class="highlight"><pre><span class="n">_format_cache</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">_format_modules_cache</span> <span class="o">=</span> <span class="p">{}</span>
+
+<span class="k">def</span> <span class="nf">reset_format_cache</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Clear any cached formats.</span>
+
+<span class="sd">    This method is provided primarily for testing purposes,</span>
+<span class="sd">    so that the effects of cached formats can be removed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_format_cache</span><span class="p">,</span> <span class="n">_format_modules_cache</span>
+    <span class="n">_format_cache</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">_format_modules_cache</span> <span class="o">=</span> <span class="p">{}</span>
+
+<span class="k">def</span> <span class="nf">iter_format_modules</span><span class="p">(</span><span class="n">lang</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Does the heavy lifting of finding format modules.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">check_for_language</span><span class="p">(</span><span class="n">lang</span><span class="p">):</span>
+        <span class="n">format_locations</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;django.conf.locale.</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">FORMAT_MODULE_PATH</span><span class="p">:</span>
+            <span class="n">format_locations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">FORMAT_MODULE_PATH</span> <span class="o">+</span> <span class="s">&#39;.</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">)</span>
+            <span class="n">format_locations</span><span class="o">.</span><span class="n">reverse</span><span class="p">()</span>
+        <span class="n">locale</span> <span class="o">=</span> <span class="n">to_locale</span><span class="p">(</span><span class="n">lang</span><span class="p">)</span>
+        <span class="n">locales</span> <span class="o">=</span> <span class="p">[</span><span class="n">locale</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s">&#39;_&#39;</span> <span class="ow">in</span> <span class="n">locale</span><span class="p">:</span>
+            <span class="n">locales</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;_&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">location</span> <span class="ow">in</span> <span class="n">format_locations</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">loc</span> <span class="ow">in</span> <span class="n">locales</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">yield</span> <span class="n">import_module</span><span class="p">(</span><span class="s">&#39;.formats&#39;</span><span class="p">,</span> <span class="n">location</span> <span class="o">%</span> <span class="n">loc</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+                    <span class="k">pass</span>
+
+<span class="k">def</span> <span class="nf">get_format_modules</span><span class="p">(</span><span class="n">lang</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a list of the format modules found</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">lang</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">lang</span> <span class="o">=</span> <span class="n">get_language</span><span class="p">()</span>
+    <span class="n">modules</span> <span class="o">=</span> <span class="n">_format_modules_cache</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lang</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">iter_format_modules</span><span class="p">(</span><span class="n">lang</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">reverse</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="n">modules</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">modules</span>
+
+<span class="k">def</span> <span class="nf">get_format</span><span class="p">(</span><span class="n">format_type</span><span class="p">,</span> <span class="n">lang</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    For a specific format type, returns the format for the current</span>
+<span class="sd">    language (locale), defaults to the format in the settings.</span>
+<span class="sd">    format_type is the name of the format, e.g. &#39;DATE_FORMAT&#39;</span>
+
+<span class="sd">    If use_l10n is provided and is not None, that will force the value to</span>
+<span class="sd">    be localized (or not), overriding the value of settings.USE_L10N.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">format_type</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">format_type</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">use_l10n</span> <span class="ow">or</span> <span class="p">(</span><span class="n">use_l10n</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_L10N</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lang</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">lang</span> <span class="o">=</span> <span class="n">get_language</span><span class="p">()</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="p">(</span><span class="n">format_type</span><span class="p">,</span> <span class="n">lang</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cached</span> <span class="o">=</span> <span class="n">_format_cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">cached</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Return the general setting by default</p></td><td class="code"><div class="highlight"><pre>                <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">format_type</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">module</span> <span class="ow">in</span> <span class="n">get_format_modules</span><span class="p">(</span><span class="n">lang</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">format_type</span><span class="p">)</span>
+                    <span class="n">_format_cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
+                    <span class="k">return</span> <span class="n">val</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="n">_format_cache</span><span class="p">[</span><span class="n">cache_key</span><span class="p">]</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">format_type</span><span class="p">)</span>
+
+<span class="n">get_format_lazy</span> <span class="o">=</span> <span class="n">lazy</span><span class="p">(</span><span class="n">get_format</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">date_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">format</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Formats a datetime.date or datetime.datetime object using a</span>
+<span class="sd">    localizable format</span>
+
+<span class="sd">    If use_l10n is provided and is not None, that will force the value to</span>
+<span class="sd">    be localized (or not), overriding the value of settings.USE_L10N.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">dateformat</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">get_format</span><span class="p">(</span><span class="n">format</span> <span class="ow">or</span> <span class="s">&#39;DATE_FORMAT&#39;</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">time_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">format</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Formats a datetime.time object using a localizable format</span>
+
+<span class="sd">    If use_l10n is provided and is not None, that will force the value to</span>
+<span class="sd">    be localized (or not), overriding the value of settings.USE_L10N.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">dateformat</span><span class="o">.</span><span class="n">time_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">get_format</span><span class="p">(</span><span class="n">format</span> <span class="ow">or</span> <span class="s">&#39;TIME_FORMAT&#39;</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">number_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">decimal_pos</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">force_grouping</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Formats a numeric value using localization settings</span>
+
+<span class="sd">    If use_l10n is provided and is not None, that will force the value to</span>
+<span class="sd">    be localized (or not), overriding the value of settings.USE_L10N.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">use_l10n</span> <span class="ow">or</span> <span class="p">(</span><span class="n">use_l10n</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_L10N</span><span class="p">):</span>
+        <span class="n">lang</span> <span class="o">=</span> <span class="n">get_language</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lang</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">return</span> <span class="n">numberformat</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+        <span class="n">value</span><span class="p">,</span>
+        <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;DECIMAL_SEPARATOR&#39;</span><span class="p">,</span> <span class="n">lang</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">),</span>
+        <span class="n">decimal_pos</span><span class="p">,</span>
+        <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;NUMBER_GROUPING&#39;</span><span class="p">,</span> <span class="n">lang</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">),</span>
+        <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;THOUSAND_SEPARATOR&#39;</span><span class="p">,</span> <span class="n">lang</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">),</span>
+        <span class="n">force_grouping</span><span class="o">=</span><span class="n">force_grouping</span>
+    <span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">localize</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Checks if value is a localizable type (date, number...) and returns it</span>
+<span class="sd">    formatted as a string using current locale format.</span>
+
+<span class="sd">    If use_l10n is provided and is not None, that will force the value to</span>
+<span class="sd">    be localized (or not), overriding the value of settings.USE_L10N.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">mark_safe</span><span class="p">(</span><span class="nb">unicode</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="n">number_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">date_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;DATETIME_FORMAT&#39;</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">date_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">time</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">time_format</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;TIME_FORMAT&#39;</span><span class="p">,</span> <span class="n">use_l10n</span><span class="o">=</span><span class="n">use_l10n</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+<span class="k">def</span> <span class="nf">localize_input</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Checks if an input value is a localizable type and returns it</span>
+<span class="sd">    formatted with the appropriate formatting string of the current locale.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="n">number_format</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">datetime_safe</span><span class="o">.</span><span class="n">new_datetime</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">format</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">default</span> <span class="ow">or</span> <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;DATETIME_INPUT_FORMATS&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="n">format</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">datetime_safe</span><span class="o">.</span><span class="n">new_date</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">format</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">default</span> <span class="ow">or</span> <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;DATE_INPUT_FORMATS&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="n">format</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">time</span><span class="p">):</span>
+        <span class="n">format</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">default</span> <span class="ow">or</span> <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;TIME_INPUT_FORMATS&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="n">format</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">value</span>
+
+<span class="k">def</span> <span class="nf">sanitize_separators</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Sanitizes a value according to the current decimal and</span>
+<span class="sd">    thousand separator setting. Used with form field input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_L10N</span><span class="p">:</span>
+        <span class="n">decimal_separator</span> <span class="o">=</span> <span class="n">get_format</span><span class="p">(</span><span class="s">&#39;DECIMAL_SEPARATOR&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">decimal_separator</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                <span class="n">value</span><span class="p">,</span> <span class="n">decimals</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">decimal_separator</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">decimals</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_THOUSAND_SEPARATOR</span><span class="p">:</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">get_format</span><span class="p">(</span><span class="s">&#39;THOUSAND_SEPARATOR&#39;</span><span class="p">),</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="s">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">value</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

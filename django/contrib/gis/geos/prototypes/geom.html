@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › prototypes › geom.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>geom.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_size_t</span><span class="p">,</span> <span class="n">c_ubyte</span><span class="p">,</span> <span class="n">POINTER</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.libgeos</span> <span class="kn">import</span> <span class="n">CS_PTR</span><span class="p">,</span> <span class="n">GEOM_PTR</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.errcheck</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">check_geom</span><span class="p">,</span> <span class="n">check_minus_one</span><span class="p">,</span> <span class="n">check_sized_string</span><span class="p">,</span> <span class="n">check_string</span><span class="p">,</span> <span class="n">check_zero</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.threadsafe</span> <span class="kn">import</span> <span class="n">GEOSFunc</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>This is the return type used by binary output (WKB, HEX) routines.</p></td><td class="code"><div class="highlight"><pre><span class="n">c_uchar_p</span> <span class="o">=</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">c_ubyte</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>We create a simple subclass of c<em>char</em>p here because when the response
+type is set to c<em>char</em>p, you get a <em>Python</em> string and there's no way
+to access the string's address inside the error checking function.
+In other words, you can't free the memory allocated inside GEOS.  Previously,
+the return type would just be omitted and the integer address would be
+used -- but this allows us to be specific in the function definition and
+keeps the reference so it may be free'd.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">geos_char_p</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">):</span>
+    <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><h2>ctypes generation functions</h2></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">bin_constructor</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="s">&quot;Generates a prototype for binary construction (HEX, WKB) GEOS routines.&quot;</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_size_t</span><span class="p">]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">GEOM_PTR</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_geom</span>
+    <span class="k">return</span> <span class="n">func</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>HEX &amp; WKB output</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">bin_output</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="s">&quot;Generates a prototype for the routines that return a a sized string.&quot;</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">,</span> <span class="n">POINTER</span><span class="p">(</span><span class="n">c_size_t</span><span class="p">)]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_sized_string</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">c_uchar_p</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="k">def</span> <span class="nf">geom_output</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">argtypes</span><span class="p">):</span>
+    <span class="s">&quot;For GEOS routines that return a geometry.&quot;</span>
+    <span class="k">if</span> <span class="n">argtypes</span><span class="p">:</span> <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="n">argtypes</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">GEOM_PTR</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_geom</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="k">def</span> <span class="nf">geom_index</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="s">&quot;For GEOS routines that return geometries from an index.&quot;</span>
+    <span class="k">return</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">,</span> <span class="n">c_int</span><span class="p">])</span>
+
+<span class="k">def</span> <span class="nf">int_from_geom</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">zero</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="s">&quot;Argument is a geometry, return type is an integer.&quot;</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">c_int</span>
+    <span class="k">if</span> <span class="n">zero</span><span class="p">:</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_zero</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_minus_one</span>
+    <span class="k">return</span> <span class="n">func</span>
+
+<span class="k">def</span> <span class="nf">string_from_geom</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="s">&quot;Argument is a Geometry, return type is a string.&quot;</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">]</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">geos_char_p</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">errcheck</span> <span class="o">=</span> <span class="n">check_string</span>
+    <span class="k">return</span> <span class="n">func</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><h2>ctypes prototypes</h2></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Deprecated creation routines from WKB, HEX, WKT</p></td><td class="code"><div class="highlight"><pre><span class="n">from_hex</span> <span class="o">=</span> <span class="n">bin_constructor</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomFromHEX_buf&#39;</span><span class="p">))</span>
+<span class="n">from_wkb</span> <span class="o">=</span> <span class="n">bin_constructor</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomFromWKB_buf&#39;</span><span class="p">))</span>
+<span class="n">from_wkt</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomFromWKT&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">c_char_p</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Deprecated output routines</p></td><td class="code"><div class="highlight"><pre><span class="n">to_hex</span> <span class="o">=</span> <span class="n">bin_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomToHEX_buf&#39;</span><span class="p">))</span>
+<span class="n">to_wkb</span> <span class="o">=</span> <span class="n">bin_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomToWKB_buf&#39;</span><span class="p">))</span>
+<span class="n">to_wkt</span> <span class="o">=</span> <span class="n">string_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomToWKT&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>The GEOS geometry type, typeid, num_coordites and number of geometries</p></td><td class="code"><div class="highlight"><pre><span class="n">geos_normalize</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSNormalize&#39;</span><span class="p">))</span>
+<span class="n">geos_type</span> <span class="o">=</span> <span class="n">string_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomType&#39;</span><span class="p">))</span>
+<span class="n">geos_typeid</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeomTypeId&#39;</span><span class="p">))</span>
+<span class="n">get_dims</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_getDimensions&#39;</span><span class="p">),</span> <span class="n">zero</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+<span class="n">get_num_coords</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetNumCoordinates&#39;</span><span class="p">))</span>
+<span class="n">get_num_geoms</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetNumGeometries&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Geometry creation factories</p></td><td class="code"><div class="highlight"><pre><span class="n">create_point</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_createPoint&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">CS_PTR</span><span class="p">])</span>
+<span class="n">create_linestring</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_createLineString&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">CS_PTR</span><span class="p">])</span>
+<span class="n">create_linearring</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_createLinearRing&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">CS_PTR</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Polygon and collection creation routines are special and will not
+have their argument types defined.</p></td><td class="code"><div class="highlight"><pre><span class="n">create_polygon</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_createPolygon&#39;</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+<span class="n">create_collection</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_createCollection&#39;</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Ring routines</p></td><td class="code"><div class="highlight"><pre><span class="n">get_extring</span> <span class="o">=</span> <span class="n">geom_output</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetExteriorRing&#39;</span><span class="p">),</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">])</span>
+<span class="n">get_intring</span> <span class="o">=</span> <span class="n">geom_index</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetInteriorRingN&#39;</span><span class="p">))</span>
+<span class="n">get_nrings</span> <span class="o">=</span> <span class="n">int_from_geom</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetNumInteriorRings&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Collection Routines</p></td><td class="code"><div class="highlight"><pre><span class="n">get_geomn</span> <span class="o">=</span> <span class="n">geom_index</span><span class="p">(</span><span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetGeometryN&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Cloning</p></td><td class="code"><div class="highlight"><pre><span class="n">geom_clone</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_clone&#39;</span><span class="p">)</span>
+<span class="n">geom_clone</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">]</span>
+<span class="n">geom_clone</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">GEOM_PTR</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Destruction routine.</p></td><td class="code"><div class="highlight"><pre><span class="n">destroy_geom</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGeom_destroy&#39;</span><span class="p">)</span>
+<span class="n">destroy_geom</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">]</span>
+<span class="n">destroy_geom</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>SRID routines</p></td><td class="code"><div class="highlight"><pre><span class="n">geos_get_srid</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSGetSRID&#39;</span><span class="p">)</span>
+<span class="n">geos_get_srid</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">]</span>
+<span class="n">geos_get_srid</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="n">c_int</span>
+
+<span class="n">geos_set_srid</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSSetSRID&#39;</span><span class="p">)</span>
+<span class="n">geos_set_srid</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">GEOM_PTR</span><span class="p">,</span> <span class="n">c_int</span><span class="p">]</span>
+<span class="n">geos_set_srid</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

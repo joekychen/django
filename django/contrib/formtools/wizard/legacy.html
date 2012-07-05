@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › formtools › wizard › legacy.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>legacy.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">FormWizard class -- implements a multi-page form, validating between each</span>
+<span class="sd">step and storing the form&#39;s state as HTML hidden fields so that no state is</span>
+<span class="sd">stored on the server side.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">django.forms</span> <span class="kn">import</span> <span class="n">HiddenInput</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">Http404</span>
+<span class="kn">from</span> <span class="nn">django.shortcuts</span> <span class="kn">import</span> <span class="n">render_to_response</span>
+<span class="kn">from</span> <span class="nn">django.template.context</span> <span class="kn">import</span> <span class="n">RequestContext</span>
+<span class="kn">from</span> <span class="nn">django.utils.crypto</span> <span class="kn">import</span> <span class="n">constant_time_compare</span>
+<span class="kn">from</span> <span class="nn">django.utils.translation</span> <span class="kn">import</span> <span class="n">ugettext_lazy</span> <span class="k">as</span> <span class="n">_</span>
+<span class="kn">from</span> <span class="nn">django.utils.decorators</span> <span class="kn">import</span> <span class="n">method_decorator</span>
+<span class="kn">from</span> <span class="nn">django.views.decorators.csrf</span> <span class="kn">import</span> <span class="n">csrf_protect</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.formtools.utils</span> <span class="kn">import</span> <span class="n">form_hmac</span>
+
+<span class="k">class</span> <span class="nc">FormWizard</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>The HTML (and POST data) field name for the "step" variable.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">step_field_name</span><span class="o">=</span><span class="s">&quot;wizard_step&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>METHODS SUBCLASSES SHOULDN'T OVERRIDE ###################################</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form_list</span><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Start a new wizard with a list of forms.</span>
+
+<span class="sd">        form_list should be a list of Form classes (not instances).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">form_list</span> <span class="o">=</span> <span class="n">form_list</span><span class="p">[:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial</span> <span class="o">=</span> <span class="n">initial</span> <span class="ow">or</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Dictionary of extra template context variables.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">extra_context</span> <span class="o">=</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>A zero-based counter keeping track of which step we're in.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">step</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="kn">import</span> <span class="nn">warnings</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s">&#39;Old-style form wizards have been deprecated; use the class-based &#39;</span>
+            <span class="s">&#39;views in django.contrib.formtools.wizard.views instead.&#39;</span><span class="p">,</span>
+            <span class="ne">DeprecationWarning</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;step: </span><span class="si">%d</span><span class="se">\n</span><span class="s">form_list: </span><span class="si">%s</span><span class="se">\n</span><span class="s">initial_data: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">form_list</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_form</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="s">&quot;Helper method that returns the Form instance for the given step.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Sanity check.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">step</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_steps</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="n">Http404</span><span class="p">(</span><span class="s">&#39;Step </span><span class="si">%s</span><span class="s"> does not exist&#39;</span> <span class="o">%</span> <span class="n">step</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">form_list</span><span class="p">[</span><span class="n">step</span><span class="p">](</span><span class="n">data</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix_for_step</span><span class="p">(</span><span class="n">step</span><span class="p">),</span> <span class="n">initial</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">initial</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">num_steps</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Helper method that returns the number of steps.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>You might think we should just set "self.num<em>steps = len(form</em>list)"
+in <strong>init</strong>(), but this calculation needs to be dynamic, because some
+hook methods might alter self.form_list.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">form_list</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_check_security_hash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">):</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">security_hash</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">constant_time_compare</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+
+    <span class="nd">@method_decorator</span><span class="p">(</span><span class="n">csrf_protect</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Main method that does all the hard work, conforming to the Django view</span>
+<span class="sd">        interface.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s">&#39;extra_context&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">extra_context</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;extra_context&#39;</span><span class="p">])</span>
+        <span class="n">current_step</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_current_or_first_step</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parse_params</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Validate and process all the previous forms before instantiating the
+current step's form in case self.process<em>step makes changes to
+self.form</em>list.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>If any of them fails validation, that must mean the validator relied
+on some other input, such as an external Web site.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>It is also possible that alidation might fail under certain attack
+situations: an attacker might be able to bypass previous stages, and
+generate correct security hashes for all the skipped stages by virtue
+of:
+ 1) having filled out an identical form which doesn't have the
+    validation (and does something different at the end),
+ 2) or having filled out a previous version of the same form which
+    had some validation missing,
+ 3) or previously having filled out the form when they had more
+    privileges than they do now.</p>
+
+<p>Since the hashes only take into account values, and not other other
+validation the form might do, we must re-do validation now for
+security reasons.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">previous_form_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">current_step</span><span class="p">):</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_security_hash</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;hash_</span><span class="si">%d</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">),</span>
+                                             <span class="n">request</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_hash_failure</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_revalidation_failure</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">process_step</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span>
+                <span class="n">previous_form_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Process the current step. If it's valid, go to the next step or call
+done(), depending on whether any steps remain.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">current_step</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">current_step</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_step</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">current_step</span><span class="p">)</span>
+            <span class="n">next_step</span> <span class="o">=</span> <span class="n">current_step</span> <span class="o">+</span> <span class="mi">1</span>
+
+            <span class="k">if</span> <span class="n">next_step</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_steps</span><span class="p">():</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">done</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">previous_form_list</span> <span class="o">+</span> <span class="p">[</span><span class="n">form</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">form</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">next_step</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">step</span> <span class="o">=</span> <span class="n">current_step</span> <span class="o">=</span> <span class="n">next_step</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">current_step</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="s">&quot;Renders the given Form object, returning an HttpResponse.&quot;</span>
+        <span class="n">old_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">POST</span>
+        <span class="n">prev_fields</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">old_data</span><span class="p">:</span>
+            <span class="n">hidden</span> <span class="o">=</span> <span class="n">HiddenInput</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Collect all data from previous steps and render it as HTML hidden fields.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">step</span><span class="p">):</span>
+                <span class="n">old_form</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">old_data</span><span class="p">)</span>
+                <span class="n">hash_name</span> <span class="o">=</span> <span class="s">&#39;hash_</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">i</span>
+                <span class="n">prev_fields</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">bf</span><span class="o">.</span><span class="n">as_hidden</span><span class="p">()</span> <span class="k">for</span> <span class="n">bf</span> <span class="ow">in</span> <span class="n">old_form</span><span class="p">])</span>
+                <span class="n">prev_fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hidden</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">hash_name</span><span class="p">,</span> <span class="n">old_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">hash_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">security_hash</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">old_form</span><span class="p">))))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_template</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">prev_fields</span><span class="p">),</span> <span class="n">step</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>METHODS SUBCLASSES MIGHT OVERRIDE IF APPROPRIATE ########################</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">prefix_for_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">):</span>
+        <span class="s">&quot;Given the step, returns a Form prefix to use.&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">render_hash_failure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">step</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for rendering a template if a hash check failed.</span>
+
+<span class="sd">        step is the step that failed. Any previous step is guaranteed to be</span>
+<span class="sd">        valid.</span>
+
+<span class="sd">        This default implementation simply renders the form for the given step,</span>
+<span class="sd">        but subclasses may want to display an error message, etc.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">step</span><span class="p">),</span> <span class="n">request</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;wizard_error&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;We apologize, but your form has expired. Please continue filling out the form from this page.&#39;</span><span class="p">)})</span>
+
+    <span class="k">def</span> <span class="nf">render_revalidation_failure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">form</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for rendering a template if final revalidation failed.</span>
+
+<span class="sd">        It is highly unlikely that this point would ever be reached, but See</span>
+<span class="sd">        the comment in __call__() for an explanation.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">security_hash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calculates the security hash for the given HttpRequest and Form instances.</span>
+
+<span class="sd">        Subclasses may want to take into account request-specific information,</span>
+<span class="sd">        such as the IP address.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">form_hmac</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_current_or_first_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Given the request object and whatever *args and **kwargs were passed to</span>
+<span class="sd">        __call__(), returns the current step (which is zero-based).</span>
+
+<span class="sd">        Note that the result should not be trusted. It may even be a completely</span>
+<span class="sd">        invalid number. It&#39;s not the job of this method to validate it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step_field_name</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">step</span>
+
+    <span class="k">def</span> <span class="nf">parse_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for setting some state, given the request object and whatever</span>
+<span class="sd">        *args and **kwargs were passed to __call__(), sets some state.</span>
+
+<span class="sd">        This is called at the beginning of __call__().</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">get_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">step</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for specifying the name of the template to use for a given step.</span>
+
+<span class="sd">        Note that this can return a tuple of template names if you&#39;d like to</span>
+<span class="sd">        use the template system&#39;s select_template() hook.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s">&#39;forms/wizard.html&#39;</span>
+
+    <span class="k">def</span> <span class="nf">render_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">previous_fields</span><span class="p">,</span> <span class="n">step</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Renders the template for the given step, returning an HttpResponse object.</span>
+
+<span class="sd">        Override this method if you want to add a custom context, return a</span>
+<span class="sd">        different MIME type, etc. If you only need to override the template</span>
+<span class="sd">        name, use get_template() instead.</span>
+
+<span class="sd">        The template will be rendered with the following context:</span>
+<span class="sd">            step_field -- The name of the hidden field containing the step.</span>
+<span class="sd">            step0      -- The current step (zero-based).</span>
+<span class="sd">            step       -- The current step (one-based).</span>
+<span class="sd">            step_count -- The total number of steps.</span>
+<span class="sd">            form       -- The Form instance for the current step (either empty</span>
+<span class="sd">                          or with errors).</span>
+<span class="sd">            previous_fields -- A string representing every previous data field,</span>
+<span class="sd">                          plus hashes for completed forms, all in the form of</span>
+<span class="sd">                          hidden fields. Note that you&#39;ll need to run this</span>
+<span class="sd">                          through the &quot;safe&quot; template filter, to prevent</span>
+<span class="sd">                          auto-escaping, because it&#39;s raw HTML.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extra_context</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">render_to_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_template</span><span class="p">(</span><span class="n">step</span><span class="p">),</span> <span class="nb">dict</span><span class="p">(</span><span class="n">context</span><span class="p">,</span>
+            <span class="n">step_field</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">step_field_name</span><span class="p">,</span>
+            <span class="n">step0</span><span class="o">=</span><span class="n">step</span><span class="p">,</span>
+            <span class="n">step</span><span class="o">=</span><span class="n">step</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+            <span class="n">step_count</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_steps</span><span class="p">(),</span>
+            <span class="n">form</span><span class="o">=</span><span class="n">form</span><span class="p">,</span>
+            <span class="n">previous_fields</span><span class="o">=</span><span class="n">previous_fields</span>
+        <span class="p">),</span> <span class="n">context_instance</span><span class="o">=</span><span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">process_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">step</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for modifying the FormWizard&#39;s internal state, given a fully</span>
+<span class="sd">        validated Form object. The Form is guaranteed to have clean, valid</span>
+<span class="sd">        data.</span>
+
+<span class="sd">        This method should *not* modify any of that data. Rather, it might want</span>
+<span class="sd">        to set self.extra_context or dynamically alter self.form_list, based on</span>
+<span class="sd">        previously submitted forms.</span>
+
+<span class="sd">        Note that this method is called every time a page is rendered for *all*</span>
+<span class="sd">        submitted steps.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>METHODS SUBCLASSES MUST OVERRIDE ########################################</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">done</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form_list</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Hook for doing something with the validated data. This is responsible</span>
+<span class="sd">        for the final processing.</span>
+
+<span class="sd">        form_list is a list of Form instances, each containing clean, valid</span>
+<span class="sd">        data.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Your </span><span class="si">%s</span><span class="s"> class has not defined a done() method, which is required.&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › geoapp › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span>
+<span class="kn">from</span> <span class="nn">django.db.utils</span> <span class="kn">import</span> <span class="n">DatabaseError</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis</span> <span class="kn">import</span> <span class="n">gdal</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="p">(</span><span class="n">fromstr</span><span class="p">,</span> <span class="n">GEOSGeometry</span><span class="p">,</span>
+    <span class="n">Point</span><span class="p">,</span> <span class="n">LineString</span><span class="p">,</span> <span class="n">LinearRing</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">,</span> <span class="n">GeometryCollection</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.tests.utils</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">no_mysql</span><span class="p">,</span> <span class="n">no_oracle</span><span class="p">,</span> <span class="n">no_spatialite</span><span class="p">,</span>
+    <span class="n">mysql</span><span class="p">,</span> <span class="n">oracle</span><span class="p">,</span> <span class="n">postgis</span><span class="p">,</span> <span class="n">spatialite</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Country</span><span class="p">,</span> <span class="n">City</span><span class="p">,</span> <span class="n">PennsylvaniaCity</span><span class="p">,</span> <span class="n">State</span><span class="p">,</span> <span class="n">Track</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">spatialite</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Feature</span><span class="p">,</span> <span class="n">MinusOneSRID</span>
+
+<span class="k">class</span> <span class="nc">GeoModelTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test01_fixtures</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing geographic model initialization from fixtures.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Ensuring that data was loaded from initial data fixtures.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test02_proxy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing Lazy-Geometry support (using the GeometryProxy).&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h1>Testing on a Point</h1></td><td class="code"><div class="highlight"><pre>        <span class="n">pnt</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">nullcity</span> <span class="o">=</span> <span class="n">City</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullCity&#39;</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Making sure TypeError is thrown when trying to set with an
+ incompatible type.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="n">LineString</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))]:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">nullcity</span><span class="o">.</span><span class="n">point</span> <span class="o">=</span> <span class="n">bad</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;Should throw a TypeError&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Now setting with a compatible GEOS Geometry, saving, and ensuring
+ the save took, notice no SRID is explicitly set.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">new</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">23</span><span class="p">)</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">point</span> <span class="o">=</span> <span class="n">new</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Ensuring that the SRID is automatically set to that of the
+ field after assignment, but before saving.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4326</span><span class="p">,</span> <span class="n">nullcity</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Ensuring the point was saved correctly after saving</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">new</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullCity&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Setting the X and Y of the Point</p></td><td class="code"><div class="highlight"><pre>        <span class="n">nullcity</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="mi">23</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="mi">5</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Checking assignments pre &amp; post-save.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="mi">23</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullCity&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="mi">23</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullCity&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+        <span class="n">nullcity</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><h1>Testing on a Polygon</h1></td><td class="code"><div class="highlight"><pre>        <span class="n">shell</span> <span class="o">=</span> <span class="n">LinearRing</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="n">LinearRing</span><span class="p">((</span><span class="mi">40</span><span class="p">,</span> <span class="mi">40</span><span class="p">),</span> <span class="p">(</span><span class="mi">40</span><span class="p">,</span> <span class="mi">60</span><span class="p">),</span> <span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">60</span><span class="p">),</span> <span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">40</span><span class="p">),</span> <span class="p">(</span><span class="mi">40</span><span class="p">,</span> <span class="mi">40</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Creating a State object using a built Polygon</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ply</span> <span class="o">=</span> <span class="n">Polygon</span><span class="p">(</span><span class="n">shell</span><span class="p">,</span> <span class="n">inner</span><span class="p">)</span>
+        <span class="n">nullstate</span> <span class="o">=</span> <span class="n">State</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullState&#39;</span><span class="p">,</span> <span class="n">poly</span><span class="o">=</span><span class="n">ply</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4326</span><span class="p">,</span> <span class="n">nullstate</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span> <span class="c"># SRID auto-set from None</span>
+        <span class="n">nullstate</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">ns</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullState&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ply</span><span class="p">,</span> <span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Testing the <code>ogr</code> and <code>srs</code> lazy-geometry properties.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">gdal</span><span class="o">.</span><span class="n">HAS_GDAL</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">ogr</span><span class="p">,</span> <span class="n">gdal</span><span class="o">.</span><span class="n">OGRGeometry</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">wkb</span><span class="p">,</span> <span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">ogr</span><span class="o">.</span><span class="n">wkb</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">srs</span><span class="p">,</span> <span class="n">gdal</span><span class="o">.</span><span class="n">SpatialReference</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;WGS 84&#39;</span><span class="p">,</span> <span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">srs</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Changing the interior ring on the poly attribute.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">new_inner</span> <span class="o">=</span> <span class="n">LinearRing</span><span class="p">((</span><span class="mi">30</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span> <span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="mi">70</span><span class="p">),</span> <span class="p">(</span><span class="mi">70</span><span class="p">,</span> <span class="mi">70</span><span class="p">),</span> <span class="p">(</span><span class="mi">70</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span> <span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+        <span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_inner</span>
+        <span class="n">ply</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_inner</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4326</span><span class="p">,</span> <span class="n">ns</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="n">ns</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ply</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NullState&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span>
+        <span class="n">ns</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test03a_kml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing KML output from the database using GeoQuerySet.kml().&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Only PostGIS and Spatialite (>=2.4.0-RC4) support KML serialization</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">postgis</span> <span class="ow">or</span> <span class="p">(</span><span class="n">spatialite</span> <span class="ow">and</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">kml</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">NotImplementedError</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">kml</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;poly&#39;</span><span class="p">)</span>
+            <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Should throw a TypeError when trying to obtain KML from a
+ non-geometry field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">kml</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>The reference KML depends on the version of PostGIS used
+(the output stopped including altitude in 1.3.3).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatial_version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span>
+            <span class="n">ref_kml</span> <span class="o">=</span>  <span class="s">&#39;&lt;Point&gt;&lt;coordinates&gt;-104.609252,38.255001&lt;/coordinates&gt;&lt;/Point&gt;&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ref_kml</span> <span class="o">=</span> <span class="s">&#39;&lt;Point&gt;&lt;coordinates&gt;-104.609252,38.255001,0&lt;/coordinates&gt;&lt;/Point&gt;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Ensuring the KML is as expected.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ptown1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">kml</span><span class="p">(</span><span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="n">ptown2</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">kml</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ptown</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ptown1</span><span class="p">,</span> <span class="n">ptown2</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_kml</span><span class="p">,</span> <span class="n">ptown</span><span class="o">.</span><span class="n">kml</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test03b_gml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GML output from the database using GeoQuerySet.gml().&quot;</span>
+        <span class="k">if</span> <span class="n">mysql</span> <span class="ow">or</span> <span class="p">(</span><span class="n">spatialite</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">gml</span><span class="p">)</span> <span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">NotImplementedError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">gml</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;mpoly&#39;</span><span class="p">)</span>
+            <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Should throw a TypeError when tyring to obtain GML from a
+non-geometry field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">gml</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="n">ptown1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">gml</span><span class="p">(</span><span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="n">ptown2</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">gml</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>No precision parameter for Oracle :-/</p></td><td class="code"><div class="highlight"><pre>            <span class="n">gml_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^&lt;gml:Point srsName=&quot;SDO:4326&quot; xmlns:gml=&quot;http://www.opengis.net/gml&quot;&gt;&lt;gml:coordinates decimal=&quot;\.&quot; cs=&quot;,&quot; ts=&quot; &quot;&gt;-104.60925\d+,38.25500\d+ &lt;/gml:coordinates&gt;&lt;/gml:Point&gt;&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">spatialite</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Spatialite has extra colon in SrsName</p></td><td class="code"><div class="highlight"><pre>            <span class="n">gml_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^&lt;gml:Point SrsName=&quot;EPSG::4326&quot;&gt;&lt;gml:coordinates decimal=&quot;\.&quot; cs=&quot;,&quot; ts=&quot; &quot;&gt;-104.609251\d+,38.255001&lt;/gml:coordinates&gt;&lt;/gml:Point&gt;&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">gml_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^&lt;gml:Point srsName=&quot;EPSG:4326&quot;&gt;&lt;gml:coordinates&gt;-104\.60925\d+,38\.255001&lt;/gml:coordinates&gt;&lt;/gml:Point&gt;&#39;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">ptown</span> <span class="ow">in</span> <span class="p">[</span><span class="n">ptown1</span><span class="p">,</span> <span class="n">ptown2</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">gml_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">ptown</span><span class="o">.</span><span class="n">gml</span><span class="p">))</span>
+
+
+    <span class="k">def</span> <span class="nf">test03c_geojson</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoJSON output from the database using GeoQuerySet.geojson().&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Only PostGIS 1.3.4+ supports GeoJSON.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geojson</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">NotImplementedError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">geojson</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;mpoly&#39;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatial_version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">pueblo_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;coordinates&quot;:[-104.609252,38.255001]}&#39;</span>
+            <span class="n">houston_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;crs&quot;:{&quot;type&quot;:&quot;name&quot;,&quot;properties&quot;:{&quot;name&quot;:&quot;EPSG:4326&quot;}},&quot;coordinates&quot;:[-95.363151,29.763374]}&#39;</span>
+            <span class="n">victoria_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;bbox&quot;:[-123.30519600,48.46261100,-123.30519600,48.46261100],&quot;coordinates&quot;:[-123.305196,48.462611]}&#39;</span>
+            <span class="n">chicago_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;crs&quot;:{&quot;type&quot;:&quot;name&quot;,&quot;properties&quot;:{&quot;name&quot;:&quot;EPSG:4326&quot;}},&quot;bbox&quot;:[-87.65018,41.85039,-87.65018,41.85039],&quot;coordinates&quot;:[-87.65018,41.85039]}&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pueblo_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;coordinates&quot;:[-104.60925200,38.25500100]}&#39;</span>
+            <span class="n">houston_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;crs&quot;:{&quot;type&quot;:&quot;EPSG&quot;,&quot;properties&quot;:{&quot;EPSG&quot;:4326}},&quot;coordinates&quot;:[-95.36315100,29.76337400]}&#39;</span>
+            <span class="n">victoria_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;bbox&quot;:[-123.30519600,48.46261100,-123.30519600,48.46261100],&quot;coordinates&quot;:[-123.30519600,48.46261100]}&#39;</span>
+            <span class="n">chicago_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;type&quot;:&quot;Point&quot;,&quot;crs&quot;:{&quot;type&quot;:&quot;EPSG&quot;,&quot;properties&quot;:{&quot;EPSG&quot;:4326}},&quot;bbox&quot;:[-87.65018,41.85039,-87.65018,41.85039],&quot;coordinates&quot;:[-87.65018,41.85039]}&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Precision argument should only be an integer</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="s">&#39;foo&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Reference queries and values.
+SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 8, 0) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Pueblo';</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">pueblo_json</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">geojson</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>1.3.x: SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 8, 1) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Houston';
+1.4.x: SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 8, 2) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Houston';
+This time we want to include the CRS by using the <code>crs</code> keyword.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">houston_json</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">(</span><span class="n">crs</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">model_att</span><span class="o">=</span><span class="s">&#39;json&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>1.3.x: SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 8, 2) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Victoria';
+1.4.x: SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 8, 1) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Houston';
+This time we include the bounding box by using the <code>bbox</code> keyword.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">victoria_json</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">(</span><span class="n">bbox</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Victoria&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">geojson</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>1.(3|4).x: SELECT ST<em>AsGeoJson("geoapp</em>city"."point", 5, 3) FROM "geoapp<em>city" WHERE "geoapp</em>city"."name" = 'Chicago';
+Finally, we set every available keyword.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">chicago_json</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">(</span><span class="n">bbox</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">crs</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Chicago&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">geojson</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test03d_svg</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing SVG output using GeoQuerySet.svg().&quot;</span>
+        <span class="k">if</span> <span class="n">mysql</span> <span class="ow">or</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">NotImplementedError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">svg</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">svg</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="s">&#39;foo&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>SELECT AsSVG(geoapp<em>city.point, 0, 8) FROM geoapp</em>city WHERE name = 'Pueblo';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">svg1</span> <span class="o">=</span> <span class="s">&#39;cx=&quot;-104.609252&quot; cy=&quot;-38.255001&quot;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Even though relative, only one point so it's practically the same except for
+the 'c' letter prefix on the x,y values.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">svg2</span> <span class="o">=</span> <span class="n">svg1</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;c&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">svg1</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">svg</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">svg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">svg2</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">svg</span><span class="p">(</span><span class="n">relative</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">svg</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test04_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the transform() GeoManager method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Pre-transformed points for Houston and Pueblo.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">htown</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT(1947516.83115183 6322297.06040572)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">3084</span><span class="p">)</span>
+        <span class="n">ptown</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT(992363.390841912 481455.395105533)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">2774</span><span class="p">)</span>
+        <span class="n">prec</span> <span class="o">=</span> <span class="mi">3</span> <span class="c"># Precision is low due to version variations in PROJ and GDAL.</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Asserting the result of the transform operation with the values in
+ the pre-transformed points.  Oracle does not have the 3084 SRID.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">htown</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3084</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">htown</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">prec</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">htown</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">prec</span><span class="p">)</span>
+
+        <span class="n">p1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">ptown</span><span class="o">.</span><span class="n">srid</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="n">p2</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">srid</span><span class="o">=</span><span class="n">ptown</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2774</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ptown</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">prec</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ptown</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">prec</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_spatialite</span> <span class="c"># SpatiaLite does not have an Extent function</span>
+    <span class="k">def</span> <span class="nf">test05_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `extent` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Reference query:
+<code>SELECT ST_extent(point) FROM geoapp_city WHERE (name='Houston' or name='Dallas');</code>
+  =>  BOX(-96.8016128540039 29.7633724212646,-95.3631439208984 32.7820587158203)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">expected</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mf">96.8016128540039</span><span class="p">,</span> <span class="mf">29.7633724212646</span><span class="p">,</span> <span class="o">-</span><span class="mf">95.3631439208984</span><span class="p">,</span> <span class="mf">32.782058715820</span><span class="p">)</span>
+
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name__in</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="s">&#39;Dallas&#39;</span><span class="p">))</span>
+        <span class="n">extent</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">extent</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">val</span><span class="p">,</span> <span class="n">exp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">extent</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">exp</span><span class="p">,</span> <span class="n">val</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Only PostGIS has support for the MakeLine aggregate.</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test06_make_line</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `make_line` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Ensuring that a <code>TypeError</code> is raised on models without PointFields.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">make_line</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">make_line</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Reference query:
+SELECT AsText(ST<em>MakeLine(geoapp</em>city.point)) FROM geoapp_city;</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_line</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="s">&#39;LINESTRING(-95.363151 29.763374,-96.801611 32.782057,-97.521157 34.464642,174.783117 -41.315268,-104.609252 38.255001,-95.23506 38.971823,-87.650175 41.850385,-123.305196 48.462611)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_line</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">make_line</span><span class="p">())</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test09_disjoint</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `disjoint` lookup type.&quot;</span>
+        <span class="n">ptown</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="n">qs1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__disjoint</span><span class="o">=</span><span class="n">ptown</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="n">qs1</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+        <span class="n">qs2</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__disjoint</span><span class="o">=</span><span class="n">ptown</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">qs2</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Kansas&#39;</span><span class="p">,</span> <span class="n">qs2</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test10_contains_contained</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the &#39;contained&#39;, &#39;contains&#39;, and &#39;bbcontains&#39; lookup types.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Getting Texas, yes we were a country -- once ;)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">texas</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Seeing what cities are in Texas, should get Houston and Dallas,
+ and Oklahoma City because 'contained' only checks on the
+ <em>bounding box</em> of the Geometries.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__contained</span><span class="o">=</span><span class="n">texas</span><span class="o">.</span><span class="n">mpoly</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+            <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="s">&#39;Dallas&#39;</span><span class="p">,</span> <span class="s">&#39;Oklahoma City&#39;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cities</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Pulling out some cities.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">houston</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+        <span class="n">wellington</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Wellington&#39;</span><span class="p">)</span>
+        <span class="n">pueblo</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+        <span class="n">okcity</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Oklahoma City&#39;</span><span class="p">)</span>
+        <span class="n">lawrence</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Lawrence&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Now testing contains on the countries using the points for
+ Houston and Wellington.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tx</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__contains</span><span class="o">=</span><span class="n">houston</span><span class="o">.</span><span class="n">point</span><span class="p">)</span> <span class="c"># Query w/GEOSGeometry</span>
+        <span class="n">nz</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__contains</span><span class="o">=</span><span class="n">wellington</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">hex</span><span class="p">)</span> <span class="c"># Query w/EWKBHEX</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">tx</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;New Zealand&#39;</span><span class="p">,</span> <span class="n">nz</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Spatialite 2.3 thinks that Lawrence is in Puerto Rico (a NULL geometry).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">spatialite</span><span class="p">:</span>
+            <span class="n">ks</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">poly__contains</span><span class="o">=</span><span class="n">lawrence</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Kansas&#39;</span><span class="p">,</span> <span class="n">ks</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Pueblo and Oklahoma City (even though OK City is within the bounding box of Texas)
+are not contained in Texas or New Zealand.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">mpoly__contains</span><span class="o">=</span><span class="n">pueblo</span><span class="o">.</span><span class="n">point</span><span class="p">)))</span> <span class="c"># Query w/GEOSGeometry object</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">((</span><span class="n">mysql</span> <span class="ow">and</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+                         <span class="nb">len</span><span class="p">(</span><span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">mpoly__contains</span><span class="o">=</span><span class="n">okcity</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">wkt</span><span class="p">)))</span> <span class="c"># Qeury w/WKT</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>OK City is contained w/in bounding box of Texas.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">mpoly__bbcontains</span><span class="o">=</span><span class="n">okcity</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">qs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test11_lookup_insert_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing automatic transform for lookups and inserts.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>San Antonio in 'WGS84' (SRID 4326)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">sa_4326</span> <span class="o">=</span> <span class="s">&#39;POINT (-98.493183 29.424170)&#39;</span>
+        <span class="n">wgs_pnt</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="n">sa_4326</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span> <span class="c"># Our reference point in WGS84</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>Oracle doesn't have SRID 3084, using 41157.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>San Antonio in 'Texas 4205, Southern Zone (1983, meters)' (SRID 41157)
+Used the following Oracle SQL to get this value:
+ SELECT SDO<em>UTIL.TO</em>WKTGEOMETRY(SDO<em>CS.TRANSFORM(SDO</em>GEOMETRY('POINT (-98.493183 29.424170)', 4326), 41157)) FROM DUAL;</p></td><td class="code"><div class="highlight"><pre>            <span class="n">nad_wkt</span>  <span class="o">=</span> <span class="s">&#39;POINT (300662.034646583 5416427.45974934)&#39;</span>
+            <span class="n">nad_srid</span> <span class="o">=</span> <span class="mi">41157</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>San Antonio in 'NAD83(HARN) / Texas Centric Lambert Conformal' (SRID 3084)</p></td><td class="code"><div class="highlight"><pre>            <span class="n">nad_wkt</span> <span class="o">=</span> <span class="s">&#39;POINT (1645978.362408288754523 6276356.025927528738976)&#39;</span> <span class="c"># Used ogr.py in gdal 1.4.1 for this transform</span>
+            <span class="n">nad_srid</span> <span class="o">=</span> <span class="mi">3084</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Constructing &amp; querying with a point from a different SRID. Oracle
+<code>SDO_OVERLAPBDYINTERSECT</code> operates differently from
+<code>ST_Intersects</code>, so contains is used instead.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">nad_pnt</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="n">nad_wkt</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="n">nad_srid</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">tx</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__contains</span><span class="o">=</span><span class="n">nad_pnt</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tx</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__intersects</span><span class="o">=</span><span class="n">nad_pnt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">tx</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>Creating San Antonio.  Remember the Alamo.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">sa</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Antonio&#39;</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="n">nad_pnt</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>Now verifying that San Antonio was transformed correctly</p></td><td class="code"><div class="highlight"><pre>        <span class="n">sa</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Antonio&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">wgs_pnt</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">sa</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">wgs_pnt</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">sa</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>If the GeometryField SRID is -1, then we shouldn't perform any
+transformation if the SRID of the input geometry is different.
+SpatiaLite does not support missing SRID values.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">spatialite</span><span class="p">:</span>
+            <span class="n">m1</span> <span class="o">=</span> <span class="n">MinusOneSRID</span><span class="p">(</span><span class="n">geom</span><span class="o">=</span><span class="n">Point</span><span class="p">(</span><span class="mi">17</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">))</span>
+            <span class="n">m1</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">m1</span><span class="o">.</span><span class="n">geom</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test12_null_geometries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing NULL geometry support, and the `isnull` lookup type.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>Creating a state with a NULL boundary.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Puerto Rico&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Querying for both NULL and Non-NULL values.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">nullqs</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__isnull</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">validqs</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__isnull</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>Puerto Rico should be NULL (it's a commonwealth unincorporated territory)</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">nullqs</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Puerto Rico&#39;</span><span class="p">,</span> <span class="n">nullqs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>The valid states should be Colorado &amp; Kansas</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">validqs</span><span class="p">))</span>
+        <span class="n">state_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">validqs</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="s">&#39;Colorado&#39;</span> <span class="ow">in</span> <span class="n">state_names</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="s">&#39;Kansas&#39;</span> <span class="ow">in</span> <span class="n">state_names</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-54"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-54">&#182;</a></div><p>Saving another commonwealth w/a NULL geometry.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">nmi</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Northern Mariana Islands&#39;</span><span class="p">,</span> <span class="n">poly</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">nmi</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-55"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-55">&#182;</a></div><p>Assigning a geomery and saving -- then UPDATE back to NULL.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">nmi</span><span class="o">.</span><span class="n">poly</span> <span class="o">=</span> <span class="s">&#39;POLYGON((0 0,1 0,1 1,1 0,0 0))&#39;</span>
+        <span class="n">nmi</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Northern Mariana Islands&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">poly</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Northern Mariana Islands&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-56"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-56">&#182;</a></div><p>Only PostGIS has <code>left</code> and <code>right</code> lookup types.</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test13_left_right</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the &#39;left&#39; and &#39;right&#39; lookup types.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-57"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-57">&#182;</a></div><p>Left: A &lt;&lt; B => true if xmax(A) &lt; xmin(B)
+Right: A >> B => true if xmin(A) > xmax(B)
+See: BOX2D<em>left() and BOX2D</em>right() in lwgeom_box2dfloat4.c in PostGIS source.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-58"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-58">&#182;</a></div><p>Getting the borders for Colorado &amp; Kansas</p></td><td class="code"><div class="highlight"><pre>        <span class="n">co_border</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Colorado&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">poly</span>
+        <span class="n">ks_border</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Kansas&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">poly</span></pre></div></td></tr>
+
+
+<tr id="section-59"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-59">&#182;</a></div><p>Note: Wellington has an 'X' value of 174, so it will not be considered
+to the left of CO.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-60"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-60">&#182;</a></div><p>These cities should be strictly to the right of the CO border.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="s">&#39;Dallas&#39;</span><span class="p">,</span> <span class="s">&#39;Oklahoma City&#39;</span><span class="p">,</span>
+                  <span class="s">&#39;Lawrence&#39;</span><span class="p">,</span> <span class="s">&#39;Chicago&#39;</span><span class="p">,</span> <span class="s">&#39;Wellington&#39;</span><span class="p">]</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__right</span><span class="o">=</span><span class="n">co_border</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cities</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-61"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-61">&#182;</a></div><p>These cities should be strictly to the right of the KS border.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Chicago&#39;</span><span class="p">,</span> <span class="s">&#39;Wellington&#39;</span><span class="p">]</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__right</span><span class="o">=</span><span class="n">ks_border</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cities</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-62"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-62">&#182;</a></div><p>Note: Wellington has an 'X' value of 174, so it will not be considered
+ to the left of CO.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">vic</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point__left</span><span class="o">=</span><span class="n">co_border</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Victoria&#39;</span><span class="p">,</span> <span class="n">vic</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Pueblo&#39;</span><span class="p">,</span> <span class="s">&#39;Victoria&#39;</span><span class="p">]</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__left</span><span class="o">=</span><span class="n">ks_border</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cities</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test14_equals</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the &#39;same_as&#39; and &#39;equals&#39; lookup types.&quot;</span>
+        <span class="n">pnt</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT (-95.363151 29.763374)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="n">c1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+        <span class="n">c2</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point__same_as</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+        <span class="n">c3</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point__equals</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">[</span><span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">c3</span><span class="p">]:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test15_relate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the &#39;relate&#39; lookup type.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-63"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-63">&#182;</a></div><p>To make things more interesting, we will have our Texas reference point in
+different SRIDs.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">pnt1</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT (649287.0363174 4177429.4494686)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">2847</span><span class="p">)</span>
+        <span class="n">pnt2</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT(-98.4919715741052 29.4333344025053)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-64"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-64">&#182;</a></div><p>Not passing in a geometry as first param shoud
+raise a type error when initializing the GeoQuerySet</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">,</span> <span class="n">mpoly__relate</span><span class="o">=</span><span class="p">(</span><span class="mi">23</span><span class="p">,</span> <span class="s">&#39;foo&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-65"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-65">&#182;</a></div><p>Making sure the right exception is raised for the given
+bad arguments.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad_args</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="p">[((</span><span class="n">pnt1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="ne">ValueError</span><span class="p">),</span> <span class="p">((</span><span class="n">pnt2</span><span class="p">,</span> <span class="s">&#39;T*T***FF*&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="ne">ValueError</span><span class="p">)]:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">mpoly__relate</span><span class="o">=</span><span class="n">bad_args</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-66"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-66">&#182;</a></div><p>Relate works differently for the different backends.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">postgis</span> <span class="ow">or</span> <span class="n">spatialite</span><span class="p">:</span>
+            <span class="n">contains_mask</span> <span class="o">=</span> <span class="s">&#39;T*T***FF*&#39;</span>
+            <span class="n">within_mask</span> <span class="o">=</span> <span class="s">&#39;T*F**F***&#39;</span>
+            <span class="n">intersects_mask</span> <span class="o">=</span> <span class="s">&#39;T********&#39;</span>
+        <span class="k">elif</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">contains_mask</span> <span class="o">=</span> <span class="s">&#39;contains&#39;</span>
+            <span class="n">within_mask</span> <span class="o">=</span> <span class="s">&#39;inside&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-67"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-67">&#182;</a></div><p>TODO: This is not quite the same as the PostGIS mask above</p></td><td class="code"><div class="highlight"><pre>            <span class="n">intersects_mask</span> <span class="o">=</span> <span class="s">&#39;overlapbdyintersect&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-68"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-68">&#182;</a></div><p>Testing contains relation mask.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__relate</span><span class="o">=</span><span class="p">(</span><span class="n">pnt1</span><span class="p">,</span> <span class="n">contains_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__relate</span><span class="o">=</span><span class="p">(</span><span class="n">pnt2</span><span class="p">,</span> <span class="n">contains_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-69"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-69">&#182;</a></div><p>Testing within relation mask.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ks</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Kansas&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Lawrence&#39;</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point__relate</span><span class="o">=</span><span class="p">(</span><span class="n">ks</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">within_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-70"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-70">&#182;</a></div><p>Testing intersection relation mask.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__relate</span><span class="o">=</span><span class="p">(</span><span class="n">pnt1</span><span class="p">,</span> <span class="n">intersects_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mpoly__relate</span><span class="o">=</span><span class="p">(</span><span class="n">pnt2</span><span class="p">,</span> <span class="n">intersects_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;Lawrence&#39;</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">point__relate</span><span class="o">=</span><span class="p">(</span><span class="n">ks</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">intersects_mask</span><span class="p">))</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test16_createnull</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing creating a model instance and the geometry being None&quot;</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">City</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test17_unionagg</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `unionagg` (aggregate union) GeoManager method.&quot;</span>
+        <span class="n">tx</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">mpoly</span></pre></div></td></tr>
+
+
+<tr id="section-71"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-71">&#182;</a></div><p>Houston, Dallas -- Oracle has different order.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">union1</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;MULTIPOINT(-96.801611 32.782057,-95.363151 29.763374)&#39;</span><span class="p">)</span>
+        <span class="n">union2</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;MULTIPOINT(-96.801611 32.782057,-95.363151 29.763374)&#39;</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__within</span><span class="o">=</span><span class="n">tx</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">unionagg</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-72"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-72">&#182;</a></div><p>Using <code>field_name</code> keyword argument in one query and specifying an
+order in the other (which should not be used because this is
+an aggregate method on a spatial column)</p></td><td class="code"><div class="highlight"><pre>        <span class="n">u1</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">unionagg</span><span class="p">(</span><span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">)</span>
+        <span class="n">u2</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">unionagg</span><span class="p">()</span>
+        <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.00001</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">union</span> <span class="o">=</span> <span class="n">union2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">union</span> <span class="o">=</span> <span class="n">union1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">union</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">u1</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">union</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">u2</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;NotACity&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">unionagg</span><span class="p">(</span><span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">))</span>
+
+    <span class="nd">@no_spatialite</span> <span class="c"># SpatiaLite does not support abstract geometry columns</span>
+    <span class="k">def</span> <span class="nf">test18_geometryfield</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the general GeometryField.&quot;</span>
+        <span class="n">Feature</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Point&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="o">=</span><span class="n">Point</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">Feature</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;LineString&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="o">=</span><span class="n">LineString</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">)))</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">Feature</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Polygon&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="o">=</span><span class="n">Polygon</span><span class="p">(</span><span class="n">LinearRing</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))))</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">Feature</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;GeometryCollection&#39;</span><span class="p">,</span>
+                <span class="n">geom</span><span class="o">=</span><span class="n">GeometryCollection</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">LineString</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)),</span>
+                                        <span class="n">Polygon</span><span class="p">(</span><span class="n">LinearRing</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)))))</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">f_1</span> <span class="o">=</span> <span class="n">Feature</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Point&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f_1</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">Point</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">((</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="n">f_1</span><span class="o">.</span><span class="n">geom</span><span class="o">.</span><span class="n">tuple</span><span class="p">)</span>
+        <span class="n">f_2</span> <span class="o">=</span> <span class="n">Feature</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;LineString&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f_2</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">LineString</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(((</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">)),</span> <span class="n">f_2</span><span class="o">.</span><span class="n">geom</span><span class="o">.</span><span class="n">tuple</span><span class="p">)</span>
+
+        <span class="n">f_3</span> <span class="o">=</span> <span class="n">Feature</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Polygon&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f_3</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">))</span>
+        <span class="n">f_4</span> <span class="o">=</span> <span class="n">Feature</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;GeometryCollection&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f_4</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">GeometryCollection</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f_3</span><span class="o">.</span><span class="n">geom</span><span class="p">,</span> <span class="n">f_4</span><span class="o">.</span><span class="n">geom</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test19_centroid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `centroid` GeoQuerySet method.&quot;</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">poly__isnull</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span><span class="o">.</span><span class="n">centroid</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.1</span>
+        <span class="k">elif</span> <span class="n">spatialite</span><span class="p">:</span>
+            <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.000001</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.000000001</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">centroid</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">centroid</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test20_pointonsurface</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `point_on_surface` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-73"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-73">&#182;</a></div><p>Reference values.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-74"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-74">&#182;</a></div><p>SELECT SDO<em>UTIL.TO</em>WKTGEOMETRY(SDO<em>GEOM.SDO</em>POINTONSURFACE(GEOAPP<em>COUNTRY.MPOLY, 0.05)) FROM GEOAPP</em>COUNTRY;</p></td><td class="code"><div class="highlight"><pre>            <span class="n">ref</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;New Zealand&#39;</span> <span class="p">:</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT (174.616364 -36.100861)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">),</span>
+                   <span class="s">&#39;Texas&#39;</span> <span class="p">:</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;POINT (-103.002434 36.500397)&#39;</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">),</span>
+                   <span class="p">}</span>
+
+        <span class="k">elif</span> <span class="n">postgis</span> <span class="ow">or</span> <span class="n">spatialite</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-75"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-75">&#182;</a></div><p>Using GEOSGeometry to compute the reference point on surface values
+-- since PostGIS also uses GEOS these should be the same.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">ref</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;New Zealand&#39;</span> <span class="p">:</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;New Zealand&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">point_on_surface</span><span class="p">,</span>
+                   <span class="s">&#39;Texas&#39;</span> <span class="p">:</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">point_on_surface</span>
+                   <span class="p">}</span>
+
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">point_on_surface</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">spatialite</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-76"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-76">&#182;</a></div><p>XXX This seems to be a WKT-translation-related precision issue?</p></td><td class="code"><div class="highlight"><pre>                <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.00001</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.000000001</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">True</span><span class="p">,</span> <span class="n">ref</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">point_on_surface</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="k">def</span> <span class="nf">test21_scale</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `scale` GeoQuerySet method.&quot;</span>
+        <span class="n">xfac</span><span class="p">,</span> <span class="n">yfac</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span>
+        <span class="n">tol</span> <span class="o">=</span> <span class="mi">5</span> <span class="c"># XXX The low precision tolerance is for SpatiaLite</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">scale</span><span class="p">(</span><span class="n">xfac</span><span class="p">,</span> <span class="n">yfac</span><span class="p">,</span> <span class="n">model_att</span><span class="o">=</span><span class="s">&#39;scaled&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">scaled</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">r1</span><span class="p">,</span> <span class="n">r2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">r1</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">r2</span><span class="o">.</span><span class="n">coords</span><span class="p">):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">c1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">xfac</span><span class="p">,</span> <span class="n">c2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tol</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">c1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">yfac</span><span class="p">,</span> <span class="n">c2</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">tol</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="k">def</span> <span class="nf">test22_translate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `translate` GeoQuerySet method.&quot;</span>
+        <span class="n">xfac</span><span class="p">,</span> <span class="n">yfac</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="o">-</span><span class="mi">23</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="n">xfac</span><span class="p">,</span> <span class="n">yfac</span><span class="p">,</span> <span class="n">model_att</span><span class="o">=</span><span class="s">&#39;translated&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">translated</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">r1</span><span class="p">,</span> <span class="n">r2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">r1</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">r2</span><span class="o">.</span><span class="n">coords</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-77"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-77">&#182;</a></div><p>XXX The low precision is for SpatiaLite</p></td><td class="code"><div class="highlight"><pre>                        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">c1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">xfac</span><span class="p">,</span> <span class="n">c2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">5</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">c1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">yfac</span><span class="p">,</span> <span class="n">c2</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">5</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test23_numgeom</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `num_geom` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-78"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-78">&#182;</a></div><p>Both 'countries' only have two geometries.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">num_geom</span><span class="p">():</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">num_geom</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__isnull</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span><span class="o">.</span><span class="n">num_geom</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-79"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-79">&#182;</a></div><p>Oracle will return 1 for the number of geometries on non-collections,
+whereas PostGIS will return None.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">postgis</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">num_geom</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">num_geom</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_spatialite</span> <span class="c"># SpatiaLite can only count vertices in LineStrings</span>
+    <span class="k">def</span> <span class="nf">test24_numpoints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `num_points` GeoQuerySet method.&quot;</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">num_points</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">num_points</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-80"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-80">&#182;</a></div><p>Oracle cannot count vertices in Point geometries.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">num_points</span><span class="p">():</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test25_geoset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `difference`, `intersection`, `sym_difference`, and `union` GeoQuerySet methods.&quot;</span>
+        <span class="n">geom</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">23</span><span class="p">)</span>
+        <span class="n">tol</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span><span class="o">.</span><span class="n">sym_difference</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-81"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-81">&#182;</a></div><p>XXX For some reason SpatiaLite does something screwey with the Texas geometry here.  Also,
+XXX it doesn't like the null intersection.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">spatialite</span><span class="p">:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Texas&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-82"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-82">&#182;</a></div><p>Should be able to execute the queries; however, they won't be the same
+as GEOS (because Oracle doesn't use GEOS internally like PostGIS or
+SpatiaLite).</p></td><td class="code"><div class="highlight"><pre>                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="n">geom</span><span class="p">),</span> <span class="n">c</span><span class="o">.</span><span class="n">difference</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">spatialite</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">geom</span><span class="p">),</span> <span class="n">c</span><span class="o">.</span><span class="n">intersection</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">sym_difference</span><span class="p">(</span><span class="n">geom</span><span class="p">),</span> <span class="n">c</span><span class="o">.</span><span class="n">sym_difference</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">geom</span><span class="p">),</span> <span class="n">c</span><span class="o">.</span><span class="n">union</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test26_inherited_geofields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test GeoQuerySet methods on inherited Geometry fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-83"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-83">&#182;</a></div><p>Creating a Pennsylvanian city.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">mansfield</span> <span class="o">=</span> <span class="n">PennsylvaniaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Mansfield&#39;</span><span class="p">,</span> <span class="n">county</span><span class="o">=</span><span class="s">&#39;Tioga&#39;</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="s">&#39;POINT(-77.071445 41.823881)&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-84"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-84">&#182;</a></div><p>All transformation SQL will need to be performed on the
+<em>parent</em> table.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">PennsylvaniaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="mi">32128</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">pc</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">32128</span><span class="p">,</span> <span class="n">pc</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test27_snap_to_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.snap_to_grid().&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-85"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-85">&#182;</a></div><p>Let's try and break snap<em>to</em>grid() with bad combinations of arguments.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">bad_args</span> <span class="ow">in</span> <span class="p">((),</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">,</span> <span class="o">*</span><span class="n">bad_args</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">bad_args</span> <span class="ow">in</span> <span class="p">((</span><span class="s">&#39;1.0&#39;</span><span class="p">,),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">unicode</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)))):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">,</span> <span class="o">*</span><span class="n">bad_args</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-86"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-86">&#182;</a></div><p>Boundary for San Marino, courtesy of Bjorn Sandvik of thematicmapping.org
+from the world borders dataset he provides.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">wkt</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;MULTIPOLYGON(((12.41580 43.95795,12.45055 43.97972,12.45389 43.98167,&#39;</span>
+               <span class="s">&#39;12.46250 43.98472,12.47167 43.98694,12.49278 43.98917,&#39;</span>
+               <span class="s">&#39;12.50555 43.98861,12.51000 43.98694,12.51028 43.98277,&#39;</span>
+               <span class="s">&#39;12.51167 43.94333,12.51056 43.93916,12.49639 43.92333,&#39;</span>
+               <span class="s">&#39;12.49500 43.91472,12.48778 43.90583,12.47444 43.89722,&#39;</span>
+               <span class="s">&#39;12.46472 43.89555,12.45917 43.89611,12.41639 43.90472,&#39;</span>
+               <span class="s">&#39;12.41222 43.90610,12.40782 43.91366,12.40389 43.92667,&#39;</span>
+               <span class="s">&#39;12.40500 43.94833,12.40889 43.95499,12.41580 43.95795)))&#39;</span><span class="p">)</span>
+        <span class="n">sm</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Marino&#39;</span><span class="p">,</span> <span class="n">mpoly</span><span class="o">=</span><span class="n">fromstr</span><span class="p">(</span><span class="n">wkt</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-87"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-87">&#182;</a></div><p>Because floating-point arithmetic isn't exact, we set a tolerance
+to pass into GEOS <code>equals_exact</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tol</span> <span class="o">=</span> <span class="mf">0.000000001</span></pre></div></td></tr>
+
+
+<tr id="section-88"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-88">&#182;</a></div><p>SELECT AsText(ST<em>SnapToGrid("geoapp</em>country"."mpoly", 0.1)) FROM "geoapp<em>country" WHERE "geoapp</em>country"."name" = 'San Marino';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;MULTIPOLYGON(((12.4 44,12.5 44,12.5 43.9,12.4 43.9,12.4 44)))&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Marino&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-89"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-89">&#182;</a></div><p>SELECT AsText(ST<em>SnapToGrid("geoapp</em>country"."mpoly", 0.05, 0.23)) FROM "geoapp<em>country" WHERE "geoapp</em>country"."name" = 'San Marino';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;MULTIPOLYGON(((12.4 43.93,12.45 43.93,12.5 43.93,12.45 43.93,12.4 43.93)))&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.23</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Marino&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-90"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-90">&#182;</a></div><p>SELECT AsText(ST<em>SnapToGrid("geoapp</em>country"."mpoly", 0.5, 0.17, 0.05, 0.23)) FROM "geoapp<em>country" WHERE "geoapp</em>country"."name" = 'San Marino';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref</span> <span class="o">=</span> <span class="n">fromstr</span><span class="p">(</span><span class="s">&#39;MULTIPOLYGON(((12.4 43.87,12.45 43.87,12.45 44.1,12.5 44.1,12.5 43.87,12.45 43.87,12.4 43.87)))&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">equals_exact</span><span class="p">(</span><span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">(</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.23</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.17</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;San Marino&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">snap_to_grid</span><span class="p">,</span> <span class="n">tol</span><span class="p">))</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test28_reverse</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.reverse_geom().&quot;</span>
+        <span class="n">coords</span> <span class="o">=</span> <span class="p">[</span> <span class="p">(</span><span class="o">-</span><span class="mf">95.363151</span><span class="p">,</span> <span class="mf">29.763374</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="mf">95.448601</span><span class="p">,</span> <span class="mf">29.713803</span><span class="p">)</span> <span class="p">]</span>
+        <span class="n">Track</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Foo&#39;</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">LineString</span><span class="p">(</span><span class="n">coords</span><span class="p">))</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">Track</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">reverse_geom</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Foo&#39;</span><span class="p">)</span>
+        <span class="n">coords</span><span class="o">.</span><span class="n">reverse</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">coords</span><span class="p">),</span> <span class="n">t</span><span class="o">.</span><span class="n">reverse_geom</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">reverse_geom</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test29_force_rhr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.force_rhr().&quot;</span>
+        <span class="n">rings</span> <span class="o">=</span> <span class="p">(</span> <span class="p">(</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="p">),</span>
+                  <span class="p">(</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="p">),</span>
+                  <span class="p">)</span>
+        <span class="n">rhr_rings</span> <span class="o">=</span> <span class="p">(</span> <span class="p">(</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="p">),</span>
+                      <span class="p">(</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="p">),</span>
+                      <span class="p">)</span>
+        <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Foo&#39;</span><span class="p">,</span> <span class="n">poly</span><span class="o">=</span><span class="n">Polygon</span><span class="p">(</span><span class="o">*</span><span class="n">rings</span><span class="p">))</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">force_rhr</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Foo&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">rhr_rings</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">force_rhr</span><span class="o">.</span><span class="n">coords</span><span class="p">)</span>
+
+    <span class="nd">@no_mysql</span>
+    <span class="nd">@no_oracle</span>
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test30_geohash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.geohash().&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geohash</span><span class="p">:</span> <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-91"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-91">&#182;</a></div><p>Reference query:
+SELECT ST<em>GeoHash(point) FROM geoapp</em>city WHERE name='Houston';
+SELECT ST<em>GeoHash(point, 5) FROM geoapp</em>city WHERE name='Houston';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_hash</span> <span class="o">=</span> <span class="s">&#39;9vk1mfq8jx0c8e0386z6&#39;</span>
+        <span class="n">h1</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geohash</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+        <span class="n">h2</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geohash</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_hash</span><span class="p">,</span> <span class="n">h1</span><span class="o">.</span><span class="n">geohash</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_hash</span><span class="p">[:</span><span class="mi">5</span><span class="p">],</span> <span class="n">h2</span><span class="o">.</span><span class="n">geohash</span><span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">.test_feeds</span> <span class="kn">import</span> <span class="n">GeoFeedTest</span>
+<span class="kn">from</span> <span class="nn">.test_regress</span> <span class="kn">import</span> <span class="n">GeoRegressionTests</span>
+<span class="kn">from</span> <span class="nn">.test_sitemaps</span> <span class="kn">import</span> <span class="n">GeoSitemapTest</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › core › management › commands › createcachetable.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>createcachetable.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">optparse</span> <span class="kn">import</span> <span class="n">make_option</span>
+
+<span class="kn">from</span> <span class="nn">django.core.cache.backends.db</span> <span class="kn">import</span> <span class="n">BaseDatabaseCache</span>
+<span class="kn">from</span> <span class="nn">django.core.management.base</span> <span class="kn">import</span> <span class="n">LabelCommand</span><span class="p">,</span> <span class="n">CommandError</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span><span class="p">,</span> <span class="n">router</span><span class="p">,</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">models</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+<span class="kn">from</span> <span class="nn">django.db.utils</span> <span class="kn">import</span> <span class="n">DatabaseError</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span>
+
+
+<span class="k">class</span> <span class="nc">Command</span><span class="p">(</span><span class="n">LabelCommand</span><span class="p">):</span>
+    <span class="n">help</span> <span class="o">=</span> <span class="s">&quot;Creates the table needed to use the SQL cache backend.&quot;</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="s">&quot;&lt;tablename&gt;&quot;</span>
+    <span class="n">label</span> <span class="o">=</span> <span class="s">&#39;tablename&#39;</span>
+
+    <span class="n">option_list</span> <span class="o">=</span> <span class="n">LabelCommand</span><span class="o">.</span><span class="n">option_list</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="n">make_option</span><span class="p">(</span><span class="s">&#39;--database&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&#39;store&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;database&#39;</span><span class="p">,</span>
+            <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">&#39;Nominates a database onto &#39;</span>
+                <span class="s">&#39;which the cache table will be installed. &#39;</span>
+                <span class="s">&#39;Defaults to the &quot;default&quot; database.&#39;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="n">requires_model_validation</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">handle_label</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tablename</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="n">db</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;database&#39;</span><span class="p">)</span>
+        <span class="n">cache</span> <span class="o">=</span> <span class="n">BaseDatabaseCache</span><span class="p">(</span><span class="n">tablename</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">router</span><span class="o">.</span><span class="n">allow_syncdb</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">cache</span><span class="o">.</span><span class="n">cache_model_class</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="n">db</span><span class="p">]</span>
+        <span class="n">fields</span> <span class="o">=</span> <span class="p">(</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>"key" is a reserved word in MySQL, so use "cache_key" instead.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;cache_key&#39;</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+            <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;value&#39;</span><span class="p">),</span>
+            <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;expires&#39;</span><span class="p">,</span> <span class="n">db_index</span><span class="o">=</span><span class="bp">True</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">table_output</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">index_output</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">qn</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="n">field_output</span> <span class="o">=</span> <span class="p">[</span><span class="n">qn</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">db_type</span><span class="p">(</span><span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">)]</span>
+            <span class="n">field_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s">NULL&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">null</span> <span class="ow">and</span> <span class="s">&quot;NOT &quot;</span> <span class="ow">or</span> <span class="s">&quot;&quot;</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">primary_key</span><span class="p">:</span>
+                <span class="n">field_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;PRIMARY KEY&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">f</span><span class="o">.</span><span class="n">unique</span><span class="p">:</span>
+                <span class="n">field_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;UNIQUE&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">db_index</span><span class="p">:</span>
+                <span class="n">unique</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">unique</span> <span class="ow">and</span> <span class="s">&quot;UNIQUE &quot;</span> <span class="ow">or</span> <span class="s">&quot;&quot;</span>
+                <span class="n">index_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;CREATE </span><span class="si">%s</span><span class="s">INDEX </span><span class="si">%s</span><span class="s"> ON </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">);&quot;</span> <span class="o">%</span> \
+                    <span class="p">(</span><span class="n">unique</span><span class="p">,</span> <span class="n">qn</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">_</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">tablename</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)),</span> <span class="n">qn</span><span class="p">(</span><span class="n">tablename</span><span class="p">),</span>
+                    <span class="n">qn</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)))</span>
+            <span class="n">table_output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">field_output</span><span class="p">))</span>
+        <span class="n">full_statement</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;CREATE TABLE </span><span class="si">%s</span><span class="s"> (&quot;</span> <span class="o">%</span> <span class="n">qn</span><span class="p">(</span><span class="n">tablename</span><span class="p">)]</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">table_output</span><span class="p">):</span>
+            <span class="n">full_statement</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;    </span><span class="si">%s%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">table_output</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span> <span class="ow">and</span> <span class="s">&#39;,&#39;</span> <span class="ow">or</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+        <span class="n">full_statement</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;);&#39;</span><span class="p">)</span>
+        <span class="n">curs</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">curs</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">full_statement</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">rollback_unless_managed</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">db</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">CommandError</span><span class="p">(</span>
+                <span class="s">&quot;Cache table &#39;</span><span class="si">%s</span><span class="s">&#39; could not be created.</span><span class="se">\n</span><span class="s">The error was: </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span>
+                    <span class="p">(</span><span class="n">tablename</span><span class="p">,</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">e</span><span class="p">)))</span>
+        <span class="k">for</span> <span class="n">statement</span> <span class="ow">in</span> <span class="n">index_output</span><span class="p">:</span>
+            <span class="n">curs</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">statement</span><span class="p">)</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">commit_unless_managed</span><span class="p">(</span><span class="n">using</span><span class="o">=</span><span class="n">db</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

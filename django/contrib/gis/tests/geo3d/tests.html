@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › geo3d › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="kn">from</span> <span class="nn">django.utils.unittest</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.models</span> <span class="kn">import</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Extent3D</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">GEOSGeometry</span><span class="p">,</span> <span class="n">Point</span><span class="p">,</span> <span class="n">Polygon</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.utils</span> <span class="kn">import</span> <span class="n">LayerMapping</span><span class="p">,</span> <span class="n">LayerMapError</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">City3D</span><span class="p">,</span> <span class="n">Interstate2D</span><span class="p">,</span> <span class="n">Interstate3D</span><span class="p">,</span> <span class="n">InterstateProj2D</span><span class="p">,</span>
+    <span class="n">InterstateProj3D</span><span class="p">,</span> <span class="n">Point2D</span><span class="p">,</span> <span class="n">Point3D</span><span class="p">,</span> <span class="n">MultiPoint3D</span><span class="p">,</span> <span class="n">Polygon2D</span><span class="p">,</span> <span class="n">Polygon3D</span><span class="p">)</span>
+
+<span class="n">data_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;..&#39;</span><span class="p">,</span> <span class="s">&#39;data&#39;</span><span class="p">))</span>
+<span class="n">city_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s">&#39;cities&#39;</span><span class="p">,</span> <span class="s">&#39;cities.shp&#39;</span><span class="p">)</span>
+<span class="n">vrt_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_path</span><span class="p">,</span> <span class="s">&#39;test_vrt&#39;</span><span class="p">,</span> <span class="s">&#39;test_vrt.vrt&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>The coordinates of each city, with Z values corresponding to their
+altitude in meters.</p></td><td class="code"><div class="highlight"><pre><span class="n">city_data</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">(</span><span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">95.363151</span><span class="p">,</span> <span class="mf">29.763374</span><span class="p">,</span> <span class="mi">18</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Dallas&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">96.801611</span><span class="p">,</span> <span class="mf">32.782057</span><span class="p">,</span> <span class="mi">147</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Oklahoma City&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">97.521157</span><span class="p">,</span> <span class="mf">34.464642</span><span class="p">,</span> <span class="mi">380</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Wellington&#39;</span><span class="p">,</span> <span class="p">(</span><span class="mf">174.783117</span><span class="p">,</span> <span class="o">-</span><span class="mf">41.315268</span><span class="p">,</span> <span class="mi">14</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Pueblo&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">104.609252</span><span class="p">,</span> <span class="mf">38.255001</span><span class="p">,</span> <span class="mi">1433</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Lawrence&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">95.235060</span><span class="p">,</span> <span class="mf">38.971823</span><span class="p">,</span> <span class="mi">251</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Chicago&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">87.650175</span><span class="p">,</span> <span class="mf">41.850385</span><span class="p">,</span> <span class="mi">181</span><span class="p">)),</span>
+    <span class="p">(</span><span class="s">&#39;Victoria&#39;</span><span class="p">,</span> <span class="p">(</span><span class="o">-</span><span class="mf">123.305196</span><span class="p">,</span> <span class="mf">48.462611</span><span class="p">,</span> <span class="mi">15</span><span class="p">)),</span>
+<span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Reference mapping of city name to its altitude (Z value).</p></td><td class="code"><div class="highlight"><pre><span class="n">city_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">coords</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">coords</span> <span class="ow">in</span> <span class="n">city_data</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>3D freeway data derived from the National Elevation Dataset:
+ http://seamless.usgs.gov/products/9arc.php</p></td><td class="code"><div class="highlight"><pre><span class="n">interstate_data</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">(</span><span class="s">&#39;I-45&#39;</span><span class="p">,</span>
+     <span class="s">&#39;LINESTRING(-95.3708481 29.7765870 11.339,-95.3694580 29.7787980 4.536,-95.3690305 29.7797359 9.762,-95.3691886 29.7812450 12.448,-95.3696447 29.7850144 10.457,-95.3702511 29.7868518 9.418,-95.3706724 29.7881286 14.858,-95.3711632 29.7896157 15.386,-95.3714525 29.7936267 13.168,-95.3717848 29.7955007 15.104,-95.3717719 29.7969804 16.516,-95.3717305 29.7982117 13.923,-95.3717254 29.8000778 14.385,-95.3719875 29.8013539 15.160,-95.3720575 29.8026785 15.544,-95.3721321 29.8040912 14.975,-95.3722074 29.8050998 15.688,-95.3722779 29.8060430 16.099,-95.3733818 29.8076750 15.197,-95.3741563 29.8103686 17.268,-95.3749458 29.8129927 19.857,-95.3763564 29.8144557 15.435)&#39;</span><span class="p">,</span>
+     <span class="p">(</span> <span class="mf">11.339</span><span class="p">,</span>   <span class="mf">4.536</span><span class="p">,</span>   <span class="mf">9.762</span><span class="p">,</span>  <span class="mf">12.448</span><span class="p">,</span>  <span class="mf">10.457</span><span class="p">,</span>   <span class="mf">9.418</span><span class="p">,</span>  <span class="mf">14.858</span><span class="p">,</span>
+       <span class="mf">15.386</span><span class="p">,</span>  <span class="mf">13.168</span><span class="p">,</span>  <span class="mf">15.104</span><span class="p">,</span>  <span class="mf">16.516</span><span class="p">,</span>  <span class="mf">13.923</span><span class="p">,</span>  <span class="mf">14.385</span><span class="p">,</span>  <span class="mf">15.16</span> <span class="p">,</span>
+       <span class="mf">15.544</span><span class="p">,</span>  <span class="mf">14.975</span><span class="p">,</span>  <span class="mf">15.688</span><span class="p">,</span>  <span class="mf">16.099</span><span class="p">,</span>  <span class="mf">15.197</span><span class="p">,</span>  <span class="mf">17.268</span><span class="p">,</span>  <span class="mf">19.857</span><span class="p">,</span>
+       <span class="mf">15.435</span><span class="p">),</span>
+     <span class="p">),</span>
+    <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Bounding box polygon for inner-loop of Houston (in projected coordinate
+system 32140), with elevation values from the National Elevation Dataset
+(see above).</p></td><td class="code"><div class="highlight"><pre><span class="n">bbox_wkt</span> <span class="o">=</span> <span class="s">&#39;POLYGON((941527.97 4225693.20,962596.48 4226349.75,963152.57 4209023.95,942051.75 4208366.38,941527.97 4225693.20))&#39;</span>
+<span class="n">bbox_z</span> <span class="o">=</span> <span class="p">(</span><span class="mf">21.71</span><span class="p">,</span> <span class="mf">13.21</span><span class="p">,</span> <span class="mf">9.12</span><span class="p">,</span> <span class="mf">16.40</span><span class="p">,</span> <span class="mf">21.71</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">gen_bbox</span><span class="p">():</span>
+    <span class="n">bbox_2d</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">bbox_wkt</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">32140</span><span class="p">)</span>
+    <span class="n">bbox_3d</span> <span class="o">=</span> <span class="n">Polygon</span><span class="p">(</span><span class="nb">tuple</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span> <span class="n">z</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">bbox_2d</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">coords</span><span class="p">,</span> <span class="n">bbox_z</span><span class="p">)),</span> <span class="n">srid</span><span class="o">=</span><span class="mi">32140</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">bbox_2d</span><span class="p">,</span> <span class="n">bbox_3d</span>
+
+<span class="k">class</span> <span class="nc">Geo3DTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Only a subset of the PostGIS routines are 3D-enabled, and this TestCase</span>
+<span class="sd">    tries to test the features that can handle 3D and that are also</span>
+<span class="sd">    available within GeoDjango.  For more information, see the PostGIS docs</span>
+<span class="sd">    on the routines that support 3D:</span>
+
+<span class="sd">    http://postgis.refractions.net/documentation/manual-1.4/ch08.html#PostGIS_3D_Functions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">test01_3d</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test the creation of 3D models.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>3D models for the rest of the tests will be populated in here.
+For each 3D data set create model (and 2D version if necessary),
+retrieve, and assert geometry is in 3D and contains the expected
+3D values.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">pnt_data</span> <span class="ow">in</span> <span class="n">city_data</span><span class="p">:</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">pnt_data</span>
+            <span class="n">pnt</span> <span class="o">=</span> <span class="n">Point</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+            <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+            <span class="n">city</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">city</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">hasz</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">z</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Interstate (2D / 3D and Geographic/Projected variants)</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">exp_z</span> <span class="ow">in</span> <span class="n">interstate_data</span><span class="p">:</span>
+            <span class="n">line_3d</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4269</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Using <code>hex</code> attribute because it omits 3D.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">line_2d</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">line_3d</span><span class="o">.</span><span class="n">hex</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4269</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Creating a geographic and projected version of the
+interstate in both 2D and 3D.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">Interstate3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">line_3d</span><span class="p">)</span>
+            <span class="n">InterstateProj3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">line_3d</span><span class="p">)</span>
+            <span class="n">Interstate2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">line_2d</span><span class="p">)</span>
+            <span class="n">InterstateProj2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="n">line_2d</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Retrieving and making sure it's 3D and has expected
+Z values -- shouldn't change because of coordinate system.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">interstate</span> <span class="o">=</span> <span class="n">Interstate3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">interstate_proj</span> <span class="o">=</span> <span class="n">InterstateProj3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">[</span><span class="n">interstate</span><span class="p">,</span> <span class="n">interstate_proj</span><span class="p">]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">hasz</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">exp_z</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">line</span><span class="o">.</span><span class="n">z</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Creating 3D Polygon.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">bbox2d</span><span class="p">,</span> <span class="n">bbox3d</span> <span class="o">=</span> <span class="n">gen_bbox</span><span class="p">()</span>
+        <span class="n">Polygon2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;2D BBox&#39;</span><span class="p">,</span> <span class="n">poly</span><span class="o">=</span><span class="n">bbox2d</span><span class="p">)</span>
+        <span class="n">Polygon3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;3D BBox&#39;</span><span class="p">,</span> <span class="n">poly</span><span class="o">=</span><span class="n">bbox3d</span><span class="p">)</span>
+        <span class="n">p3d</span> <span class="o">=</span> <span class="n">Polygon3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;3D BBox&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">p3d</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">hasz</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">bbox3d</span><span class="p">,</span> <span class="n">p3d</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test01a_3d_layermapping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing LayerMapping on 3D models.&quot;</span>
+        <span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Point2D</span><span class="p">,</span> <span class="n">Point3D</span>
+
+        <span class="n">point_mapping</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;point&#39;</span> <span class="p">:</span> <span class="s">&#39;POINT&#39;</span><span class="p">}</span>
+        <span class="n">mpoint_mapping</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;mpoint&#39;</span> <span class="p">:</span> <span class="s">&#39;MULTIPOINT&#39;</span><span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>The VRT is 3D, but should still be able to map sans the Z.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">Point2D</span><span class="p">,</span> <span class="n">vrt_file</span><span class="p">,</span> <span class="n">point_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">Point2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>The city shapefile is 2D, and won't be able to fill the coordinates
+in the 3D model -- thus, a LayerMapError is raised.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">LayerMapError</span><span class="p">,</span> <span class="n">LayerMapping</span><span class="p">,</span>
+                          <span class="n">Point3D</span><span class="p">,</span> <span class="n">city_file</span><span class="p">,</span> <span class="n">point_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>3D model should take 3D data just fine.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">Point3D</span><span class="p">,</span> <span class="n">vrt_file</span><span class="p">,</span> <span class="n">point_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">Point3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Making sure LayerMapping.make_multi works right, by converting
+a Point25D into a MultiPoint25D.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">MultiPoint3D</span><span class="p">,</span> <span class="n">vrt_file</span><span class="p">,</span> <span class="n">mpoint_mapping</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">MultiPoint3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test02a_kml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test GeoQuerySet.kml() with Z values.&quot;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">kml</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>KML should be 3D.
+<code>SELECT ST_AsKML(point, 6) FROM geo3d_city3d WHERE name = 'Houston';</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_kml_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^&lt;Point&gt;&lt;coordinates&gt;-95.363\d+,29.763\d+,18&lt;/coordinates&gt;&lt;/Point&gt;$&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ref_kml_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">kml</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test02b_geojson</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test GeoQuerySet.geojson() with Z values.&quot;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">geojson</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>GeoJSON should be 3D
+<code>SELECT ST_AsGeoJSON(point, 6) FROM geo3d_city3d WHERE name='Houston';</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_json_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^{&quot;type&quot;:&quot;Point&quot;,&quot;coordinates&quot;:\[-95.363151,29.763374,18(\.0+)?\]}$&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ref_json_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">geojson</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test03a_union</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the Union aggregate of 3D models.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>PostGIS query that returned the reference EWKT for this test:
+ <code>SELECT ST_AsText(ST_Union(point)) FROM geo3d_city3d;</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_ewkt</span> <span class="o">=</span> <span class="s">&#39;SRID=4326;MULTIPOINT(-123.305196 48.462611 15,-104.609252 38.255001 1433,-97.521157 34.464642 380,-96.801611 32.782057 147,-95.363151 29.763374 18,-95.23506 38.971823 251,-87.650175 41.850385 181,174.783117 -41.315268 14)&#39;</span>
+        <span class="n">ref_union</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="n">ref_ewkt</span><span class="p">)</span>
+        <span class="n">union</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Union</span><span class="p">(</span><span class="s">&#39;point&#39;</span><span class="p">))[</span><span class="s">&#39;point__union&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">union</span><span class="o">.</span><span class="n">hasz</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_union</span><span class="p">,</span> <span class="n">union</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test03b_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the Extent3D aggregate for 3D models.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p><code>SELECT ST_Extent3D(point) FROM geo3d_city3d;</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_extent3d</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mf">123.305196</span><span class="p">,</span> <span class="o">-</span><span class="mf">41.315268</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span><span class="mf">174.783117</span><span class="p">,</span> <span class="mf">48.462611</span><span class="p">,</span> <span class="mi">1433</span><span class="p">)</span>
+        <span class="n">extent1</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Extent3D</span><span class="p">(</span><span class="s">&#39;point&#39;</span><span class="p">))[</span><span class="s">&#39;point__extent3d&#39;</span><span class="p">]</span>
+        <span class="n">extent2</span> <span class="o">=</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">extent3d</span><span class="p">()</span>
+
+        <span class="k">def</span> <span class="nf">check_extent3d</span><span class="p">(</span><span class="n">extent3d</span><span class="p">,</span> <span class="n">tol</span><span class="o">=</span><span class="mi">6</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">ref_val</span><span class="p">,</span> <span class="n">ext_val</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ref_extent3d</span><span class="p">,</span> <span class="n">extent3d</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_val</span><span class="p">,</span> <span class="n">ext_val</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">e3d</span> <span class="ow">in</span> <span class="p">[</span><span class="n">extent1</span><span class="p">,</span> <span class="n">extent2</span><span class="p">]:</span>
+            <span class="n">check_extent3d</span><span class="p">(</span><span class="n">e3d</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test04_perimeter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.perimeter() on 3D fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Reference query for values below:
+ <code>SELECT ST_Perimeter3D(poly), ST_Perimeter2D(poly) FROM geo3d_polygon3d;</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_perim_3d</span> <span class="o">=</span> <span class="mf">76859.2620451</span>
+        <span class="n">ref_perim_2d</span> <span class="o">=</span> <span class="mf">76859.2577803</span>
+        <span class="n">tol</span> <span class="o">=</span> <span class="mi">6</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_perim_2d</span><span class="p">,</span>
+                               <span class="n">Polygon2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">perimeter</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;2D BBox&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">perimeter</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_perim_3d</span><span class="p">,</span>
+                               <span class="n">Polygon3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">perimeter</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;3D BBox&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">perimeter</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test05_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.length() on 3D fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>ST<em>Length</em>Spheroid Z-aware, and thus does not need to use
+a separate function internally.
+<code>SELECT ST_Length_Spheroid(line, 'SPHEROID["GRS 1980",6378137,298.257222101]')
+   FROM geo3d_interstate[2d|3d];</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">tol</span> <span class="o">=</span> <span class="mi">3</span>
+        <span class="n">ref_length_2d</span> <span class="o">=</span> <span class="mf">4368.1721949481</span>
+        <span class="n">ref_length_3d</span> <span class="o">=</span> <span class="mf">4368.62547052088</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_length_2d</span><span class="p">,</span>
+                               <span class="n">Interstate2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;I-45&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_length_3d</span><span class="p">,</span>
+                               <span class="n">Interstate3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;I-45&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Making sure <code>ST_Length3D</code> is used on for a projected
+and 3D model rather than <code>ST_Length</code>.
+<code>SELECT ST_Length(line) FROM geo3d_interstateproj2d;</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_length_2d</span> <span class="o">=</span> <span class="mf">4367.71564892392</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p><code>SELECT ST_Length3D(line) FROM geo3d_interstateproj3d;</code></p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_length_3d</span> <span class="o">=</span> <span class="mf">4368.16897234101</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_length_2d</span><span class="p">,</span>
+                               <span class="n">InterstateProj2D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;I-45&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_length_3d</span><span class="p">,</span>
+                               <span class="n">InterstateProj3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;I-45&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span>
+                               <span class="n">tol</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test06_scale</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.scale() on Z values.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Mapping of City name to reference Z values.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">zscales</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">23</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">zscale</span> <span class="ow">in</span> <span class="n">zscales</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">scale</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">zscale</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">city_dict</span><span class="p">[</span><span class="n">city</span><span class="o">.</span><span class="n">name</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">zscale</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">scale</span><span class="o">.</span><span class="n">z</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test07_translate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.translate() on Z values.&quot;</span>
+        <span class="n">ztranslations</span> <span class="o">=</span> <span class="p">(</span><span class="mf">5.23</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="o">-</span><span class="mi">17</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ztrans</span> <span class="ow">in</span> <span class="n">ztranslations</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">City3D</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">ztrans</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">city_dict</span><span class="p">[</span><span class="n">city</span><span class="o">.</span><span class="n">name</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">ztrans</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">translate</span><span class="o">.</span><span class="n">z</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

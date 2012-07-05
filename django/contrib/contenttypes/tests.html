@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › contenttypes › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">urllib</span>
+
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span> <span class="nn">django.contrib.contenttypes.models</span> <span class="kn">import</span> <span class="n">ContentType</span>
+<span class="kn">from</span> <span class="nn">django.contrib.contenttypes.views</span> <span class="kn">import</span> <span class="n">shortcut</span>
+<span class="kn">from</span> <span class="nn">django.contrib.sites.models</span> <span class="kn">import</span> <span class="n">Site</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">Http404</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_str</span>
+
+
+<span class="k">class</span> <span class="nc">ConcreteModel</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ProxyModel</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">proxy</span> <span class="o">=</span> <span class="bp">True</span>
+
+<span class="k">class</span> <span class="nc">FooWithoutUrl</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fake model not defining ``get_absolute_url`` for</span>
+<span class="sd">    :meth:`ContentTypesTests.test_shortcut_view_without_get_absolute_url`&quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__unicode__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span>
+
+
+<span class="k">class</span> <span class="nc">FooWithUrl</span><span class="p">(</span><span class="n">FooWithoutUrl</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fake model defining ``get_absolute_url`` for</span>
+<span class="sd">    :meth:`ContentTypesTests.test_shortcut_view`</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">get_absolute_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;/users/</span><span class="si">%s</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">urllib</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">smart_str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+
+<span class="k">class</span> <span class="nc">FooWithBrokenAbsoluteUrl</span><span class="p">(</span><span class="n">FooWithoutUrl</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fake model defining a ``get_absolute_url`` method containing an error</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">get_absolute_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;/users/</span><span class="si">%s</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">unknown_field</span>
+
+<span class="k">class</span> <span class="nc">ContentTypesTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_Site_meta_installed</span> <span class="o">=</span> <span class="n">Site</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">installed</span>
+        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">clear_cache</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">Site</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">installed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_Site_meta_installed</span>
+        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">clear_cache</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_lookup_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure that the content type cache (see ContentTypeManager)</span>
+<span class="sd">        works correctly. Lookups for a particular content type -- by model, ID</span>
+<span class="sd">        or natural key -- should hit the database only on the first lookup.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>At this point, a lookup for a ContentType should hit the DB</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>A second hit, though, won't hit the DB, nor will a lookup by ID
+or natural key</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_id</span><span class="p">(</span><span class="n">ct</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_by_natural_key</span><span class="p">(</span><span class="s">&#39;contenttypes&#39;</span><span class="p">,</span>
+                                                   <span class="s">&#39;contenttype&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Once we clear the cache, another lookup will again hit the DB</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">clear_cache</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>The same should happen with a lookup by natural key</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">clear_cache</span><span class="p">()</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_by_natural_key</span><span class="p">(</span><span class="s">&#39;contenttypes&#39;</span><span class="p">,</span>
+                                                   <span class="s">&#39;contenttype&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>And a second hit shouldn't hit the DB</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_by_natural_key</span><span class="p">(</span><span class="s">&#39;contenttypes&#39;</span><span class="p">,</span>
+                                                   <span class="s">&#39;contenttype&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_for_models_empty_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Empty cache.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">ContentType</span><span class="p">,</span> <span class="n">FooWithUrl</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">ContentType</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">),</span>
+            <span class="n">FooWithUrl</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithUrl</span><span class="p">),</span>
+        <span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_get_for_models_partial_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Partial cache</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">ContentType</span><span class="p">,</span> <span class="n">FooWithUrl</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">ContentType</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">),</span>
+            <span class="n">FooWithUrl</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithUrl</span><span class="p">),</span>
+        <span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_get_for_models_full_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Full cache</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">)</span>
+        <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithUrl</span><span class="p">)</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">ContentType</span><span class="p">,</span> <span class="n">FooWithUrl</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">ContentType</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ContentType</span><span class="p">),</span>
+            <span class="n">FooWithUrl</span><span class="p">:</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithUrl</span><span class="p">),</span>
+        <span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_get_for_concrete_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure the `for_concrete_model` kwarg correctly works</span>
+<span class="sd">        with concrete, proxy and deferred models</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">concrete_model_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ProxyModel</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">,</span>
+                                              <span class="n">for_concrete_model</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+
+        <span class="n">proxy_model_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ProxyModel</span><span class="p">,</span>
+                                                           <span class="n">for_concrete_model</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span> <span class="n">proxy_model_ct</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Make sure deferred model are correctly handled</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ConcreteModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Concrete&quot;</span><span class="p">)</span>
+        <span class="n">DeferredConcreteModel</span> <span class="o">=</span> <span class="n">ConcreteModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">__class__</span>
+        <span class="n">DeferredProxyModel</span> <span class="o">=</span> <span class="n">ProxyModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">__class__</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">DeferredConcreteModel</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">DeferredConcreteModel</span><span class="p">,</span>
+                                              <span class="n">for_concrete_model</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">DeferredProxyModel</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">proxy_model_ct</span><span class="p">,</span>
+            <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">DeferredProxyModel</span><span class="p">,</span>
+                                              <span class="n">for_concrete_model</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_get_for_concrete_models</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure the `for_concrete_models` kwarg correctly works</span>
+<span class="sd">        with concrete, proxy and deferred models.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">concrete_model_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">)</span>
+
+        <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">,</span> <span class="n">ProxyModel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">ConcreteModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ProxyModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+        <span class="p">})</span>
+
+        <span class="n">proxy_model_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">ProxyModel</span><span class="p">,</span>
+                                                           <span class="n">for_concrete_model</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">ConcreteModel</span><span class="p">,</span> <span class="n">ProxyModel</span><span class="p">,</span>
+                                                 <span class="n">for_concrete_models</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">ConcreteModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">ProxyModel</span><span class="p">:</span> <span class="n">proxy_model_ct</span><span class="p">,</span>
+        <span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Make sure deferred model are correctly handled</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ConcreteModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Concrete&quot;</span><span class="p">)</span>
+        <span class="n">DeferredConcreteModel</span> <span class="o">=</span> <span class="n">ConcreteModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">__class__</span>
+        <span class="n">DeferredProxyModel</span> <span class="o">=</span> <span class="n">ProxyModel</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">__class__</span>
+
+        <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">DeferredConcreteModel</span><span class="p">,</span>
+                                                 <span class="n">DeferredProxyModel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">DeferredConcreteModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">DeferredProxyModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+        <span class="p">})</span>
+
+        <span class="n">cts</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_models</span><span class="p">(</span><span class="n">DeferredConcreteModel</span><span class="p">,</span>
+                                                 <span class="n">DeferredProxyModel</span><span class="p">,</span>
+                                                 <span class="n">for_concrete_models</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cts</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">DeferredConcreteModel</span><span class="p">:</span> <span class="n">concrete_model_ct</span><span class="p">,</span>
+            <span class="n">DeferredProxyModel</span><span class="p">:</span> <span class="n">proxy_model_ct</span><span class="p">,</span>
+        <span class="p">})</span>
+
+
+    <span class="k">def</span> <span class="nf">test_shortcut_view</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that the shortcut view (used for the admin &quot;view on site&quot;</span>
+<span class="sd">        functionality) returns a complete URL regardless of whether the sites</span>
+<span class="sd">        framework is installed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;SERVER_NAME&quot;</span><span class="p">:</span> <span class="s">&quot;Example.com&quot;</span><span class="p">,</span>
+            <span class="s">&quot;SERVER_PORT&quot;</span><span class="p">:</span> <span class="s">&quot;80&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">user_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithUrl</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">FooWithUrl</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;john&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">Site</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">installed</span><span class="p">:</span>
+            <span class="n">current_site</span> <span class="o">=</span> <span class="n">Site</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_current</span><span class="p">()</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">shortcut</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user_ct</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&quot;http://</span><span class="si">%s</span><span class="s">/users/john/&quot;</span> <span class="o">%</span> <span class="n">current_site</span><span class="o">.</span><span class="n">domain</span><span class="p">,</span>
+                             <span class="n">response</span><span class="o">.</span><span class="n">_headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;location&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="n">Site</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">installed</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">shortcut</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">user_ct</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&quot;http://Example.com/users/john/&quot;</span><span class="p">,</span>
+                         <span class="n">response</span><span class="o">.</span><span class="n">_headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;location&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_shortcut_view_without_get_absolute_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that the shortcut view (used for the admin &quot;view on site&quot;</span>
+<span class="sd">        functionality) returns 404 when get_absolute_url is not defined.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;SERVER_NAME&quot;</span><span class="p">:</span> <span class="s">&quot;Example.com&quot;</span><span class="p">,</span>
+            <span class="s">&quot;SERVER_PORT&quot;</span><span class="p">:</span> <span class="s">&quot;80&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">user_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithoutUrl</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">FooWithoutUrl</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;john&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">Http404</span><span class="p">,</span> <span class="n">shortcut</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">user_ct</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_shortcut_view_with_broken_get_absolute_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that the shortcut view does not catch an AttributeError raised</span>
+<span class="sd">        by the model&#39;s get_absolute_url method.</span>
+<span class="sd">        Refs #8997.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;SERVER_NAME&quot;</span><span class="p">:</span> <span class="s">&quot;Example.com&quot;</span><span class="p">,</span>
+            <span class="s">&quot;SERVER_PORT&quot;</span><span class="p">:</span> <span class="s">&quot;80&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">user_ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">FooWithBrokenAbsoluteUrl</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="n">FooWithBrokenAbsoluteUrl</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;john&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="n">shortcut</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">user_ct</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_missing_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensures that displaying content types in admin (or anywhere) doesn&#39;t</span>
+<span class="sd">        break on leftover content type records in the DB for which no model</span>
+<span class="sd">        is defined anymore.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;Old model&#39;</span><span class="p">,</span>
+            <span class="n">app_label</span> <span class="o">=</span> <span class="s">&#39;contenttypes&#39;</span><span class="p">,</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="s">&#39;OldModel&#39;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">unicode</span><span class="p">(</span><span class="n">ct</span><span class="p">),</span> <span class="s">&#39;Old model&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

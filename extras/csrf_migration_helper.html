@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » extras › csrf_migration_helper.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../index.html"></a><h1>csrf_migration_helper.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="c">#!/usr/bin/env python</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>This script aims to help developers locate forms and view code that needs to
+use the new CSRF protection in Django 1.2.  It tries to find all the code that
+may need the steps described in the CSRF documentation.  It does not modify
+any code directly, it merely attempts to locate it.  Developers should be
+aware of its limitations, described below.</p>
+
+<p>For each template that contains at least one POST form, the following info is printed:</p>
+
+<p><Absolute path to template>
+  AKA: <Aliases (relative to template directory/directories that contain it)>
+  POST forms: <Number of POST forms>
+  With token: <Number of POST forms with the CSRF token already added>
+  Without token:
+    <File name and line number of form without token></p>
+
+<p>Searching for:
+    <Template names that need to be searched for in view code
+     (includes templates that 'include' current template)></p>
+
+<p>Found:
+    <File name and line number of any view code found></p>
+
+<p>The format used allows this script to be used in Emacs grep mode:
+  M-x grep
+  Run grep (like this): /path/to/my/virtualenv/python /path/to/django/src/extras/csrf<em>migration</em>helper.py --settings=mysettings /path/to/my/srcs</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h1>Limitations</h1>
+
+<ul>
+<li><p>All templates must be stored on disk in '.html' or '.htm' files.
+(extensions configurable below)</p></li>
+<li><p>All Python code must be stored on disk in '.py' files.  (extensions
+configurable below)</p></li>
+<li><p>All templates must be accessible from TEMPLATE<em>DIRS or from the 'templates/'
+directory in apps specified in INSTALLED</em>APPS.  Non-file based template
+loaders are out of the picture, because there is no way to ask them to
+return all templates.</p></li>
+<li><p>It's impossible to programmatically determine which forms should and should
+not have the token added.  The developer must decide when to do this,
+ensuring that the token is only added to internally targeted forms.</p></li>
+<li><p>It's impossible to programmatically work out when a template is used.  The
+attempts to trace back to view functions are guesses, and could easily fail
+in the following ways:</p>
+
+<ul><li><p>If the 'include' template tag is used with a variable
+i.e. {% include tname %} where tname is a variable containing the actual
+template name, rather than {% include "my_template.html" %}.</p></li>
+<li><p>If the template name has been built up by view code instead of as a simple
+string.  For example, generic views and the admin both do this.  (These
+apps are both contrib and both use RequestContext already, as it happens).</p></li>
+<li><p>If the 'ssl' tag (or any template tag other than 'include') is used to
+include the template in another template.</p></li></ul></li>
+<li><p>All templates belonging to apps referenced in INSTALLED_APPS will be
+searched, which may include third party apps or Django contrib.  In some
+cases, this will be a good thing, because even if the templates of these
+apps have been fixed by someone else, your own view code may reference the
+same template and may need to be updated.</p>
+
+<p>You may, however, wish to comment out some entries in INSTALLED<em>APPS or
+TEMPLATE</em>DIRS before running this script.</p></li>
+</ul></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Improvements to this script are welcome!</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><h1>Configuration</h1></td><td class="code"><div class="highlight"><pre><span class="n">TEMPLATE_EXTENSIONS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">&quot;.html&quot;</span><span class="p">,</span>
+    <span class="s">&quot;.htm&quot;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+<span class="n">PYTHON_SOURCE_EXTENSIONS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">&quot;.py&quot;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+<span class="n">TEMPLATE_ENCODING</span> <span class="o">=</span> <span class="s">&quot;UTF-8&quot;</span>
+
+<span class="n">PYTHON_ENCODING</span> <span class="o">=</span> <span class="s">&quot;UTF-8&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><h1>Method</h1></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Find templates:
+ - template dirs
+ - installed apps</p>
+
+<p>Search for POST forms
+ - Work out what the name of the template is, as it would appear in an
+   'include' or get<em>template() call. This can be done by comparing template
+   filename to all template dirs.  Some templates can have more than one
+   'name' e.g.  if a directory and one of its child directories are both in
+   TEMPLATE</em>DIRS.  This is actually a common hack used for
+   overriding-and-extending admin templates.</p>
+
+<p>For each POST form,
+- see if it already contains '{% csrf_token %}' immediately after <form>
+- work back to the view function(s):
+  - First, see if the form is included in any other templates, then
+    recursively compile a list of affected templates.
+  - Find any code function that references that template.  This is just a
+    brute force text search that can easily return false positives
+    and fail to find real instances.</p></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">optparse</span> <span class="kn">import</span> <span class="n">OptionParser</span>
+
+<span class="n">USAGE</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">This tool helps to locate forms that need CSRF tokens added and the</span>
+<span class="s">corresponding view code.  This processing is NOT fool proof, and you should read</span>
+<span class="s">the help contained in the script itself.  Also, this script may need configuring</span>
+<span class="s">(by editing the script) before use.</span>
+
+<span class="s">Usage:</span>
+
+<span class="s">python csrf_migration_helper.py [--settings=path.to.your.settings] /path/to/python/code [more paths...]</span>
+
+<span class="s">  Paths can be specified as relative paths.</span>
+
+<span class="s">  With no arguments, this help is printed.</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+<span class="n">_POST_FORM_RE</span> <span class="o">=</span> \
+    <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;(&lt;form\W[^&gt;]*\bmethod\s*=\s*(</span><span class="se">\&#39;</span><span class="s">|&quot;|)POST(</span><span class="se">\&#39;</span><span class="s">|&quot;|)\b[^&gt;]*&gt;)&#39;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+<span class="n">_FORM_CLOSE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;&lt;/form\s*&gt;&#39;</span><span class="p">)</span>
+<span class="n">_TOKEN_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">&#39;\{</span><span class="si">% c</span><span class="s">srf_token&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_template_dirs</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a set of all directories that contain project templates.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+    <span class="n">dirs</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="s">&#39;django.template.loaders.filesystem.load_template_source&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span> 
+        <span class="ow">or</span>  <span class="s">&#39;django.template.loaders.filesystem.Loader&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span><span class="p">):</span>
+        <span class="n">dirs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">unicode</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DIRS</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="s">&#39;django.template.loaders.app_directories.load_template_source&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span>
+        <span class="ow">or</span> <span class="s">&#39;django.template.loaders.app_directories.Loader&#39;</span> <span class="ow">in</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.template.loaders.app_directories</span> <span class="kn">import</span> <span class="n">app_template_dirs</span>
+        <span class="n">dirs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">app_template_dirs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">dirs</span>
+
+<span class="k">def</span> <span class="nf">make_template_info</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">root_dirs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates a Template object for a filename, calculating the possible</span>
+<span class="sd">    relative_filenames from the supplied filename and root template directories</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Template</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span>
+                    <span class="p">[</span><span class="n">filename</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">d</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:]</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">root_dirs</span> <span class="k">if</span> <span class="n">filename</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">d</span><span class="p">)])</span>
+
+
+<span class="k">class</span> <span class="nc">Template</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">absolute_filename</span><span class="p">,</span> <span class="n">relative_filenames</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_filenames</span> <span class="o">=</span> <span class="n">absolute_filename</span><span class="p">,</span> <span class="n">relative_filenames</span>
+
+    <span class="k">def</span> <span class="nf">content</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_content</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">content</span> <span class="o">=</span> <span class="n">fd</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">TEMPLATE_ENCODING</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">UnicodeDecodeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s"> in </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span>
+                        <span class="n">e</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;UTF-8&#39;</span><span class="p">,</span> <span class="s">&#39;ignore&#39;</span><span class="p">))</span>
+                    <span class="k">raise</span> <span class="ne">UnicodeDecodeError</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[:</span><span class="mi">4</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">message</span><span class="p">,)))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_content</span> <span class="o">=</span> <span class="n">content</span>
+            <span class="k">return</span> <span class="n">content</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">post_form_info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Get information about any POST forms in the template.</span>
+<span class="sd">        Returns [(linenumber, csrf_token added)]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">forms</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">form_line</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">ln</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">form_line</span> <span class="ow">and</span> <span class="n">_POST_FORM_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>record the form with no CSRF token yet</p></td><td class="code"><div class="highlight"><pre>                <span class="n">form_line</span> <span class="o">=</span> <span class="n">ln</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="n">forms</span><span class="p">[</span><span class="n">form_line</span><span class="p">]</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="k">if</span> <span class="n">form_line</span> <span class="ow">and</span> <span class="n">_TOKEN_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>found the CSRF token</p></td><td class="code"><div class="highlight"><pre>                <span class="n">forms</span><span class="p">[</span><span class="n">form_line</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="n">form_line</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">form_line</span> <span class="ow">and</span> <span class="n">_FORM_CLOSE_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>no token found by form closing tag</p></td><td class="code"><div class="highlight"><pre>                <span class="n">form_line</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">return</span> <span class="n">forms</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">includes_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">t</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns true if this template includes template &#39;t&#39; (via {% include %})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">t</span><span class="o">.</span><span class="n">relative_filenames</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">r&#39;\{%\s*include\s+(</span><span class="se">\&#39;</span><span class="s">|&quot;)&#39;</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="o">+</span> <span class="s">r&#39;(\1)\s*%\}&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">related_templates</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns all templates that include this one, recursively.  (starting</span>
+<span class="sd">        with this one)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_related_templates</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="n">retval</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="bp">self</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_templates</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">includes_template</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>If two templates mutually include each other, directly or
+indirectly, we have a problem here...</p></td><td class="code"><div class="highlight"><pre>                <span class="n">retval</span> <span class="o">=</span> <span class="n">retval</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">related_templates</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_related_templates</span> <span class="o">=</span> <span class="n">retval</span>
+        <span class="k">return</span> <span class="n">retval</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">absolute_filename</span>
+
+    <span class="k">def</span> <span class="nf">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">get_templates</span><span class="p">(</span><span class="n">dirs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns all files in dirs that have template extensions, as Template</span>
+<span class="sd">    objects.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">templates</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">root</span> <span class="ow">in</span> <span class="n">dirs</span><span class="p">:</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">dirpath</span><span class="p">,</span> <span class="n">dirnames</span><span class="p">,</span> <span class="n">filenames</span><span class="p">)</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">root</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">filenames</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="bp">True</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">TEMPLATE_EXTENSIONS</span> <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">e</span><span class="p">)])</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">t</span> <span class="o">=</span> <span class="n">make_template_info</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dirpath</span><span class="p">,</span> <span class="n">f</span><span class="p">),</span> <span class="n">dirs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>templates need to be able to search others:</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">t</span><span class="o">.</span><span class="n">all_templates</span> <span class="o">=</span> <span class="n">templates</span>
+                    <span class="n">templates</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">templates</span>
+
+<span class="k">def</span> <span class="nf">get_python_code</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns all Python code, as a list of tuples, each one being:</span>
+<span class="sd">     (filename, list of lines)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39; is not a directory.&quot;</span> <span class="o">%</span> <span class="n">p</span><span class="p">)</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">dirpath</span><span class="p">,</span> <span class="n">dirnames</span><span class="p">,</span> <span class="n">filenames</span><span class="p">)</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">filenames</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="bp">True</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">PYTHON_SOURCE_EXTENSIONS</span> <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">e</span><span class="p">)])</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">fn</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">dirpath</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+                    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fn</span><span class="p">)</span> <span class="k">as</span> <span class="n">fd</span><span class="p">:</span>
+                        <span class="n">content</span> <span class="o">=</span> <span class="p">[</span><span class="n">l</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">PYTHON_ENCODING</span><span class="p">)</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">fd</span><span class="o">.</span><span class="n">readlines</span><span class="p">()]</span>
+                    <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">fn</span><span class="p">,</span> <span class="n">content</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">retval</span>
+
+<span class="k">def</span> <span class="nf">search_python_list</span><span class="p">(</span><span class="n">python_code</span><span class="p">,</span> <span class="n">template_names</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Searches python code for a list of template names.</span>
+<span class="sd">    Returns a list of tuples, each one being:</span>
+<span class="sd">     (filename, line number)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">tn</span> <span class="ow">in</span> <span class="n">template_names</span><span class="p">:</span>
+        <span class="n">retval</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">search_python</span><span class="p">(</span><span class="n">python_code</span><span class="p">,</span> <span class="n">tn</span><span class="p">))</span>
+    <span class="n">retval</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">retval</span><span class="p">))</span>
+    <span class="n">retval</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">retval</span>
+
+<span class="k">def</span> <span class="nf">search_python</span><span class="p">(</span><span class="n">python_code</span><span class="p">,</span> <span class="n">template_name</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Searches Python code for a template name.</span>
+<span class="sd">    Returns a list of tuples, each one being:</span>
+<span class="sd">     (filename, line number)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">retval</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">fn</span><span class="p">,</span> <span class="n">content</span> <span class="ow">in</span> <span class="n">python_code</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ln</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">content</span><span class="p">):</span>
+            <span class="k">if</span> <span class="p">((</span><span class="s">u&#39;&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">template_name</span><span class="p">)</span> <span class="ow">in</span> <span class="n">line</span><span class="p">)</span> <span class="ow">or</span> \
+               <span class="p">((</span><span class="s">u&quot;&#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="n">template_name</span><span class="p">)</span> <span class="ow">in</span> <span class="n">line</span><span class="p">):</span>
+                <span class="n">retval</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">fn</span><span class="p">,</span> <span class="n">ln</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">retval</span>
+
+<span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">pythonpaths</span><span class="p">):</span>
+    <span class="n">template_dirs</span> <span class="o">=</span> <span class="n">get_template_dirs</span><span class="p">()</span>
+    <span class="n">templates</span> <span class="o">=</span> <span class="n">get_templates</span><span class="p">(</span><span class="n">template_dirs</span><span class="p">)</span>
+    <span class="n">python_code</span> <span class="o">=</span> <span class="n">get_python_code</span><span class="p">(</span><span class="n">pythonpaths</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">templates</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Logic</p></td><td class="code"><div class="highlight"><pre>        <span class="n">form_matches</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">post_form_info</span><span class="p">()</span>
+        <span class="n">num_post_forms</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">form_matches</span><span class="p">)</span>
+        <span class="n">form_lines_without_token</span> <span class="o">=</span> <span class="p">[</span><span class="n">ln</span> <span class="k">for</span> <span class="p">(</span><span class="n">ln</span><span class="p">,</span> <span class="n">has_token</span><span class="p">)</span> <span class="ow">in</span> <span class="n">form_matches</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">has_token</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">num_post_forms</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">to_search</span> <span class="o">=</span> <span class="p">[</span><span class="n">rf</span> <span class="k">for</span> <span class="n">rt</span> <span class="ow">in</span> <span class="n">t</span><span class="o">.</span><span class="n">related_templates</span><span class="p">()</span> <span class="k">for</span> <span class="n">rf</span> <span class="ow">in</span> <span class="n">rt</span><span class="o">.</span><span class="n">relative_filenames</span><span class="p">]</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="n">search_python_list</span><span class="p">(</span><span class="n">python_code</span><span class="p">,</span> <span class="n">to_search</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Display:</p></td><td class="code"><div class="highlight"><pre>        <span class="k">print</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">t</span><span class="o">.</span><span class="n">relative_filenames</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;  AKA </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">r</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;  POST forms: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">num_post_forms</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;  With token: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">num_post_forms</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">form_lines_without_token</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="n">form_lines_without_token</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;  Without token:&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ln</span> <span class="ow">in</span> <span class="n">form_lines_without_token</span><span class="p">:</span>
+                <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s">:&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">absolute_filename</span><span class="p">,</span> <span class="n">ln</span><span class="p">))</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;  Searching for:&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">to_search</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;    &quot;</span> <span class="o">+</span> <span class="n">r</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;  Found:&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">found</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;    Nothing&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">fn</span><span class="p">,</span> <span class="n">ln</span> <span class="ow">in</span> <span class="n">found</span><span class="p">:</span>
+                <span class="k">print</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s">:&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">ln</span><span class="p">))</span>
+
+        <span class="k">print</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&quot;----&quot;</span><span class="p">)</span>
+
+
+<span class="n">parser</span> <span class="o">=</span> <span class="n">OptionParser</span><span class="p">(</span><span class="n">usage</span><span class="o">=</span><span class="n">USAGE</span><span class="p">)</span>
+<span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="s">&quot;--settings&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&quot;store&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&quot;settings&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">&quot;Dotted path to settings file&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">options</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">()</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">settings</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="s">&#39;settings&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">settings</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;DJANGO_SETTINGS_MODULE&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;You need to set DJANGO_SETTINGS_MODULE or use the &#39;--settings&#39; parameter&quot;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&quot;DJANGO_SETTINGS_MODULE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings</span>
+
+    <span class="n">main</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:1}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../javascript/docco.min.js"></script>
+</html>

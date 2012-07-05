@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › views › decorators › csrf.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>csrf.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="kn">from</span> <span class="nn">django.middleware.csrf</span> <span class="kn">import</span> <span class="n">CsrfViewMiddleware</span><span class="p">,</span> <span class="n">get_token</span>
+<span class="kn">from</span> <span class="nn">django.utils.decorators</span> <span class="kn">import</span> <span class="n">decorator_from_middleware</span><span class="p">,</span> <span class="n">available_attrs</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
+
+<span class="n">csrf_protect</span> <span class="o">=</span> <span class="n">decorator_from_middleware</span><span class="p">(</span><span class="n">CsrfViewMiddleware</span><span class="p">)</span>
+<span class="n">csrf_protect</span><span class="o">.</span><span class="n">__name__</span> <span class="o">=</span> <span class="s">&quot;csrf_protect&quot;</span>
+<span class="n">csrf_protect</span><span class="o">.</span><span class="n">__doc__</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">This decorator adds CSRF protection in exactly the same way as</span>
+<span class="s">CsrfViewMiddleware, but it can be used on a per view basis.  Using both, or</span>
+<span class="s">using the decorator multiple times, is harmless and efficient.</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">_EnsureCsrfToken</span><span class="p">(</span><span class="n">CsrfViewMiddleware</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>We need this to behave just like the CsrfViewMiddleware, but not reject
+requests.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_reject</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">reason</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+
+<span class="n">requires_csrf_token</span> <span class="o">=</span> <span class="n">decorator_from_middleware</span><span class="p">(</span><span class="n">_EnsureCsrfToken</span><span class="p">)</span>
+<span class="n">requires_csrf_token</span><span class="o">.</span><span class="n">__name__</span> <span class="o">=</span> <span class="s">&#39;requires_csrf_token&#39;</span>
+<span class="n">requires_csrf_token</span><span class="o">.</span><span class="n">__doc__</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">Use this decorator on views that need a correct csrf_token available to</span>
+<span class="s">RequestContext, but without the CSRF protection that csrf_protect</span>
+<span class="s">enforces.</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">_EnsureCsrfCookie</span><span class="p">(</span><span class="n">CsrfViewMiddleware</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_reject</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">reason</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">process_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">callback</span><span class="p">,</span> <span class="n">callback_args</span><span class="p">,</span> <span class="n">callback_kwargs</span><span class="p">):</span>
+        <span class="n">retval</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">_EnsureCsrfCookie</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">callback</span><span class="p">,</span> <span class="n">callback_args</span><span class="p">,</span> <span class="n">callback_kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Forces process_response to send the cookie</p></td><td class="code"><div class="highlight"><pre>        <span class="n">get_token</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">retval</span>
+
+
+<span class="n">ensure_csrf_cookie</span> <span class="o">=</span> <span class="n">decorator_from_middleware</span><span class="p">(</span><span class="n">_EnsureCsrfCookie</span><span class="p">)</span>
+<span class="n">ensure_csrf_cookie</span><span class="o">.</span><span class="n">__name__</span> <span class="o">=</span> <span class="s">&#39;ensure_csrf_cookie&#39;</span>
+<span class="n">ensure_csrf_cookie</span><span class="o">.</span><span class="n">__doc__</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">Use this decorator to ensure that a view sets a CSRF cookie, whether or not it</span>
+<span class="s">uses the csrf_token template tag, or the CsrfViewMiddleware is used.</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+
+<span class="k">def</span> <span class="nf">csrf_response_exempt</span><span class="p">(</span><span class="n">view_func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Modifies a view function so that its response is exempt</span>
+<span class="sd">    from the post-processing of the CSRF middleware.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;csrf_response_exempt is deprecated. It no longer performs a &quot;</span>
+                  <span class="s">&quot;function, and calls to it can be removed.&quot;</span><span class="p">,</span>
+                  <span class="ne">DeprecationWarning</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">view_func</span>
+
+<span class="k">def</span> <span class="nf">csrf_view_exempt</span><span class="p">(</span><span class="n">view_func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Marks a view function as being exempt from CSRF view protection.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;csrf_view_exempt is deprecated. Use csrf_exempt instead.&quot;</span><span class="p">,</span>
+                  <span class="ne">DeprecationWarning</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">csrf_exempt</span><span class="p">(</span><span class="n">view_func</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">csrf_exempt</span><span class="p">(</span><span class="n">view_func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Marks a view function as being exempt from the CSRF view protection.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>We could just do view<em>func.csrf</em>exempt = True, but decorators
+are nicer if they don't have side-effects, so we return a new
+function.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">wrapped_view</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">view_func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">wrapped_view</span><span class="o">.</span><span class="n">csrf_exempt</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="n">wraps</span><span class="p">(</span><span class="n">view_func</span><span class="p">,</span> <span class="n">assigned</span><span class="o">=</span><span class="n">available_attrs</span><span class="p">(</span><span class="n">view_func</span><span class="p">))(</span><span class="n">wrapped_view</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

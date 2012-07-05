@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › middleware › tests.py
+| -*- coding: utf-8 -*-
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">gzip</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">StringIO</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">mail</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpRequest</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpResponse</span>
+<span class="kn">from</span> <span class="nn">django.middleware.clickjacking</span> <span class="kn">import</span> <span class="n">XFrameOptionsMiddleware</span>
+<span class="kn">from</span> <span class="nn">django.middleware.common</span> <span class="kn">import</span> <span class="n">CommonMiddleware</span>
+<span class="kn">from</span> <span class="nn">django.middleware.http</span> <span class="kn">import</span> <span class="n">ConditionalGetMiddleware</span>
+<span class="kn">from</span> <span class="nn">django.middleware.gzip</span> <span class="kn">import</span> <span class="n">GZipMiddleware</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">RequestFactory</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+
+<span class="k">class</span> <span class="nc">CommonMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">append_slash</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prepend_www</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ignorable_404_urls</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">IGNORABLE_404_URLS</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_broken_email_links</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">SEND_BROKEN_LINK_EMAILS</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">append_slash</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prepend_www</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">IGNORABLE_404_URLS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ignorable_404_urls</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SEND_BROKEN_LINK_EMAILS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_broken_email_links</span>
+
+    <span class="k">def</span> <span class="nf">_get_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;testserver&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">path_info</span> <span class="o">=</span> <span class="s">&quot;/middleware/</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">path</span>
+        <span class="k">return</span> <span class="n">request</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_have_slash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that URLs with slashes go unmolested.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_slashless_resource</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that matches to explicit slashless URLs go unmolested.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;noslash&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_slashless_unknown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that APPEND_SLASH doesn&#39;t redirect to unknown resources.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;unknown&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_redirect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that APPEND_SLASH redirects slashless URLs to a valid pattern.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span> <span class="s">&#39;http://testserver/middleware/slash/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_no_redirect_on_POST_in_DEBUG</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that while in debug mode, an exception is raised with a warning</span>
+<span class="sd">        when a failed attempt is made to POST to an URL which would normally be</span>
+<span class="sd">        redirected to a slashed version.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash&#39;</span><span class="p">)</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;POST&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+            <span class="ne">RuntimeError</span><span class="p">,</span>
+            <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">,</span>
+            <span class="n">request</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;end in a slash&#39;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_disabled</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests disabling append slash functionality.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_quoted</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that URLs which require quoting are redirected to their slash</span>
+<span class="sd">        version ok.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;needsquoting#&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+            <span class="s">&#39;http://testserver/middleware/needsquoting%23/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;path/&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+            <span class="s">&#39;http://www.testserver/middleware/path/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www_append_slash_have_slash</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash/&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;http://www.testserver/middleware/slash/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www_append_slash_slashless</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;slash&#39;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                          <span class="s">&#39;http://www.testserver/middleware/slash/&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>The following tests examine expected behavior given a custom urlconf that
+overrides the default one through the request object.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_append_slash_have_slash_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that URLs with slashes go unmolested.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash/&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_slashless_resource_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that matches to explicit slashless URLs go unmolested.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/noslash&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_slashless_unknown_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that APPEND_SLASH doesn&#39;t redirect to unknown resources.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/unknown&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_redirect_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that APPEND_SLASH redirects slashless URLs to a valid pattern.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">r</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">,</span>
+          <span class="s">&quot;CommonMiddlware failed to return APPEND_SLASH redirect using request.urlconf&quot;</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span> <span class="s">&#39;http://testserver/middleware/customurlconf/slash/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_no_redirect_on_POST_in_DEBUG_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that while in debug mode, an exception is raised with a warning</span>
+<span class="sd">      when a failed attempt is made to POST to an URL which would normally be</span>
+<span class="sd">      redirected to a slashed version.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="s">&#39;POST&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span>
+          <span class="ne">RuntimeError</span><span class="p">,</span>
+          <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">,</span>
+          <span class="n">request</span><span class="p">)</span>
+      <span class="k">try</span><span class="p">:</span>
+          <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;end in a slash&#39;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_disabled_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests disabling append slash functionality.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">False</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_append_slash_quoted_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Tests that URLs which require quoting are redirected to their slash</span>
+<span class="sd">      version ok.</span>
+<span class="sd">      &quot;&quot;&quot;</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/needsquoting#&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">r</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">,</span>
+          <span class="s">&quot;CommonMiddlware failed to return APPEND_SLASH redirect using request.urlconf&quot;</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+          <span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+          <span class="s">&#39;http://testserver/middleware/customurlconf/needsquoting%23/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">False</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/path/&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+          <span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+          <span class="s">&#39;http://www.testserver/middleware/customurlconf/path/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www_append_slash_have_slash_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash/&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                        <span class="s">&#39;http://www.testserver/middleware/customurlconf/slash/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepend_www_append_slash_slashless_custom_urlconf</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">PREPEND_WWW</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">settings</span><span class="o">.</span><span class="n">APPEND_SLASH</span> <span class="o">=</span> <span class="bp">True</span>
+      <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;customurlconf/slash&#39;</span><span class="p">)</span>
+      <span class="n">request</span><span class="o">.</span><span class="n">urlconf</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.extra_urls&#39;</span>
+      <span class="n">r</span> <span class="o">=</span> <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">301</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;Location&#39;</span><span class="p">],</span>
+                        <span class="s">&#39;http://www.testserver/middleware/customurlconf/slash/&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Tests for the 404 error reporting via email</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_404_error_reporting</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">IGNORABLE_404_URLS</span> <span class="o">=</span> <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;foo&#39;</span><span class="p">),)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SEND_BROKEN_LINK_EMAILS</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;regular_url/that/does/not/exist&#39;</span><span class="p">)</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_REFERER&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;/another/url/&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Broken&#39;</span><span class="p">,</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_404_error_reporting_no_referer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">IGNORABLE_404_URLS</span> <span class="o">=</span> <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;foo&#39;</span><span class="p">),)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SEND_BROKEN_LINK_EMAILS</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;regular_url/that/does/not/exist&#39;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_404_error_reporting_ignored_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">IGNORABLE_404_URLS</span> <span class="o">=</span> <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;foo&#39;</span><span class="p">),)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SEND_BROKEN_LINK_EMAILS</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_request</span><span class="p">(</span><span class="s">&#39;foo_url/that/does/not/exist/either&#39;</span><span class="p">)</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_REFERER&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;/another/url/&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ConditionalGetMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;regressiontests.middleware.cond_get_urls&#39;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;testserver&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">path_info</span> <span class="o">=</span> <span class="s">&quot;/&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Tests for the Date header</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_date_header_added</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="s">&#39;Date&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;Date&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Tests for the Content-Length header</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_content_length_header_added</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">content_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="s">&#39;Content-Length&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;Content-Length&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]),</span> <span class="n">content_length</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_content_length_header_not_changed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">bad_content_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">content</span><span class="p">)</span> <span class="o">+</span> <span class="mi">10</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bad_content_length</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Length&#39;</span><span class="p">]),</span> <span class="n">bad_content_length</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Tests for the ETag header</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_if_none_match_and_no_etag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_NONE_MATCH&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;spam&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_if_none_match_and_etag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;ETag&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;eggs&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_if_none_match_and_same_etag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_NONE_MATCH&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;ETag&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;spam&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">304</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_if_none_match_and_different_etag</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_NONE_MATCH&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;spam&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;ETag&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;eggs&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Tests for the Last-Modified header</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_if_modified_since_and_no_last_modified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_MODIFIED_SINCE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_if_modified_since_and_last_modified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Last-Modified&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_if_modified_since_and_same_last_modified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_MODIFIED_SINCE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Last-Modified&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">304</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_if_modified_since_and_last_modified_in_the_past</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_MODIFIED_SINCE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Last-Modified&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:35:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">304</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_if_modified_since_and_last_modified_in_the_future</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_IF_MODIFIED_SINCE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:38:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Last-Modified&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Sat, 12 Feb 2011 17:41:44 GMT&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">ConditionalGetMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">XFrameOptionsMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for the X-Frame-Options clickjacking prevention middleware.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">x_frame_options</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x_frame_options</span>
+
+    <span class="k">def</span> <span class="nf">test_same_origin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that the X_FRAME_OPTIONS setting can be set to SAMEORIGIN to</span>
+<span class="sd">        have the middleware use that value for the HTTP header.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;sameorigin&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_deny</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that the X_FRAME_OPTIONS setting can be set to DENY to</span>
+<span class="sd">        have the middleware use that value for the HTTP header.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;DENY&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;DENY&#39;</span><span class="p">)</span>
+
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;deny&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;DENY&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_defaults_sameorigin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that if the X_FRAME_OPTIONS setting is not set then it defaults</span>
+<span class="sd">        to SAMEORIGIN.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dont_set_if_set</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that if the X-Frame-Options header is already set then the</span>
+<span class="sd">        middleware does not attempt to override it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;DENY&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;DENY&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;DENY&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_response_exempt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that if the response has a xframe_options_exempt attribute set</span>
+<span class="sd">        to False then it still sets the header, but if it&#39;s set to True then</span>
+<span class="sd">        it does not.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">xframe_options_exempt</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">xframe_options_exempt</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">XFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_is_extendable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that the XFrameOptionsMiddleware method that determines the</span>
+<span class="sd">        X-Frame-Options header value can be overridden based on something in</span>
+<span class="sd">        the request or response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">OtherXFrameOptionsMiddleware</span><span class="p">(</span><span class="n">XFrameOptionsMiddleware</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>This is just an example for testing purposes...</p></td><td class="code"><div class="highlight"><pre>            <span class="k">def</span> <span class="nf">get_xframe_options_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="s">&#39;sameorigin&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+                <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;sameorigin&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+                <span class="k">return</span> <span class="s">&#39;DENY&#39;</span>
+
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;DENY&#39;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">sameorigin</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">OtherXFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                            <span class="n">response</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">sameorigin</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">OtherXFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+                                                            <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;SAMEORIGIN&#39;</span><span class="p">)</span>
+
+        <span class="n">settings</span><span class="o">.</span><span class="n">X_FRAME_OPTIONS</span> <span class="o">=</span> <span class="s">&#39;SAMEORIGIN&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">OtherXFrameOptionsMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">HttpRequest</span><span class="p">(),</span>
+                                                       <span class="n">HttpResponse</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s">&#39;X-Frame-Options&#39;</span><span class="p">],</span> <span class="s">&#39;DENY&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">GZipMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests the GZip middleware.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">short_string</span> <span class="o">=</span> <span class="s">&quot;This string is too short to be worth compressing.&quot;</span>
+    <span class="n">compressible_string</span> <span class="o">=</span> <span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="mi">500</span>
+    <span class="n">uncompressible_string</span> <span class="o">=</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">chr</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">255</span><span class="p">))</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">500</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;testserver&#39;</span><span class="p">,</span>
+            <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">path_info</span> <span class="o">=</span> <span class="s">&quot;/&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_ACCEPT_ENCODING&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;gzip, deflate&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_USER_AGENT&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Mozilla/5.0 (Windows NT 5.1; rv:9.0.1) Gecko/20100101 Firefox/9.0.1&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;text/html; charset=UTF-8&#39;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">decompress</span><span class="p">(</span><span class="n">gzipped_string</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">gzip</span><span class="o">.</span><span class="n">GzipFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s">&#39;rb&#39;</span><span class="p">,</span> <span class="n">fileobj</span><span class="o">=</span><span class="n">StringIO</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="n">gzipped_string</span><span class="p">))</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_compress_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression is performed on responses with compressible content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="s">&#39;gzip&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Length&#39;</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">test_compress_non_200_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression is performed on responses with a status other than 200.</span>
+<span class="sd">        See #10762.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">404</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="s">&#39;gzip&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_compress_short_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression isn&#39;t performed on responses with short content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">short_string</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">short_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_compress_compressed_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression isn&#39;t performed on responses that are already compressed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;deflate&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="s">&#39;deflate&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_compress_ie_js_requests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression isn&#39;t performed on JavaScript requests from Internet Explorer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;HTTP_USER_AGENT&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;Mozilla/4.0 (compatible; MSIE 5.00; Windows 98)&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">[</span><span class="s">&#39;Content-Type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;application/javascript; charset=UTF-8&#39;</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_compress_uncompressible_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that compression isn&#39;t performed on responses with uncompressible content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">uncompressible_string</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">req</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">resp</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">content</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">uncompressible_string</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;Content-Encoding&#39;</span><span class="p">),</span> <span class="bp">None</span><span class="p">)</span>
+
+
+<span class="nd">@override_settings</span><span class="p">(</span><span class="n">USE_ETAGS</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">ETagGZipMiddlewareTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests if the ETag middleware behaves correctly with GZip middleware.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">compressible_string</span> <span class="o">=</span> <span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="mi">500</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_compress_response</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that ETag is changed after gzip compression is performed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">,</span> <span class="n">HTTP_ACCEPT_ENCODING</span><span class="o">=</span><span class="s">&#39;gzip, deflate&#39;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+                <span class="n">HttpResponse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)))</span>
+        <span class="n">gzip_etag</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;ETag&#39;</span><span class="p">)</span>
+
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">,</span> <span class="n">HTTP_ACCEPT_ENCODING</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">GZipMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">CommonMiddleware</span><span class="p">()</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+                <span class="n">HttpResponse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">compressible_string</span><span class="p">)))</span>
+        <span class="n">nogzip_etag</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;ETag&#39;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">gzip_etag</span><span class="p">,</span> <span class="n">nogzip_etag</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

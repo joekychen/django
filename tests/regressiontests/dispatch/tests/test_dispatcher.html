@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › dispatch › tests › test_dispatcher.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>test_dispatcher.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">gc</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">from</span> <span class="nn">django.dispatch</span> <span class="kn">import</span> <span class="n">Signal</span><span class="p">,</span> <span class="n">receiver</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+
+<span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;java&#39;</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">garbage_collect</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Some JVM GCs will execute finalizers in a different thread, meaning
+we need to wait for that to complete before we go on looking for the
+effects of that.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="p">,</span> <span class="s">&quot;pypy_version_info&quot;</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">garbage_collect</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Collecting weakreferences can take two collections on PyPy.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">garbage_collect</span><span class="p">():</span>
+        <span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">receiver_1_arg</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">val</span>
+
+<span class="k">class</span> <span class="nc">Callable</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">val</span>
+
+    <span class="k">def</span> <span class="nf">a</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">val</span>
+
+<span class="n">a_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">(</span><span class="n">providing_args</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;val&quot;</span><span class="p">])</span>
+<span class="n">b_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">(</span><span class="n">providing_args</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;val&quot;</span><span class="p">])</span>
+<span class="n">c_signal</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">(</span><span class="n">providing_args</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;val&quot;</span><span class="p">])</span>
+
+<span class="k">class</span> <span class="nc">DispatcherTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Test suite for dispatcher (barely started)&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">_testIsClean</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Assert that everything has been cleaned up automatically&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">receivers</span><span class="p">,</span> <span class="p">[])</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>force cleanup just in case</p></td><td class="code"><div class="highlight"><pre>        <span class="n">signal</span><span class="o">.</span><span class="n">receivers</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">testExact</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver_1_arg</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">[(</span><span class="n">receiver_1_arg</span><span class="p">,</span><span class="s">&quot;test&quot;</span><span class="p">)]</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">receiver_1_arg</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testIgnoredSender</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver_1_arg</span><span class="p">)</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">[(</span><span class="n">receiver_1_arg</span><span class="p">,</span><span class="s">&quot;test&quot;</span><span class="p">)]</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">receiver_1_arg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testGarbageCollected</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">()</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">del</span> <span class="n">a</span>
+        <span class="n">garbage_collect</span><span class="p">()</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testMultipleRegistration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">()</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">a_signal</span><span class="o">.</span><span class="n">receivers</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">a</span>
+        <span class="k">del</span> <span class="n">result</span>
+        <span class="n">garbage_collect</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testUidRegistration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">uid_based_receiver_1</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">def</span> <span class="nf">uid_based_receiver_2</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">uid_based_receiver_1</span><span class="p">,</span> <span class="n">dispatch_uid</span> <span class="o">=</span> <span class="s">&quot;uid&quot;</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">uid_based_receiver_2</span><span class="p">,</span> <span class="n">dispatch_uid</span> <span class="o">=</span> <span class="s">&quot;uid&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">a_signal</span><span class="o">.</span><span class="n">receivers</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">dispatch_uid</span> <span class="o">=</span> <span class="s">&quot;uid&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testRobust</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test the sendRobust function&quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">fails</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;this&#39;</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">fails</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">a_signal</span><span class="o">.</span><span class="n">send_robust</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&quot;test&quot;</span><span class="p">)</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">err</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">err</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;this&#39;</span><span class="p">,))</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">fails</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testDisconnection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">receiver_1</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">()</span>
+        <span class="n">receiver_2</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">()</span>
+        <span class="n">receiver_3</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">()</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver_1</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver_2</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receiver_3</span><span class="p">)</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">receiver_1</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">receiver_2</span>
+        <span class="n">garbage_collect</span><span class="p">()</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">receiver_3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_testIsClean</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ReceiverTestCase</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test suite for receiver.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">testReceiverSingleSignal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nd">@receiver</span><span class="p">(</span><span class="n">a_signal</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">val</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testReceiverSignalList</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nd">@receiver</span><span class="p">([</span><span class="n">a_signal</span><span class="p">,</span> <span class="n">b_signal</span><span class="p">,</span> <span class="n">c_signal</span><span class="p">])</span>
+        <span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">a_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&#39;a&#39;</span><span class="p">)</span>
+        <span class="n">c_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&#39;c&#39;</span><span class="p">)</span>
+        <span class="n">b_signal</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="s">&#39;b&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;a&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;b&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;c&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › templatetags › cache.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>cache.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">Library</span><span class="p">,</span> <span class="n">Node</span><span class="p">,</span> <span class="n">TemplateSyntaxError</span><span class="p">,</span> <span class="n">Variable</span><span class="p">,</span> <span class="n">VariableDoesNotExist</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">resolve_variable</span>
+<span class="kn">from</span> <span class="nn">django.core.cache</span> <span class="kn">import</span> <span class="n">cache</span>
+<span class="kn">from</span> <span class="nn">django.utils.http</span> <span class="kn">import</span> <span class="n">urlquote</span>
+
+<span class="n">register</span> <span class="o">=</span> <span class="n">Library</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">CacheNode</span><span class="p">(</span><span class="n">Node</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodelist</span><span class="p">,</span> <span class="n">expire_time_var</span><span class="p">,</span> <span class="n">fragment_name</span><span class="p">,</span> <span class="n">vary_on</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span> <span class="o">=</span> <span class="n">nodelist</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expire_time_var</span> <span class="o">=</span> <span class="n">Variable</span><span class="p">(</span><span class="n">expire_time_var</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fragment_name</span> <span class="o">=</span> <span class="n">fragment_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">vary_on</span> <span class="o">=</span> <span class="n">vary_on</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">expire_time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">expire_time_var</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">VariableDoesNotExist</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&#39;&quot;cache&quot; tag got an unknown variable: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">expire_time_var</span><span class="o">.</span><span class="n">var</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">expire_time</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">expire_time</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&#39;&quot;cache&quot; tag got a non-integer timeout value: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">expire_time</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Build a unicode key for this fragment and all vary-on's.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">args</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">md5</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">urlquote</span><span class="p">(</span><span class="n">resolve_variable</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">context</span><span class="p">))</span> <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">vary_on</span><span class="p">]))</span>
+        <span class="n">cache_key</span> <span class="o">=</span> <span class="s">&#39;template.cache.</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fragment_name</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">())</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+            <span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">cache_key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">expire_time</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+<span class="nd">@register.tag</span><span class="p">(</span><span class="s">&#39;cache&#39;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">do_cache</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This will cache the contents of a template fragment for a given amount</span>
+<span class="sd">    of time.</span>
+
+<span class="sd">    Usage::</span>
+
+<span class="sd">        {% load cache %}</span>
+<span class="sd">        {% cache [expire_time] [fragment_name] %}</span>
+<span class="sd">            .. some expensive processing ..</span>
+<span class="sd">        {% endcache %}</span>
+
+<span class="sd">    This tag also supports varying by a list of arguments::</span>
+
+<span class="sd">        {% load cache %}</span>
+<span class="sd">        {% cache [expire_time] [fragment_name] [var1] [var2] .. %}</span>
+<span class="sd">            .. some expensive processing ..</span>
+<span class="sd">        {% endcache %}</span>
+
+<span class="sd">    Each unique set of arguments will result in a unique cache entry.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nodelist</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">((</span><span class="s">&#39;endcache&#39;</span><span class="p">,))</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">delete_first_token</span><span class="p">()</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">contents</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&quot;&#39;</span><span class="si">%r</span><span class="s">&#39; tag requires at least 2 arguments.&quot;</span> <span class="o">%</span> <span class="n">tokens</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">CacheNode</span><span class="p">(</span><span class="n">nodelist</span><span class="p">,</span> <span class="n">tokens</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">tokens</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">tokens</span><span class="p">[</span><span class="mi">3</span><span class="p">:])</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

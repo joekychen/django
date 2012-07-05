@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › auth › management › __init__.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>__init__.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Creates permissions for all installed apps that need permissions.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">getpass</span>
+<span class="kn">import</span> <span class="nn">locale</span>
+<span class="kn">import</span> <span class="nn">unicodedata</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth</span> <span class="kn">import</span> <span class="n">models</span> <span class="k">as</span> <span class="n">auth_app</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">get_models</span><span class="p">,</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span>
+
+
+<span class="k">def</span> <span class="nf">_get_permission_codename</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">opts</span><span class="p">):</span>
+    <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">_</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">object_name</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+
+<span class="k">def</span> <span class="nf">_get_all_permissions</span><span class="p">(</span><span class="n">opts</span><span class="p">):</span>
+    <span class="s">&quot;Returns (codename, name) for all permissions in the given opts.&quot;</span>
+    <span class="n">perms</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;add&#39;</span><span class="p">,</span> <span class="s">&#39;change&#39;</span><span class="p">,</span> <span class="s">&#39;delete&#39;</span><span class="p">):</span>
+        <span class="n">perms</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">_get_permission_codename</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">opts</span><span class="p">),</span> <span class="s">&#39;Can </span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">verbose_name_raw</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">perms</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">permissions</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">create_permissions</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">created_models</span><span class="p">,</span> <span class="n">verbosity</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="kn">from</span> <span class="nn">django.contrib.contenttypes.models</span> <span class="kn">import</span> <span class="n">ContentType</span>
+
+    <span class="n">app_models</span> <span class="o">=</span> <span class="n">get_models</span><span class="p">(</span><span class="n">app</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>This will hold the permissions we're looking for as
+(content_type, (codename, name))</p></td><td class="code"><div class="highlight"><pre>    <span class="n">searched_perms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>The codenames and ctypes that should exist.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">ctypes</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">klass</span> <span class="ow">in</span> <span class="n">app_models</span><span class="p">:</span>
+        <span class="n">ctype</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">klass</span><span class="p">)</span>
+        <span class="n">ctypes</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ctype</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">perm</span> <span class="ow">in</span> <span class="n">_get_all_permissions</span><span class="p">(</span><span class="n">klass</span><span class="o">.</span><span class="n">_meta</span><span class="p">):</span>
+            <span class="n">searched_perms</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ctype</span><span class="p">,</span> <span class="n">perm</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Find all the Permissions that have a context_type for a model we're
+looking for.  We don't need to check for codenames since we already have
+a list of the ones we're going to create.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">all_perms</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">auth_app</span><span class="o">.</span><span class="n">Permission</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+        <span class="n">content_type__in</span><span class="o">=</span><span class="n">ctypes</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span>
+        <span class="s">&quot;content_type&quot;</span><span class="p">,</span> <span class="s">&quot;codename&quot;</span>
+    <span class="p">))</span>
+
+    <span class="n">objs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">auth_app</span><span class="o">.</span><span class="n">Permission</span><span class="p">(</span><span class="n">codename</span><span class="o">=</span><span class="n">codename</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="n">ctype</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ctype</span><span class="p">,</span> <span class="p">(</span><span class="n">codename</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="ow">in</span> <span class="n">searched_perms</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">ctype</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">codename</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_perms</span>
+    <span class="p">]</span>
+    <span class="n">auth_app</span><span class="o">.</span><span class="n">Permission</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">bulk_create</span><span class="p">(</span><span class="n">objs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbosity</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objs</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="s">&quot;Adding permission &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="n">obj</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">create_superuser</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">created_models</span><span class="p">,</span> <span class="n">verbosity</span><span class="p">,</span> <span class="n">db</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="kn">from</span> <span class="nn">django.core.management</span> <span class="kn">import</span> <span class="n">call_command</span>
+
+    <span class="k">if</span> <span class="n">auth_app</span><span class="o">.</span><span class="n">User</span> <span class="ow">in</span> <span class="n">created_models</span> <span class="ow">and</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;interactive&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">):</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">You just installed Django&#39;s auth system, which means you &quot;</span>
+            <span class="s">&quot;don&#39;t have any superusers defined.</span><span class="se">\n</span><span class="s">Would you like to create one &quot;</span>
+            <span class="s">&quot;now? (yes/no): &quot;</span><span class="p">)</span>
+        <span class="n">confirm</span> <span class="o">=</span> <span class="nb">raw_input</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">while</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">confirm</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;yes&#39;</span><span class="p">,</span> <span class="s">&#39;no&#39;</span><span class="p">):</span>
+                <span class="n">confirm</span> <span class="o">=</span> <span class="nb">raw_input</span><span class="p">(</span><span class="s">&#39;Please enter either &quot;yes&quot; or &quot;no&quot;: &#39;</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">confirm</span> <span class="o">==</span> <span class="s">&#39;yes&#39;</span><span class="p">:</span>
+                <span class="n">call_command</span><span class="p">(</span><span class="s">&quot;createsuperuser&quot;</span><span class="p">,</span> <span class="n">interactive</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span>
+            <span class="k">break</span>
+
+
+<span class="k">def</span> <span class="nf">get_system_username</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Try to determine the current system user&#39;s username.</span>
+
+<span class="sd">    :returns: The username as a unicode string, or an empty string if the</span>
+<span class="sd">        username could not be determined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">getpass</span><span class="o">.</span><span class="n">getuser</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">getdefaultlocale</span><span class="p">()[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ImportError</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>KeyError will be raised by os.getpwuid() (called by getuser())
+if there is no corresponding entry in the /etc/passwd file
+(a very restricted chroot environment, for example).
+UnicodeDecodeError - preventive treatment for non-latin Windows.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="s">&#39;&#39;</span>
+
+
+<span class="k">def</span> <span class="nf">get_default_username</span><span class="p">(</span><span class="n">check_db</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Try to determine the current system user&#39;s username to use as a default.</span>
+
+<span class="sd">    :param check_db: If ``True``, requires that the username does not match an</span>
+<span class="sd">        existing ``auth.User`` (otherwise returns an empty string).</span>
+<span class="sd">    :returns: The username, or an empty string if no username can be</span>
+<span class="sd">        determined.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">django.contrib.auth.management.commands.createsuperuser</span> <span class="kn">import</span> <span class="p">(</span>
+        <span class="n">RE_VALID_USERNAME</span><span class="p">)</span>
+    <span class="n">default_username</span> <span class="o">=</span> <span class="n">get_system_username</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">default_username</span> <span class="o">=</span> <span class="n">unicodedata</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="s">&#39;NFKD&#39;</span><span class="p">,</span> <span class="n">default_username</span><span class="p">)</span>\
+            <span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">,</span> <span class="s">&#39;ignore&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39; &#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">UnicodeDecodeError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">RE_VALID_USERNAME</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">default_username</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Don't return the default username if it is already taken.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">check_db</span> <span class="ow">and</span> <span class="n">default_username</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="n">default_username</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">User</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;&#39;</span>
+    <span class="k">return</span> <span class="n">default_username</span>
+
+
+<span class="n">signals</span><span class="o">.</span><span class="n">post_syncdb</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">create_permissions</span><span class="p">,</span>
+    <span class="n">dispatch_uid</span> <span class="o">=</span> <span class="s">&quot;django.contrib.auth.management.create_permissions&quot;</span><span class="p">)</span>
+<span class="n">signals</span><span class="o">.</span><span class="n">post_syncdb</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">create_superuser</span><span class="p">,</span>
+    <span class="n">sender</span><span class="o">=</span><span class="n">auth_app</span><span class="p">,</span> <span class="n">dispatch_uid</span> <span class="o">=</span> <span class="s">&quot;django.contrib.auth.management.create_superuser&quot;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

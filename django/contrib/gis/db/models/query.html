@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › models › query.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>query.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span>
+<span class="kn">from</span> <span class="nn">django.db.models.query</span> <span class="kn">import</span> <span class="n">QuerySet</span><span class="p">,</span> <span class="n">ValuesQuerySet</span><span class="p">,</span> <span class="n">ValuesListQuerySet</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.models</span> <span class="kn">import</span> <span class="n">aggregates</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.models.fields</span> <span class="kn">import</span> <span class="n">get_srid_info</span><span class="p">,</span> <span class="n">PointField</span><span class="p">,</span> <span class="n">LineStringField</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.models.sql</span> <span class="kn">import</span> <span class="n">AreaField</span><span class="p">,</span> <span class="n">DistanceField</span><span class="p">,</span> <span class="n">GeomField</span><span class="p">,</span> <span class="n">GeoQuery</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geometry.backend</span> <span class="kn">import</span> <span class="n">Geometry</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.measure</span> <span class="kn">import</span> <span class="n">Area</span><span class="p">,</span> <span class="n">Distance</span>
+
+<span class="k">class</span> <span class="nc">GeoQuerySet</span><span class="p">(</span><span class="n">QuerySet</span><span class="p">):</span>
+    <span class="s">&quot;The Geographic QuerySet.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><h2>Methods overloaded from QuerySet</h2></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">using</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">GeoQuerySet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">using</span><span class="o">=</span><span class="n">using</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">query</span> <span class="o">=</span> <span class="n">query</span> <span class="ow">or</span> <span class="n">GeoQuery</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clone</span><span class="p">(</span><span class="n">klass</span><span class="o">=</span><span class="n">GeoValuesQuerySet</span><span class="p">,</span> <span class="n">setup</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">_fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">values_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">fields</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">flat</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;flat&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Unexpected keyword arguments to values_list: </span><span class="si">%s</span><span class="s">&#39;</span>
+                    <span class="o">%</span> <span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">keys</span><span class="p">(),))</span>
+        <span class="k">if</span> <span class="n">flat</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">fields</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;&#39;flat&#39; is not valid when values_list is called with more than one field.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clone</span><span class="p">(</span><span class="n">klass</span><span class="o">=</span><span class="n">GeoValuesListQuerySet</span><span class="p">,</span> <span class="n">setup</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="n">flat</span><span class="p">,</span>
+                           <span class="n">_fields</span><span class="o">=</span><span class="n">fields</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h2>GeoQuerySet Methods</h2></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">area</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the area of the geographic field in an `area` attribute on</span>
+<span class="sd">        each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Peforming setup here rather than in <code>_spatial_attribute</code> so that
+we can get the units for <code>AreaField</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">procedure_args</span><span class="p">,</span> <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_setup</span><span class="p">(</span><span class="s">&#39;area&#39;</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;field_name&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="n">procedure_args</span><span class="p">,</span>
+             <span class="s">&#39;geo_field&#39;</span> <span class="p">:</span> <span class="n">geo_field</span><span class="p">,</span>
+             <span class="s">&#39;setup&#39;</span> <span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+             <span class="p">}</span>
+        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span>
+        <span class="n">backend</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span>
+        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(tolerance)s</span><span class="s">&#39;</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">][</span><span class="s">&#39;tolerance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tolerance</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;select_field&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">AreaField</span><span class="p">(</span><span class="s">&#39;sq_m&#39;</span><span class="p">)</span> <span class="c"># Oracle returns area in units of meters.</span>
+        <span class="k">elif</span> <span class="n">backend</span><span class="o">.</span><span class="n">postgis</span> <span class="ow">or</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatialite</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Geography fields support area calculation, returns square meters.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">s</span><span class="p">[</span><span class="s">&#39;select_field&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">AreaField</span><span class="p">(</span><span class="s">&#39;sq_m&#39;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="ow">not</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">geodetic</span><span class="p">(</span><span class="n">connection</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Getting the area units of the geographic field.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">s</span><span class="p">[</span><span class="s">&#39;select_field&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">AreaField</span><span class="p">(</span><span class="n">Area</span><span class="o">.</span><span class="n">unit_attname</span><span class="p">(</span><span class="n">geo_field</span><span class="o">.</span><span class="n">units_name</span><span class="p">(</span><span class="n">connection</span><span class="p">)))</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>TODO: Do we want to support raw number areas for geodetic fields?</p></td><td class="code"><div class="highlight"><pre>                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Area on geodetic coordinate systems not supported.&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;area&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">centroid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the centroid of the geographic field in a `centroid`</span>
+<span class="sd">        attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_attribute</span><span class="p">(</span><span class="s">&#39;centroid&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">collect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Performs an aggregate collect operation on the given geometry field.</span>
+<span class="sd">        This is analagous to a union operation, but much faster because</span>
+<span class="sd">        boundaries are not dissolved.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_aggregate</span><span class="p">(</span><span class="n">aggregates</span><span class="o">.</span><span class="n">Collect</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">difference</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the spatial difference of the geographic field in a `difference`</span>
+<span class="sd">        attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geomset_attribute</span><span class="p">(</span><span class="s">&#39;difference&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the distance from the given geographic field name to the</span>
+<span class="sd">        given geometry in a `distance` attribute on each element of the</span>
+<span class="sd">        GeoQuerySet.</span>
+
+<span class="sd">        Keyword Arguments:</span>
+<span class="sd">         `spheroid`  =&gt; If the geometry field is geodetic and PostGIS is</span>
+<span class="sd">                        the spatial database, then the more accurate</span>
+<span class="sd">                        spheroid calculation will be used instead of the</span>
+<span class="sd">                        quicker sphere calculation.</span>
+
+<span class="sd">         `tolerance` =&gt; Used only for Oracle. The tolerance is</span>
+<span class="sd">                        in meters -- a default of 5 centimeters (0.05)</span>
+<span class="sd">                        is used.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distance_attribute</span><span class="p">(</span><span class="s">&#39;distance&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">envelope</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a Geometry representing the bounding box of the</span>
+<span class="sd">        Geometry field in an `envelope` attribute on each element of</span>
+<span class="sd">        the GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_attribute</span><span class="p">(</span><span class="s">&#39;envelope&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">extent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the extent (aggregate) of the features in the GeoQuerySet.  The</span>
+<span class="sd">        extent will be returned as a 4-tuple, consisting of (xmin, ymin, xmax, ymax).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_aggregate</span><span class="p">(</span><span class="n">aggregates</span><span class="o">.</span><span class="n">Extent</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">extent3d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the aggregate extent, in 3D, of the features in the</span>
+<span class="sd">        GeoQuerySet. It is returned as a 6-tuple, comprising:</span>
+<span class="sd">          (xmin, ymin, zmin, xmax, ymax, zmax).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_aggregate</span><span class="p">(</span><span class="n">aggregates</span><span class="o">.</span><span class="n">Extent3D</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">force_rhr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a modified version of the Polygon/MultiPolygon in which</span>
+<span class="sd">        all of the vertices follow the Right-Hand-Rule.  By default,</span>
+<span class="sd">        this is attached as the `force_rhr` attribute on each element</span>
+<span class="sd">        of the GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_attribute</span><span class="p">(</span><span class="s">&#39;force_rhr&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">geojson</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">crs</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">bbox</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a GeoJSON representation of the geomtry field in a `geojson`</span>
+<span class="sd">        attribute on each element of the GeoQuerySet.</span>
+
+<span class="sd">        The `crs` and `bbox` keywords may be set to True if the users wants</span>
+<span class="sd">        the coordinate reference system and the bounding box to be included</span>
+<span class="sd">        in the GeoJSON representation of the geometry.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">backend</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">backend</span><span class="o">.</span><span class="n">geojson</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;Only PostGIS 1.3.4+ supports GeoJSON serialization.&#39;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">precision</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Precision keyword must be set with an integer.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Setting the options flag -- which depends on which version of
+PostGIS we're using.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatial_version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">crs</span> <span class="ow">and</span> <span class="n">bbox</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">3</span>
+            <span class="k">elif</span> <span class="n">bbox</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">crs</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">options</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="n">crs</span> <span class="ow">and</span> <span class="n">bbox</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">3</span>
+            <span class="k">elif</span> <span class="n">crs</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">bbox</span><span class="p">:</span> <span class="n">options</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;desc&#39;</span> <span class="p">:</span> <span class="s">&#39;GeoJSON&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;precision&#39;</span> <span class="p">:</span> <span class="n">precision</span><span class="p">,</span> <span class="s">&#39;options&#39;</span> <span class="p">:</span> <span class="n">options</span><span class="p">},</span>
+             <span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">,</span><span class="si">%(options)s</span><span class="s">&#39;</span><span class="p">,</span>
+             <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;geojson&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">geohash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a GeoHash representation of the given field in a `geohash`</span>
+<span class="sd">        attribute on each element of the GeoQuerySet.</span>
+
+<span class="sd">        The `precision` keyword may be used to custom the number of</span>
+<span class="sd">        _characters_ used in the output GeoHash, the default is 20.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;desc&#39;</span> <span class="p">:</span> <span class="s">&#39;GeoHash&#39;</span><span class="p">,</span> 
+             <span class="s">&#39;procedure_args&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s">&#39;precision&#39;</span><span class="p">:</span> <span class="n">precision</span><span class="p">},</span>
+             <span class="s">&#39;procedure_fmt&#39;</span><span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">&#39;</span><span class="p">,</span>
+             <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;geohash&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">gml</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns GML representation of the given field in a `gml` attribute</span>
+<span class="sd">        on each element of the GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">backend</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;desc&#39;</span> <span class="p">:</span> <span class="s">&#39;GML&#39;</span><span class="p">,</span> <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;precision&#39;</span> <span class="p">:</span> <span class="n">precision</span><span class="p">}}</span>
+        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">postgis</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>PostGIS AsGML() aggregate function parameter order depends on the
+version -- uggh.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatial_version</span> <span class="o">&gt;</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(version)s</span><span class="s">,</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">,</span><span class="si">%(version)s</span><span class="s">&#39;</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;precision&#39;</span> <span class="p">:</span> <span class="n">precision</span><span class="p">,</span> <span class="s">&#39;version&#39;</span> <span class="p">:</span> <span class="n">version</span><span class="p">}</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;gml&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">intersection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the spatial intersection of the Geometry field in</span>
+<span class="sd">        an `intersection` attribute on each element of this</span>
+<span class="sd">        GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geomset_attribute</span><span class="p">(</span><span class="s">&#39;intersection&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">kml</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns KML representation of the geometry field in a `kml`</span>
+<span class="sd">        attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;desc&#39;</span> <span class="p">:</span> <span class="s">&#39;KML&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;precision&#39;</span> <span class="p">:</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;precision&#39;</span><span class="p">,</span> <span class="mi">8</span><span class="p">)},</span>
+             <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;kml&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">length</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the length of the geometry field as a `Distance` object</span>
+<span class="sd">        stored in a `length` attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distance_attribute</span><span class="p">(</span><span class="s">&#39;length&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">make_line</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a linestring from all of the PointField geometries in the</span>
+<span class="sd">        this GeoQuerySet and returns it.  This is a spatial aggregate</span>
+<span class="sd">        method, and thus returns a geometry rather than a GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_aggregate</span><span class="p">(</span><span class="n">aggregates</span><span class="o">.</span><span class="n">MakeLine</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="o">=</span><span class="n">PointField</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">mem_size</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the memory size (number of bytes) that the geometry field takes</span>
+<span class="sd">        in a `mem_size` attribute  on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;mem_size&#39;</span><span class="p">,</span> <span class="p">{},</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">num_geom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the number of geometries if the field is a</span>
+<span class="sd">        GeometryCollection or Multi* Field in a `num_geom`</span>
+<span class="sd">        attribute on each element of this GeoQuerySet; otherwise</span>
+<span class="sd">        the sets with None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;num_geom&#39;</span><span class="p">,</span> <span class="p">{},</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">num_points</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the number of points in the first linestring in the</span>
+<span class="sd">        Geometry field in a `num_points` attribute on each element of</span>
+<span class="sd">        this GeoQuerySet; otherwise sets with None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;num_points&#39;</span><span class="p">,</span> <span class="p">{},</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">perimeter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the perimeter of the geometry field as a `Distance` object</span>
+<span class="sd">        stored in a `perimeter` attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distance_attribute</span><span class="p">(</span><span class="s">&#39;perimeter&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">point_on_surface</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a Point geometry guaranteed to lie on the surface of the</span>
+<span class="sd">        Geometry field in a `point_on_surface` attribute on each element</span>
+<span class="sd">        of this GeoQuerySet; otherwise sets with None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geom_attribute</span><span class="p">(</span><span class="s">&#39;point_on_surface&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">reverse_geom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Reverses the coordinate order of the geometry, and attaches as a</span>
+<span class="sd">        `reverse` attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),}</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;model_att&#39;</span><span class="p">,</span> <span class="s">&#39;reverse_geom&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;geo_field_type&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LineStringField</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;reverse&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">scale</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Scales the geometry to a new size by multiplying the ordinates</span>
+<span class="sd">        with the given x,y,z scale factors.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatialite</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">z</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;SpatiaLite does not support 3D scaling.&#39;</span><span class="p">)</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(x)s</span><span class="s">,</span><span class="si">%(y)s</span><span class="s">&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;x&#39;</span> <span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="s">&#39;y&#39;</span> <span class="p">:</span> <span class="n">y</span><span class="p">},</span>
+                 <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+                 <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(x)s</span><span class="s">,</span><span class="si">%(y)s</span><span class="s">,</span><span class="si">%(z)s</span><span class="s">&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;x&#39;</span> <span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="s">&#39;y&#39;</span> <span class="p">:</span> <span class="n">y</span><span class="p">,</span> <span class="s">&#39;z&#39;</span> <span class="p">:</span> <span class="n">z</span><span class="p">},</span>
+                 <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+                 <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;scale&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">snap_to_grid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Snap all points of the input geometry to the grid.  How the</span>
+<span class="sd">        geometry is snapped to the grid depends on how many arguments</span>
+<span class="sd">        were given:</span>
+<span class="sd">          - 1 argument : A single size to snap both the X and Y grids to.</span>
+<span class="sd">          - 2 arguments: X and Y sizes to snap the grid to.</span>
+<span class="sd">          - 4 arguments: X, Y sizes and the X, Y origins.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">False</span> <span class="ow">in</span> <span class="p">[</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">))</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Size argument(s) for the grid must be a float or integer values.&#39;</span><span class="p">)</span>
+
+        <span class="n">nargs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">nargs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">size</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(size)s</span><span class="s">&#39;</span>
+            <span class="n">procedure_args</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;size&#39;</span> <span class="p">:</span> <span class="n">size</span><span class="p">}</span>
+        <span class="k">elif</span> <span class="n">nargs</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">xsize</span><span class="p">,</span> <span class="n">ysize</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(xsize)s</span><span class="s">,</span><span class="si">%(ysize)s</span><span class="s">&#39;</span>
+            <span class="n">procedure_args</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;xsize&#39;</span> <span class="p">:</span> <span class="n">xsize</span><span class="p">,</span> <span class="s">&#39;ysize&#39;</span> <span class="p">:</span> <span class="n">ysize</span><span class="p">}</span>
+        <span class="k">elif</span> <span class="n">nargs</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="n">xsize</span><span class="p">,</span> <span class="n">ysize</span><span class="p">,</span> <span class="n">xorigin</span><span class="p">,</span> <span class="n">yorigin</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(xorigin)s</span><span class="s">,</span><span class="si">%(yorigin)s</span><span class="s">,</span><span class="si">%(xsize)s</span><span class="s">,</span><span class="si">%(ysize)s</span><span class="s">&#39;</span>
+            <span class="n">procedure_args</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;xsize&#39;</span> <span class="p">:</span> <span class="n">xsize</span><span class="p">,</span> <span class="s">&#39;ysize&#39;</span> <span class="p">:</span> <span class="n">ysize</span><span class="p">,</span>
+                              <span class="s">&#39;xorigin&#39;</span> <span class="p">:</span> <span class="n">xorigin</span><span class="p">,</span> <span class="s">&#39;yorigin&#39;</span> <span class="p">:</span> <span class="n">yorigin</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Must provide 1, 2, or 4 arguments to `snap_to_grid`.&#39;</span><span class="p">)</span>
+
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="n">procedure_fmt</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="n">procedure_args</span><span class="p">,</span>
+             <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+             <span class="p">}</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;snap_to_grid&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">svg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relative</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns SVG representation of the geographic field in a `svg`</span>
+<span class="sd">        attribute on each element of this GeoQuerySet.</span>
+
+<span class="sd">        Keyword Arguments:</span>
+<span class="sd">         `relative`  =&gt; If set to True, this will evaluate the path in</span>
+<span class="sd">                        terms of relative moves (rather than absolute).</span>
+
+<span class="sd">         `precision` =&gt; May be used to set the maximum number of decimal</span>
+<span class="sd">                        digits used in output (defaults to 8).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">relative</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">relative</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">precision</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;SVG precision keyword argument must be an integer.&#39;</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;desc&#39;</span> <span class="p">:</span> <span class="s">&#39;SVG&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(rel)s</span><span class="s">,</span><span class="si">%(precision)s</span><span class="s">&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;rel&#39;</span> <span class="p">:</span> <span class="n">relative</span><span class="p">,</span>
+                                 <span class="s">&#39;precision&#39;</span> <span class="p">:</span> <span class="n">precision</span><span class="p">,</span>
+                                 <span class="p">}</span>
+             <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;svg&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">sym_difference</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the symmetric difference of the geographic field in a</span>
+<span class="sd">        `sym_difference` attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geomset_attribute</span><span class="p">(</span><span class="s">&#39;sym_difference&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">translate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Translates the geometry to a new location using the given numeric</span>
+<span class="sd">        parameters as offsets.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">spatialite</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">z</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;SpatiaLite does not support 3D translation.&#39;</span><span class="p">)</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(x)s</span><span class="s">,</span><span class="si">%(y)s</span><span class="s">&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;x&#39;</span> <span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="s">&#39;y&#39;</span> <span class="p">:</span> <span class="n">y</span><span class="p">},</span>
+                 <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+                 <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(x)s</span><span class="s">,</span><span class="si">%(y)s</span><span class="s">,</span><span class="si">%(z)s</span><span class="s">&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;x&#39;</span> <span class="p">:</span> <span class="n">x</span><span class="p">,</span> <span class="s">&#39;y&#39;</span> <span class="p">:</span> <span class="n">y</span><span class="p">,</span> <span class="s">&#39;z&#39;</span> <span class="p">:</span> <span class="n">z</span><span class="p">},</span>
+                 <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+                 <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="s">&#39;translate&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Transforms the given geometry field to the given SRID.  If no SRID is</span>
+<span class="sd">        provided, the transformation will default to using 4326 (WGS84).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">srid</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;An integer SRID must be provided.&#39;</span><span class="p">)</span>
+        <span class="n">field_name</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;field_name&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">tmp</span><span class="p">,</span> <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_setup</span><span class="p">(</span><span class="s">&#39;transform&#39;</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="n">field_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Getting the selection SQL for the given geographic field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">field_col</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geocol_select</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Why cascading substitutions? Because spatial backends like
+Oracle and MySQL already require a function call to convert to text, thus
+when there's also a transformation we need to cascade the substitutions.
+For example, 'SDO<em>UTIL.TO</em>WKTGEOMETRY(SDO_CS.TRANSFORM( ... )'</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geo_col</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">custom_select</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">field_col</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Setting the key for the field's column with the custom SELECT SQL to
+override the geometry column returned from the database.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">custom_sel</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(</span><span class="si">%s</span><span class="s">, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="n">geo_col</span><span class="p">,</span> <span class="n">srid</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>TODO: Should we have this as an alias?
+custom<em>sel = '(%s(%s, %s)) AS %s' % (SpatialBackend.transform, geo</em>col, srid, qn(geo_field.name))</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span> <span class="o">=</span> <span class="n">srid</span> <span class="c"># So other GeoQuerySet methods</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">custom_select</span><span class="p">[</span><span class="n">geo_field</span><span class="p">]</span> <span class="o">=</span> <span class="n">custom_sel</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_clone</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">union</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the union of the geographic field with the given</span>
+<span class="sd">        Geometry in a `union` attribute on each element of this GeoQuerySet.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geomset_attribute</span><span class="p">(</span><span class="s">&#39;union&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">unionagg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Performs an aggregate union on the given geometry field.  Returns</span>
+<span class="sd">        None if the GeoQuerySet is empty.  The `tolerance` keyword is for</span>
+<span class="sd">        Oracle backends only.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_aggregate</span><span class="p">(</span><span class="n">aggregates</span><span class="o">.</span><span class="n">Union</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><h2>Private API -- Abstracted DRY routines.</h2></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_spatial_setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">att</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Performs set up for executing the spatial function.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Does the spatial backend support this?</p></td><td class="code"><div class="highlight"><pre>        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="n">att</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">desc</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> <span class="n">desc</span> <span class="o">=</span> <span class="n">att</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">func</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> stored procedure not available on &#39;</span>
+                                      <span class="s">&#39;the </span><span class="si">%s</span><span class="s"> backend.&#39;</span> <span class="o">%</span>
+                                      <span class="p">(</span><span class="n">desc</span><span class="p">,</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">name</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Initializing the procedure arguments.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">procedure_args</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">func</span><span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Is there a geographic field in the model to perform this
+operation on?</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">_geo_field</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">geo_field</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> output only available on GeometryFields.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>If the <code>geo_field_type</code> keyword was used, then enforce that
+type limitation.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">geo_field_type</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; stored procedures may only be called on </span><span class="si">%s</span><span class="s">s.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="o">.</span><span class="n">__name__</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Setting the procedure args.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">procedure_args</span><span class="p">[</span><span class="s">&#39;geo_col&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_geocol_select</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">procedure_args</span><span class="p">,</span> <span class="n">geo_field</span>
+
+    <span class="k">def</span> <span class="nf">_spatial_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aggregate</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                           <span class="n">geo_field_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DRY routine for calling aggregate spatial stored procedures and</span>
+<span class="sd">        returning their result to the caller of the function.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Getting the field the geographic aggregate will be called on.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">_geo_field</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">geo_field</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> aggregate only available on GeometryFields.&#39;</span> <span class="o">%</span> <span class="n">aggregate</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Checking if there are any geo field type limitations on this
+aggregate (e.g. ST_Makeline only operates on PointFields).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">geo_field_type</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> aggregate may only be called on </span><span class="si">%s</span><span class="s">s.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">aggregate</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">geo_field_type</span><span class="o">.</span><span class="n">__name__</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Getting the string expression of the field name, as this is the
+argument taken by <code>Aggregate</code> objects.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">agg_col</span> <span class="o">=</span> <span class="n">field_name</span> <span class="ow">or</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">name</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Adding any keyword parameters for the Aggregate object. Oracle backends
+in particular need an additional <code>tolerance</code> parameter.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">agg_kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span> <span class="n">agg_kwargs</span><span class="p">[</span><span class="s">&#39;tolerance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tolerance</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Calling the QuerySet.aggregate, and returning only the value of the aggregate.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">geoagg</span><span class="o">=</span><span class="n">aggregate</span><span class="p">(</span><span class="n">agg_col</span><span class="p">,</span> <span class="o">**</span><span class="n">agg_kwargs</span><span class="p">))[</span><span class="s">&#39;geoagg&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_spatial_attribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">att</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">model_att</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DRY routine for calling a spatial stored procedure on a geometry column</span>
+<span class="sd">        and attaching its output as an attribute of the model.</span>
+
+<span class="sd">        Arguments:</span>
+<span class="sd">         att:</span>
+<span class="sd">          The name of the spatial attribute that holds the spatial</span>
+<span class="sd">          SQL function to call.</span>
+
+<span class="sd">         settings:</span>
+<span class="sd">          Dictonary of internal settings to customize for the spatial procedure.</span>
+
+<span class="sd">        Public Keyword Arguments:</span>
+
+<span class="sd">         field_name:</span>
+<span class="sd">          The name of the geographic field to call the spatial</span>
+<span class="sd">          function on.  May also be a lookup to a geometry field</span>
+<span class="sd">          as part of a foreign key relation.</span>
+
+<span class="sd">         model_att:</span>
+<span class="sd">          The name of the model attribute to attach the output of</span>
+<span class="sd">          the spatial function to.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>Default settings.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;desc&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;geom_args&#39;</span><span class="p">,</span> <span class="p">())</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;geom_field&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;procedure_args&#39;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">,</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">&#39;</span><span class="p">)</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;select_params&#39;</span><span class="p">,</span> <span class="p">[])</span>
+
+        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span>
+        <span class="n">backend</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Performing setup for the spatial column, unless told not to.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;setup&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">):</span>
+            <span class="n">default_args</span><span class="p">,</span> <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_setup</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="n">settings</span><span class="p">[</span><span class="s">&#39;desc&#39;</span><span class="p">],</span> <span class="n">field_name</span><span class="o">=</span><span class="n">field_name</span><span class="p">,</span>
+                                                          <span class="n">geo_field_type</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;geo_field_type&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">default_args</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">geo_field</span> <span class="o">=</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;geo_field&#39;</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>The attribute to attach to the model.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_att</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span> <span class="n">model_att</span> <span class="o">=</span> <span class="n">att</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Special handling for any argument that is a geometry.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;geom_args&#39;</span><span class="p">]:</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Using the field's get_placeholder() routine to get any needed
+transformation SQL.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">geom</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">get_prep_value</span><span class="p">(</span><span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">][</span><span class="n">name</span><span class="p">])</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="s">&#39;contains&#39;</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">)</span>
+            <span class="n">geom_placeholder</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">get_placeholder</span><span class="p">(</span><span class="n">geom</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Replacing the procedure format with that of any needed
+transformation SQL.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">old_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">(</span><span class="si">%s</span><span class="s">)s&#39;</span> <span class="o">%</span> <span class="n">name</span>
+            <span class="n">new_fmt</span> <span class="o">=</span> <span class="n">geom_placeholder</span> <span class="o">%</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">s&#39;</span>
+            <span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">old_fmt</span><span class="p">,</span> <span class="n">new_fmt</span><span class="p">)</span>
+            <span class="n">settings</span><span class="p">[</span><span class="s">&#39;select_params&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">params</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Getting the format for the stored procedure.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">(function)s(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>If the result of this function needs to be converted.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;select_field&#39;</span><span class="p">,</span> <span class="bp">False</span><span class="p">):</span>
+            <span class="n">sel_fld</span> <span class="o">=</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;select_field&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sel_fld</span><span class="p">,</span> <span class="n">GeomField</span><span class="p">)</span> <span class="ow">and</span> <span class="n">backend</span><span class="o">.</span><span class="n">select</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">custom_select</span><span class="p">[</span><span class="n">model_att</span><span class="p">]</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">select</span>
+            <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+                <span class="n">sel_fld</span><span class="o">.</span><span class="n">empty_strings_allowed</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">extra_select_fields</span><span class="p">[</span><span class="n">model_att</span><span class="p">]</span> <span class="o">=</span> <span class="n">sel_fld</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Finally, setting the extra selection attribute with
+the format string expanded with the stored procedure
+arguments.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">extra</span><span class="p">(</span><span class="n">select</span><span class="o">=</span><span class="p">{</span><span class="n">model_att</span> <span class="p">:</span> <span class="n">fmt</span> <span class="o">%</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">]},</span>
+                          <span class="n">select_params</span><span class="o">=</span><span class="n">settings</span><span class="p">[</span><span class="s">&#39;select_params&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_distance_attribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">geom</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">spheroid</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DRY routine for GeoQuerySet distance attribute routines.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Setting up the distance procedure arguments.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">procedure_args</span><span class="p">,</span> <span class="n">geo_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_setup</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;field_name&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>If geodetic defaulting distance attribute to meters (Oracle and
+PostGIS spherical distances return meters).  Otherwise, use the
+units of the geometry field.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">connection</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span>
+        <span class="n">geodetic</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">geodetic</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span>
+        <span class="n">geography</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">geography</span>
+
+        <span class="k">if</span> <span class="n">geodetic</span><span class="p">:</span>
+            <span class="n">dist_att</span> <span class="o">=</span> <span class="s">&#39;m&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dist_att</span> <span class="o">=</span> <span class="n">Distance</span><span class="o">.</span><span class="n">unit_attname</span><span class="p">(</span><span class="n">geo_field</span><span class="o">.</span><span class="n">units_name</span><span class="p">(</span><span class="n">connection</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Shortcut booleans for what distance function we're using and
+whether the geometry field is 3D.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">distance</span> <span class="o">=</span> <span class="n">func</span> <span class="o">==</span> <span class="s">&#39;distance&#39;</span>
+        <span class="n">length</span> <span class="o">=</span> <span class="n">func</span> <span class="o">==</span> <span class="s">&#39;length&#39;</span>
+        <span class="n">perimeter</span> <span class="o">=</span> <span class="n">func</span> <span class="o">==</span> <span class="s">&#39;perimeter&#39;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">distance</span> <span class="ow">or</span> <span class="n">length</span> <span class="ow">or</span> <span class="n">perimeter</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Unknown distance function: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="p">)</span>
+        <span class="n">geom_3d</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">dim</span> <span class="o">==</span> <span class="mi">3</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>The field's get<em>db</em>prep_lookup() is used to get any
+extra distance parameters.  Here we set up the
+parameters that will be passed in to field's function.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lookup_params</span> <span class="o">=</span> <span class="p">[</span><span class="n">geom</span> <span class="ow">or</span> <span class="s">&#39;POINT (0 0)&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Getting the spatial backend operations.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">backend</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>If the spheroid calculation is desired, either by the <code>spheroid</code>
+keyword or when calculating the length of geodetic field, make
+sure the 'spheroid' distance setting string is passed in so we
+get the correct spatial stored procedure.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">spheroid</span> <span class="ow">or</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">postgis</span> <span class="ow">and</span> <span class="n">geodetic</span> <span class="ow">and</span>
+                        <span class="p">(</span><span class="ow">not</span> <span class="n">geography</span><span class="p">)</span> <span class="ow">and</span> <span class="n">length</span><span class="p">):</span>
+            <span class="n">lookup_params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;spheroid&#39;</span><span class="p">)</span>
+        <span class="n">lookup_params</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">get_prep_value</span><span class="p">(</span><span class="n">lookup_params</span><span class="p">)</span>
+        <span class="n">params</span> <span class="o">=</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="s">&#39;distance_lte&#39;</span><span class="p">,</span> <span class="n">lookup_params</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>The <code>geom_args</code> flag is set to true if a geometry parameter was
+passed in.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geom_args</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">geom</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">distance</span><span class="p">:</span>
+                <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(geom)s</span><span class="s">,</span><span class="si">%(tolerance)s</span><span class="s">&#39;</span>
+            <span class="k">elif</span> <span class="n">length</span> <span class="ow">or</span> <span class="n">perimeter</span><span class="p">:</span>
+                <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(tolerance)s</span><span class="s">&#39;</span>
+            <span class="n">procedure_args</span><span class="p">[</span><span class="s">&#39;tolerance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tolerance</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>Getting whether this field is in units of degrees since the field may have
+been transformed via the <code>transform</code> GeoQuerySet method.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">:</span>
+                <span class="n">u</span><span class="p">,</span> <span class="n">unit_name</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">get_srid_info</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+                <span class="n">geodetic</span> <span class="o">=</span> <span class="n">unit_name</span> <span class="ow">in</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">geodetic_units</span>
+
+            <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatialite</span> <span class="ow">and</span> <span class="n">geodetic</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;SQLite does not support linear distance calculations on geodetic coordinate systems.&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">distance</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>Setting the <code>geom_args</code> flag to false because we want to handle
+transformation SQL here, rather than the way done by default
+(which will transform to the original SRID of the field rather
+ than to what was transformed to).</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">geom_args</span> <span class="o">=</span> <span class="bp">False</span>
+                    <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(</span><span class="si">%%</span><span class="s">(geo_col)s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">geom</span><span class="o">.</span><span class="n">srid</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">or</span> <span class="n">geom</span><span class="o">.</span><span class="n">srid</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>If the geom parameter srid is None, it is assumed the coordinates
+are in the transformed units.  A placeholder is used for the
+geometry parameter.  <code>GeomFromText</code> constructor is also needed
+to wrap geom placeholder for SpatiaLite.</p></td><td class="code"><div class="highlight"><pre>                        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatialite</span><span class="p">:</span>
+                            <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&#39;, </span><span class="si">%s</span><span class="s">(</span><span class="si">%%%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">from_text</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&#39;, </span><span class="si">%%</span><span class="s">s&#39;</span>
+                    <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>We need to transform the geom to the srid specified in <code>transform()</code>,
+so wrapping the geometry placeholder in transformation SQL.
+SpatiaLite also needs geometry placeholder wrapped in <code>GeomFromText</code>
+constructor.</p></td><td class="code"><div class="highlight"><pre>                        <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">spatialite</span><span class="p">:</span>
+                            <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&#39;, </span><span class="si">%s</span><span class="s">(</span><span class="si">%s</span><span class="s">(</span><span class="si">%%%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">), </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">from_text</span><span class="p">,</span>
+                                                                          <span class="n">geom</span><span class="o">.</span><span class="n">srid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&#39;, </span><span class="si">%s</span><span class="s">(</span><span class="si">%%%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">backend</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">transformed_srid</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p><code>transform()</code> was not used on this GeoQuerySet.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">procedure_fmt</span>  <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(geom)s</span><span class="s">&#39;</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">geography</span> <span class="ow">and</span> <span class="n">geodetic</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Spherical distance calculation is needed (because the geographic
+field is geodetic). However, the PostGIS ST<em>distance</em>sphere/spheroid()
+procedures may only do queries from point columns to point geometries
+some error checking is required.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="ow">not</span> <span class="n">backend</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">PointField</span><span class="p">):</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Spherical distance calculation only supported on PointFields.&#39;</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">str</span><span class="p">(</span><span class="n">Geometry</span><span class="p">(</span><span class="nb">buffer</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">ewkb</span><span class="p">))</span><span class="o">.</span><span class="n">geom_type</span><span class="p">)</span> <span class="o">==</span> <span class="s">&#39;Point&#39;</span><span class="p">:</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Spherical distance calculation only supported with Point Geometry parameters&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>The <code>function</code> procedure argument needs to be set differently for
+geodetic distance calculations.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">spheroid</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>Call to distance_spheroid() requires spheroid param as well.</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&quot;,&#39;</span><span class="si">%(spheroid)s</span><span class="s">&#39;&quot;</span>
+                        <span class="n">procedure_args</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">distance_spheroid</span><span class="p">,</span> <span class="s">&#39;spheroid&#39;</span> <span class="p">:</span> <span class="n">params</span><span class="p">[</span><span class="mi">1</span><span class="p">]})</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">procedure_args</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">distance_sphere</span><span class="p">})</span>
+            <span class="k">elif</span> <span class="n">length</span> <span class="ow">or</span> <span class="n">perimeter</span><span class="p">:</span>
+                <span class="n">procedure_fmt</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">&#39;</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">geography</span> <span class="ow">and</span> <span class="n">geodetic</span> <span class="ow">and</span> <span class="n">length</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>There's no <code>length_sphere</code>, and <code>length_spheroid</code> also
+works on 3D geometries.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">procedure_fmt</span> <span class="o">+=</span> <span class="s">&quot;,&#39;</span><span class="si">%(spheroid)s</span><span class="s">&#39;&quot;</span>
+                    <span class="n">procedure_args</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">length_spheroid</span><span class="p">,</span> <span class="s">&#39;spheroid&#39;</span> <span class="p">:</span> <span class="n">params</span><span class="p">[</span><span class="mi">1</span><span class="p">]})</span>
+                <span class="k">elif</span> <span class="n">geom_3d</span> <span class="ow">and</span> <span class="n">backend</span><span class="o">.</span><span class="n">postgis</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>Use 3D variants of perimeter and length routines on PostGIS.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">perimeter</span><span class="p">:</span>
+                        <span class="n">procedure_args</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">perimeter3d</span><span class="p">})</span>
+                    <span class="k">elif</span> <span class="n">length</span><span class="p">:</span>
+                        <span class="n">procedure_args</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s">&#39;function&#39;</span> <span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">length3d</span><span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Setting up the settings for <code>_spatial_attribute</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">DistanceField</span><span class="p">(</span><span class="n">dist_att</span><span class="p">),</span>
+             <span class="s">&#39;setup&#39;</span> <span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+             <span class="s">&#39;geo_field&#39;</span> <span class="p">:</span> <span class="n">geo_field</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="n">procedure_args</span><span class="p">,</span>
+             <span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="n">procedure_fmt</span><span class="p">,</span>
+             <span class="p">}</span>
+        <span class="k">if</span> <span class="n">geom_args</span><span class="p">:</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;geom_args&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;geom&#39;</span><span class="p">,)</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">][</span><span class="s">&#39;geom&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">geom</span>
+        <span class="k">elif</span> <span class="n">geom</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>The geometry is passed in as a parameter because we handled
+transformation conditions in this routine.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">s</span><span class="p">[</span><span class="s">&#39;select_params&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">backend</span><span class="o">.</span><span class="n">Adapter</span><span class="p">(</span><span class="n">geom</span><span class="p">)]</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_geom_attribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DRY routine for setting up a GeoQuerySet method that attaches a</span>
+<span class="sd">        Geometry attribute (e.g., `centroid`, `point_on_surface`).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),}</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(tolerance)s</span><span class="s">&#39;</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;tolerance&#39;</span> <span class="p">:</span> <span class="n">tolerance</span><span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_geomset_attribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">geom</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        DRY routine for setting up a GeoQuerySet method that attaches a</span>
+<span class="sd">        Geometry attribute and takes a Geoemtry parameter.  This is used</span>
+<span class="sd">        for geometry set-like operations (e.g., intersection, difference,</span>
+<span class="sd">        union, sym_difference).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;geom_args&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="s">&#39;geom&#39;</span><span class="p">,),</span>
+             <span class="s">&#39;select_field&#39;</span> <span class="p">:</span> <span class="n">GeomField</span><span class="p">(),</span>
+             <span class="s">&#39;procedure_fmt&#39;</span> <span class="p">:</span> <span class="s">&#39;</span><span class="si">%(geo_col)s</span><span class="s">,</span><span class="si">%(geom)s</span><span class="s">&#39;</span><span class="p">,</span>
+             <span class="s">&#39;procedure_args&#39;</span> <span class="p">:</span> <span class="p">{</span><span class="s">&#39;geom&#39;</span> <span class="p">:</span> <span class="n">geom</span><span class="p">},</span>
+            <span class="p">}</span>
+        <span class="k">if</span> <span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">]</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">oracle</span><span class="p">:</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_fmt&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="s">&#39;,</span><span class="si">%(tolerance)s</span><span class="s">&#39;</span>
+            <span class="n">s</span><span class="p">[</span><span class="s">&#39;procedure_args&#39;</span><span class="p">][</span><span class="s">&#39;tolerance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tolerance</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_spatial_attribute</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_geocol_select</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">geo_field</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper routine for constructing the SQL to select the geographic</span>
+<span class="sd">        column.  Takes into account if the geographic field is in a</span>
+<span class="sd">        ForeignKey relation to the current model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">geo_field</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>Is this operation going to be on a related geographic field?
+If so, it'll have to be added to the select related information
+(e.g., if 'location__point' was given as the field name).</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">add_select_related</span><span class="p">([</span><span class="n">field_name</span><span class="p">])</span>
+            <span class="n">compiler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">)</span>
+            <span class="n">compiler</span><span class="o">.</span><span class="n">pre_sql_setup</span><span class="p">()</span>
+            <span class="n">rel_table</span><span class="p">,</span> <span class="n">rel_col</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">related_select_cols</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">related_select_fields</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">geo_field</span><span class="p">)]</span>
+            <span class="k">return</span> <span class="n">compiler</span><span class="o">.</span><span class="n">_field_column</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">rel_table</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">geo_field</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">local_fields</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-54"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-54">&#182;</a></div><p>This geographic field is inherited from another model, so we have to
+use the db table for the <em>parent</em> model instead.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">tmp_fld</span><span class="p">,</span> <span class="n">parent_model</span><span class="p">,</span> <span class="n">direct</span><span class="p">,</span> <span class="n">m2m</span> <span class="o">=</span> <span class="n">opts</span><span class="o">.</span><span class="n">get_field_by_name</span><span class="p">(</span><span class="n">geo_field</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">_field_column</span><span class="p">(</span><span class="n">geo_field</span><span class="p">,</span> <span class="n">parent_model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">_field_column</span><span class="p">(</span><span class="n">geo_field</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">GeoValuesQuerySet</span><span class="p">(</span><span class="n">ValuesQuerySet</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">GeoValuesQuerySet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-55"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-55">&#182;</a></div><p>This flag tells <code>resolve_columns</code> to run the values through
+<code>convert_values</code>.  This ensures that Geometry objects instead
+of string values are returned with <code>values()</code> or <code>values_list()</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">geo_values</span> <span class="o">=</span> <span class="bp">True</span>
+
+<span class="k">class</span> <span class="nc">GeoValuesListQuerySet</span><span class="p">(</span><span class="n">GeoValuesQuerySet</span><span class="p">,</span> <span class="n">ValuesListQuerySet</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

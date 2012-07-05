@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › introspection › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span><span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">update_wrapper</span>
+
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">skipUnlessDBFeature</span><span class="p">,</span> <span class="n">skipIfDBFeature</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Reporter</span><span class="p">,</span> <span class="n">Article</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>The introspection module is optional, so methods tested here might raise
+NotImplementedError. This is perfectly acceptable behavior for the backend
+in question, but the tests need to handle this without failing. Ideally we'd
+skip these tests, but until #4788 is done we'll just ignore them.</p>
+
+<p>The easiest way to accomplish this is to decorate every test case with a
+wrapper that ignores the exception.</p>
+
+<p>The metaclass is just for fun.</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">ignore_not_implemented</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_inner</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+    <span class="n">update_wrapper</span><span class="p">(</span><span class="n">_inner</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_inner</span>
+
+<span class="k">class</span> <span class="nc">IgnoreNotimplementedError</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">v</span> <span class="ow">in</span> <span class="n">attrs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;test&#39;</span><span class="p">):</span>
+                <span class="n">attrs</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">ignore_not_implemented</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">type</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">IntrospectionTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">IgnoreNotimplementedError</span>
+
+    <span class="k">def</span> <span class="nf">test_table_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">tl</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">table_names</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">tl</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span> <span class="ow">in</span> <span class="n">tl</span><span class="p">,</span>
+                     <span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39; isn&#39;t in table_list().&quot;</span> <span class="o">%</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span> <span class="ow">in</span> <span class="n">tl</span><span class="p">,</span>
+                     <span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39; isn&#39;t in table_list().&quot;</span> <span class="o">%</span> <span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_django_table_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;CREATE TABLE django_ixn_test_table (id INTEGER);&#39;</span><span class="p">)</span>
+        <span class="n">tl</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">django_table_names</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;DROP TABLE django_ixn_test_table;&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;django_ixn_testcase_table&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tl</span><span class="p">,</span>
+                     <span class="s">&quot;django_table_names() returned a non-Django table&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_django_table_names_retval_type</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Ticket #15216</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;CREATE TABLE django_ixn_test_table (id INTEGER);&#39;</span><span class="p">)</span>
+
+        <span class="n">tl</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">django_table_names</span><span class="p">(</span><span class="n">only_existing</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIs</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">tl</span><span class="p">),</span> <span class="nb">list</span><span class="p">)</span>
+
+        <span class="n">tl</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">django_table_names</span><span class="p">(</span><span class="n">only_existing</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIs</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">tl</span><span class="p">),</span> <span class="nb">list</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_installed_models</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">tables</span> <span class="o">=</span> <span class="p">[</span><span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">]</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">installed_models</span><span class="p">(</span><span class="n">tables</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">models</span><span class="p">,</span> <span class="nb">set</span><span class="p">([</span><span class="n">Article</span><span class="p">,</span> <span class="n">Reporter</span><span class="p">]))</span>
+
+    <span class="k">def</span> <span class="nf">test_sequence_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sequences</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">sequence_list</span><span class="p">()</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span> <span class="s">&#39;column&#39;</span><span class="p">:</span> <span class="s">&#39;id&#39;</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">expected</span> <span class="ow">in</span> <span class="n">sequences</span><span class="p">,</span>
+                     <span class="s">&#39;Reporter sequence not found in sequence_list()&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_table_description_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">desc</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">desc</span><span class="p">],</span>
+                         <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">column</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_get_table_description_types</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">desc</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">datatype</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">desc</span><span class="p">],</span>
+            <span class="p">[</span><span class="s">&#39;IntegerField&#39;</span><span class="p">,</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span> <span class="s">&#39;BigIntegerField&#39;</span><span class="p">]</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Oracle forces null=True under the hood in some cases (see
+https://docs.djangoproject.com/en/dev/ref/databases/#null-and-empty-strings)
+so its idea about null_ok in cursor.description is different from ours.</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@skipIfDBFeature</span><span class="p">(</span><span class="s">&#39;interprets_empty_strings_as_nulls&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_get_table_description_nullable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">desc</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="mi">6</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">desc</span><span class="p">],</span>
+            <span class="p">[</span><span class="bp">False</span><span class="p">,</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">True</span><span class="p">]</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Regression test for #9991 - 'real' types in postgres</p></td><td class="code"><div class="highlight"><pre>    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;has_real_datatype&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_postgresql_real_type</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;CREATE TABLE django_ixn_real_test_table (number REAL);&quot;</span><span class="p">)</span>
+        <span class="n">desc</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="s">&#39;django_ixn_real_test_table&#39;</span><span class="p">)</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;DROP TABLE django_ixn_real_test_table;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">datatype</span><span class="p">(</span><span class="n">desc</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span> <span class="n">desc</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="s">&#39;FloatField&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_relations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">relations</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_relations</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Older versions of MySQL don't have the chops to report on this stuff,
+so just skip it if no relations come back. If they do, though, we
+should test that the response is correct.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">relations</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>That's {field<em>index: (field</em>index<em>other</em>table, other_table)}</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">relations</span><span class="p">,</span> <span class="p">{</span><span class="mi">3</span><span class="p">:</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)})</span>
+
+    <span class="k">def</span> <span class="nf">test_get_key_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">key_columns</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_key_columns</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">key_columns</span><span class="p">,</span> <span class="p">[(</span><span class="s">&#39;reporter_id&#39;</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">test_get_primary_key_column</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">primary_key_column</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_primary_key_column</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">primary_key_column</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_get_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_indexes</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Article</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">indexes</span><span class="p">[</span><span class="s">&#39;reporter_id&#39;</span><span class="p">],</span> <span class="p">{</span><span class="s">&#39;unique&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span> <span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_get_indexes_multicol</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that multicolumn indexes are not included in the introspection</span>
+<span class="sd">        results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_indexes</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">Reporter</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;first_name&#39;</span><span class="p">,</span> <span class="n">indexes</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="n">indexes</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">datatype</span><span class="p">(</span><span class="n">dbtype</span><span class="p">,</span> <span class="n">description</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Helper to convert a data type into a string.&quot;&quot;&quot;</span>
+    <span class="n">dt</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">introspection</span><span class="o">.</span><span class="n">get_field_type</span><span class="p">(</span><span class="n">dbtype</span><span class="p">,</span> <span class="n">description</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span> <span class="ow">is</span> <span class="nb">tuple</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dt</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

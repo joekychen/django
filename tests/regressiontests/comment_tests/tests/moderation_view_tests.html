@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › comment_tests › tests › moderation_view_tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>moderation_view_tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">Permission</span>
+<span class="kn">from</span> <span class="nn">django.contrib.comments</span> <span class="kn">import</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.contrib.comments.models</span> <span class="kn">import</span> <span class="n">Comment</span><span class="p">,</span> <span class="n">CommentFlag</span>
+<span class="kn">from</span> <span class="nn">django.contrib.contenttypes.models</span> <span class="kn">import</span> <span class="n">ContentType</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">CommentTestCase</span>
+
+
+<span class="k">class</span> <span class="nc">FlagViewTests</span><span class="p">(</span><span class="n">CommentTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">testFlagGet</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;GET the flag view: render a confirmation page.&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTemplateUsed</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;comments/flag.html&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testFlagPost</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;POST the flag view: actually flag the view (nice for XHR)&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/flagged/?c=</span><span class="si">%d</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">Comment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">flag</span><span class="o">=</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">SUGGEST_REMOVAL</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">c</span>
+
+    <span class="k">def</span> <span class="nf">testFlagPostTwice</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Users don&#39;t get to flag comments more than once.&quot;&quot;&quot;</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testFlagPost</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">c</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">c</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">flag</span><span class="o">=</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">SUGGEST_REMOVAL</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testFlagAnon</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;GET/POST the flag view while not logged in: redirect to log in.&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/accounts/login/?next=/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/accounts/login/?next=/flag/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testFlaggedView</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/flagged/&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&quot;c&quot;</span><span class="p">:</span><span class="n">pk</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTemplateUsed</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;comments/flagged.html&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testFlagSignals</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test signals emitted by the comment flag view&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>callback</p></td><td class="code"><div class="highlight"><pre>        <span class="k">def</span> <span class="nf">receive</span><span class="p">(</span><span class="n">sender</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;flag&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">flag</span><span class="p">,</span> <span class="n">CommentFlag</span><span class="o">.</span><span class="n">SUGGEST_REMOVAL</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;request&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+            <span class="n">received_signals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;signal&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Connect signals and keep track of handled ones</p></td><td class="code"><div class="highlight"><pre>        <span class="n">received_signals</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receive</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Post a comment and check the signals</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">testFlagPost</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">received_signals</span><span class="p">,</span> <span class="p">[</span><span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="p">])</span>
+
+<span class="k">def</span> <span class="nf">makeModerator</span><span class="p">(</span><span class="n">username</span><span class="p">):</span>
+    <span class="n">u</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">)</span>
+    <span class="n">ct</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span><span class="p">(</span><span class="n">Comment</span><span class="p">)</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">Permission</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">content_type</span><span class="o">=</span><span class="n">ct</span><span class="p">,</span> <span class="n">codename</span><span class="o">=</span><span class="s">&quot;can_moderate&quot;</span><span class="p">)</span>
+    <span class="n">u</span><span class="o">.</span><span class="n">user_permissions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DeleteViewTests</span><span class="p">(</span><span class="n">CommentTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">testDeletePermissions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The delete view should only be accessible to &#39;moderators&#39;&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/delete/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/accounts/login/?next=/delete/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+
+        <span class="n">makeModerator</span><span class="p">(</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/delete/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testDeletePost</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;POSTing the delete view should mark the comment as removed&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">makeModerator</span><span class="p">(</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/delete/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/deleted/?c=</span><span class="si">%d</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">Comment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">is_removed</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">flag</span><span class="o">=</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">MODERATOR_DELETION</span><span class="p">,</span> <span class="n">user__username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testDeleteSignals</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">receive</span><span class="p">(</span><span class="n">sender</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">received_signals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;signal&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Connect signals and keep track of handled ones</p></td><td class="code"><div class="highlight"><pre>        <span class="n">received_signals</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receive</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Post a comment and check the signals</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">testDeletePost</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">received_signals</span><span class="p">,</span> <span class="p">[</span><span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">testDeletedView</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/deleted/&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&quot;c&quot;</span><span class="p">:</span><span class="n">pk</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTemplateUsed</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;comments/deleted.html&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ApproveViewTests</span><span class="p">(</span><span class="n">CommentTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">testApprovePermissions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The delete view should only be accessible to &#39;moderators&#39;&quot;&quot;&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/approve/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/accounts/login/?next=/approve/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+
+        <span class="n">makeModerator</span><span class="p">(</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/approve/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testApprovePost</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;POSTing the delete view should mark the comment as removed&quot;&quot;&quot;</span>
+        <span class="n">c1</span><span class="p">,</span> <span class="n">c2</span><span class="p">,</span> <span class="n">c3</span><span class="p">,</span> <span class="n">c4</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">c1</span><span class="o">.</span><span class="n">is_public</span> <span class="o">=</span> <span class="bp">False</span><span class="p">;</span> <span class="n">c1</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">makeModerator</span><span class="p">(</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&quot;/approve/</span><span class="si">%d</span><span class="s">/&quot;</span> <span class="o">%</span> <span class="n">c1</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="p">[</span><span class="s">&quot;Location&quot;</span><span class="p">],</span> <span class="s">&quot;http://testserver/approved/?c=</span><span class="si">%d</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">c1</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">Comment</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">c1</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">is_public</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">flag</span><span class="o">=</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">MODERATOR_APPROVAL</span><span class="p">,</span> <span class="n">user__username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testApproveSignals</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">receive</span><span class="p">(</span><span class="n">sender</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">received_signals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;signal&#39;</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Connect signals and keep track of handled ones</p></td><td class="code"><div class="highlight"><pre>        <span class="n">received_signals</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">receive</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Post a comment and check the signals</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">testApprovePost</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">received_signals</span><span class="p">,</span> <span class="p">[</span><span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">testApprovedView</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">pk</span> <span class="o">=</span> <span class="n">comments</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/approved/&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&quot;c&quot;</span><span class="p">:</span><span class="n">pk</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTemplateUsed</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;comments/approved.html&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">AdminActionsTests</span><span class="p">(</span><span class="n">CommentTestCase</span><span class="p">):</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&quot;regressiontests.comment_tests.urls_admin&quot;</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">AdminActionsTests</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">setUp</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Make "normaluser" a moderator</p></td><td class="code"><div class="highlight"><pre>        <span class="n">u</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">u</span><span class="o">.</span><span class="n">is_staff</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">perms</span> <span class="o">=</span> <span class="n">Permission</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">content_type__app_label</span> <span class="o">=</span> <span class="s">&#39;comments&#39;</span><span class="p">,</span>
+            <span class="n">codename__endswith</span> <span class="o">=</span> <span class="s">&#39;comment&#39;</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">perm</span> <span class="ow">in</span> <span class="n">perms</span><span class="p">:</span>
+            <span class="n">u</span><span class="o">.</span><span class="n">user_permissions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">perm</span><span class="p">)</span>
+        <span class="n">u</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">testActionsNonModerator</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/admin/comments/comment/&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;approve_comments&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testActionsModerator</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="n">makeModerator</span><span class="p">(</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;/admin/comments/comment/&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&quot;approve_comments&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">testActionsDisabledDelete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Tests a CommentAdmin where &#39;delete_selected&#39; has been disabled.&quot;</span>
+        <span class="n">comments</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createSomeComments</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&quot;normaluser&quot;</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/admin2/comments/comment/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;&lt;option value=&quot;delete_selected&quot;&gt;&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

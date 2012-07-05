@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › backends › oracle › base.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>base.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Oracle database backend for Django.</span>
+
+<span class="sd">Requires cx_Oracle: http://cx-oracle.sourceforge.net/</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">import</span> <span class="nn">decimal</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+
+<span class="k">def</span> <span class="nf">_setup_environment</span><span class="p">(</span><span class="n">environ</span><span class="p">):</span>
+    <span class="kn">import</span> <span class="nn">platform</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Cygwin requires some special voodoo to set the environment variables
+properly so that Oracle will see them.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;CYGWIN&#39;</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">ctypes</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;Error loading ctypes: </span><span class="si">%s</span><span class="s">; &quot;</span>
+                                       <span class="s">&quot;the Oracle backend requires ctypes to &quot;</span>
+                                       <span class="s">&quot;operate correctly under Cygwin.&quot;</span> <span class="o">%</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">kernel32</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s">&#39;kernel32&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">environ</span><span class="p">:</span>
+            <span class="n">kernel32</span><span class="o">.</span><span class="n">SetEnvironmentVariableA</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="kn">import</span> <span class="nn">os</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">environ</span><span class="p">)</span>
+
+<span class="n">_setup_environment</span><span class="p">([</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Oracle takes client-side character set encoding from the environment.</p></td><td class="code"><div class="highlight"><pre>    <span class="p">(</span><span class="s">&#39;NLS_LANG&#39;</span><span class="p">,</span> <span class="s">&#39;.UTF8&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>This prevents unicode from getting mangled by getting encoded into the
+potentially non-unicode database character set.</p></td><td class="code"><div class="highlight"><pre>    <span class="p">(</span><span class="s">&#39;ORA_NCHAR_LITERAL_REPLACE&#39;</span><span class="p">,</span> <span class="s">&#39;TRUE&#39;</span><span class="p">),</span>
+<span class="p">])</span>
+
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">cx_Oracle</span> <span class="kn">as</span> <span class="nn">Database</span>
+<span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+    <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;Error loading cx_Oracle module: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">e</span><span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">utils</span>
+<span class="kn">from</span> <span class="nn">django.db.backends</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.signals</span> <span class="kn">import</span> <span class="n">connection_created</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.oracle.client</span> <span class="kn">import</span> <span class="n">DatabaseClient</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.oracle.creation</span> <span class="kn">import</span> <span class="n">DatabaseCreation</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.oracle.introspection</span> <span class="kn">import</span> <span class="n">DatabaseIntrospection</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_str</span><span class="p">,</span> <span class="n">force_unicode</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">timezone</span>
+
+<span class="n">DatabaseError</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span>
+<span class="n">IntegrityError</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Check whether cx<em>Oracle was compiled with the WITH</em>UNICODE option.  This will
+also be True in Python 3.0.</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="nb">int</span><span class="p">(</span><span class="n">Database</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="mi">5</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">Database</span><span class="p">,</span> <span class="s">&#39;UNICODE&#39;</span><span class="p">):</span>
+    <span class="n">convert_unicode</span> <span class="o">=</span> <span class="n">force_unicode</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">convert_unicode</span> <span class="o">=</span> <span class="n">smart_str</span>
+
+
+<span class="k">class</span> <span class="nc">DatabaseFeatures</span><span class="p">(</span><span class="n">BaseDatabaseFeatures</span><span class="p">):</span>
+    <span class="n">empty_fetchmany_value</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="n">needs_datetime_string_cast</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">interprets_empty_strings_as_nulls</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">uses_savepoints</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_select_for_update</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">has_select_for_update_nowait</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">can_return_id_from_insert</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">allow_sliced_subqueries</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">supports_subqueries_in_group_by</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">supports_timezones</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">supports_bitwise_or</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">can_defer_constraint_checks</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">ignores_nulls_in_unique_constraints</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">has_bulk_insert</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">supports_tablespaces</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">supports_sequence_reset</span> <span class="o">=</span> <span class="bp">False</span>
+
+<span class="k">class</span> <span class="nc">DatabaseOperations</span><span class="p">(</span><span class="n">BaseDatabaseOperations</span><span class="p">):</span>
+    <span class="n">compiler_module</span> <span class="o">=</span> <span class="s">&quot;django.db.backends.oracle.compiler&quot;</span>
+
+    <span class="k">def</span> <span class="nf">autoinc_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">,</span> <span class="n">column</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>To simulate auto-incrementing primary keys in Oracle, we have to
+create a sequence and a trigger.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">sq_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+        <span class="n">tr_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_trigger_name</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+        <span class="n">tbl_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+        <span class="n">col_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
+        <span class="n">sequence_sql</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">DECLARE</span>
+<span class="s">    i INTEGER;</span>
+<span class="s">BEGIN</span>
+<span class="s">    SELECT COUNT(*) INTO i FROM USER_CATALOG</span>
+<span class="s">        WHERE TABLE_NAME = &#39;</span><span class="si">%(sq_name)s</span><span class="s">&#39; AND TABLE_TYPE = &#39;SEQUENCE&#39;;</span>
+<span class="s">    IF i = 0 THEN</span>
+<span class="s">        EXECUTE IMMEDIATE &#39;CREATE SEQUENCE &quot;</span><span class="si">%(sq_name)s</span><span class="s">&quot;&#39;;</span>
+<span class="s">    END IF;</span>
+<span class="s">END;</span>
+<span class="s">/&quot;&quot;&quot;</span> <span class="o">%</span> <span class="nb">locals</span><span class="p">()</span>
+        <span class="n">trigger_sql</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">CREATE OR REPLACE TRIGGER &quot;</span><span class="si">%(tr_name)s</span><span class="s">&quot;</span>
+<span class="s">BEFORE INSERT ON </span><span class="si">%(tbl_name)s</span><span class="s"></span>
+<span class="s">FOR EACH ROW</span>
+<span class="s">WHEN (new.</span><span class="si">%(col_name)s</span><span class="s"> IS NULL)</span>
+<span class="s">    BEGIN</span>
+<span class="s">        SELECT &quot;</span><span class="si">%(sq_name)s</span><span class="s">&quot;.nextval</span>
+<span class="s">        INTO :new.</span><span class="si">%(col_name)s</span><span class="s"> FROM dual;</span>
+<span class="s">    END;</span>
+<span class="s">/&quot;&quot;&quot;</span> <span class="o">%</span> <span class="nb">locals</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">sequence_sql</span><span class="p">,</span> <span class="n">trigger_sql</span>
+
+    <span class="k">def</span> <span class="nf">date_extract_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>http://download-east.oracle.com/docs/cd/B10501_01/server.920/a96540/functions42a.htm#1017163</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;week_day&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>TO_CHAR(field, 'D') returns an integer from 1-7, where 1=Sunday.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="s">&quot;TO_CHAR(</span><span class="si">%s</span><span class="s">, &#39;D&#39;)&quot;</span> <span class="o">%</span> <span class="n">field_name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;EXTRACT(</span><span class="si">%s</span><span class="s"> FROM </span><span class="si">%s</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">field_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">date_interval_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sql</span><span class="p">,</span> <span class="n">connector</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Implements the interval functionality for expressions</span>
+<span class="sd">        format for Oracle:</span>
+<span class="sd">        (datefield + INTERVAL &#39;3 00:03:20.000000&#39; DAY(1) TO SECOND(6))</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">minutes</span><span class="p">,</span> <span class="n">seconds</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">timedelta</span><span class="o">.</span><span class="n">seconds</span><span class="p">,</span> <span class="mi">60</span><span class="p">)</span>
+        <span class="n">hours</span><span class="p">,</span> <span class="n">minutes</span> <span class="o">=</span> <span class="nb">divmod</span><span class="p">(</span><span class="n">minutes</span><span class="p">,</span> <span class="mi">60</span><span class="p">)</span>
+        <span class="n">days</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">timedelta</span><span class="o">.</span><span class="n">days</span><span class="p">)</span>
+        <span class="n">day_precision</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">days</span><span class="p">)</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;(</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s"> INTERVAL &#39;</span><span class="si">%s</span><span class="s"> </span><span class="si">%02d</span><span class="s">:</span><span class="si">%02d</span><span class="s">:</span><span class="si">%02d</span><span class="s">.</span><span class="si">%06d</span><span class="s">&#39; DAY(</span><span class="si">%d</span><span class="s">) TO SECOND(6))&quot;</span>
+        <span class="k">return</span> <span class="n">fmt</span> <span class="o">%</span> <span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="n">connector</span><span class="p">,</span> <span class="n">days</span><span class="p">,</span> <span class="n">hours</span><span class="p">,</span> <span class="n">minutes</span><span class="p">,</span> <span class="n">seconds</span><span class="p">,</span>
+                <span class="n">timedelta</span><span class="o">.</span><span class="n">microseconds</span><span class="p">,</span> <span class="n">day_precision</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">date_trunc_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Oracle uses TRUNC() for both dates and numbers.
+http://download-east.oracle.com/docs/cd/B10501_01/server.920/a96540/functions155a.htm#SQLRF06151</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;day&#39;</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&#39;TRUNC(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">field_name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sql</span> <span class="o">=</span> <span class="s">&quot;TRUNC(</span><span class="si">%s</span><span class="s">, &#39;</span><span class="si">%s</span><span class="s">&#39;)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_name</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sql</span>
+
+    <span class="k">def</span> <span class="nf">convert_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Database</span><span class="o">.</span><span class="n">LOB</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;TextField&#39;</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Oracle stores empty strings as null. We need to undo this in
+order to adhere to the Django convention of using the empty
+string instead of null, but only if the field accepts the
+empty string.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">empty_strings_allowed</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="s">&#39;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Convert 1 or 0 to True or False</p></td><td class="code"><div class="highlight"><pre>        <span class="k">elif</span> <span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;BooleanField&#39;</span><span class="p">,</span> <span class="s">&#39;NullBooleanField&#39;</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Force floats to the correct type</p></td><td class="code"><div class="highlight"><pre>        <span class="k">elif</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;FloatField&#39;</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Convert floats to decimals</p></td><td class="code"><div class="highlight"><pre>        <span class="k">elif</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">typecast_decimal</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">format_number</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>cx<em>Oracle always returns datetime.datetime objects for
+DATE and TIMESTAMP columns, but Django wants to see a
+python datetime.date, .time, or .datetime.  We use the type
+of the Field to determine which to cast to, but it's not
+always available.
+As a workaround, we cast to date if all the time-related
+values are 0, or to time if the date is 1/1/1900.
+This could be cleaned a bit by adding a method to the Field
+classes to normalize values from the database (the to</em>python
+method is used for validation and isn't what we want here).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Database</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;DateTimeField&#39;</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;DateField&#39;</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">date</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">field</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;TimeField&#39;</span> <span class="ow">or</span> <span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">year</span> <span class="o">==</span> <span class="mi">1900</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">month</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">day</span> <span class="o">==</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">value</span><span class="o">.</span><span class="n">hour</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">minute</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">second</span> <span class="o">==</span> <span class="n">value</span><span class="o">.</span><span class="n">microsecond</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">date</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">datetime_cast_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;TO_TIMESTAMP(</span><span class="si">%s</span><span class="s">, &#39;YYYY-MM-DD HH24:MI:SS.FF&#39;)&quot;</span>
+
+    <span class="k">def</span> <span class="nf">deferrable_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot; DEFERRABLE INITIALLY DEFERRED&quot;</span>
+
+    <span class="k">def</span> <span class="nf">drop_sequence_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;DROP SEQUENCE </span><span class="si">%s</span><span class="s">;&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">table</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">fetch_returned_insert_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">long</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">_insert_id_var</span><span class="o">.</span><span class="n">getvalue</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">field_cast_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_type</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">db_type</span> <span class="ow">and</span> <span class="n">db_type</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;LOB&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&quot;DBMS_LOB.SUBSTR(</span><span class="si">%s</span><span class="s">)&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">&quot;</span>
+
+    <span class="k">def</span> <span class="nf">last_executed_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">sql</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>http://cx-oracle.sourceforge.net/html/cursor.html#Cursor.statement
+The DB API definition does not define this attribute.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">statement</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&quot;utf-8&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">last_insert_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">pk_name</span><span class="p">):</span>
+        <span class="n">sq_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">table_name</span><span class="p">)</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT &quot;</span><span class="si">%s</span><span class="s">&quot;.currval FROM dual&#39;</span> <span class="o">%</span> <span class="n">sq_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">lookup_cast</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;iexact&#39;</span><span class="p">,</span> <span class="s">&#39;icontains&#39;</span><span class="p">,</span> <span class="s">&#39;istartswith&#39;</span><span class="p">,</span> <span class="s">&#39;iendswith&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s">&quot;UPPER(</span><span class="si">%s</span><span class="s">)&quot;</span>
+        <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">&quot;</span>
+
+    <span class="k">def</span> <span class="nf">max_in_list_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mi">1000</span>
+
+    <span class="k">def</span> <span class="nf">max_name_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mi">30</span>
+
+    <span class="k">def</span> <span class="nf">prep_for_iexact_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+    <span class="k">def</span> <span class="nf">process_clob</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;&#39;</span>
+        <span class="k">return</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">quote_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>SQL92 requires delimited (quoted) names to be case-sensitive.  When
+not quoted, Oracle has case-insensitive behavior for identifiers, but
+always defaults to uppercase.
+We simplify things by making Oracle identifiers always uppercase.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;&quot;&#39;</span><span class="p">):</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">util</span><span class="o">.</span><span class="n">truncate_name</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+                                               <span class="bp">self</span><span class="o">.</span><span class="n">max_name_length</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">random_function_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;DBMS_RANDOM.RANDOM&quot;</span>
+
+    <span class="k">def</span> <span class="nf">regex_lookup_9</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Regexes are not supported in Oracle before version 10g.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">regex_lookup_10</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;regex&#39;</span><span class="p">:</span>
+            <span class="n">match_option</span> <span class="o">=</span> <span class="s">&quot;&#39;c&#39;&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">match_option</span> <span class="o">=</span> <span class="s">&quot;&#39;i&#39;&quot;</span>
+        <span class="k">return</span> <span class="s">&#39;REGEXP_LIKE(</span><span class="si">%%</span><span class="s">s, </span><span class="si">%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">match_option</span>
+
+    <span class="k">def</span> <span class="nf">regex_lookup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>If regex_lookup is called before it's been initialized, then create
+a cursor to initialize it and recur.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">return_insert_id</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&quot;RETURNING </span><span class="si">%s</span><span class="s"> INTO </span><span class="si">%%</span><span class="s">s&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">InsertIdVar</span><span class="p">(),)</span>
+
+    <span class="k">def</span> <span class="nf">savepoint_create_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sid</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="s">&quot;SAVEPOINT &quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">sid</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">savepoint_rollback_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sid</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="s">&quot;ROLLBACK TO SAVEPOINT &quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">sid</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">sql_flush</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">style</span><span class="p">,</span> <span class="n">tables</span><span class="p">,</span> <span class="n">sequences</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Return a list of 'TRUNCATE x;', 'TRUNCATE y;',
+'TRUNCATE z;'... style SQL statements</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">tables</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Oracle does support TRUNCATE, but it seems to get us into
+FK referential trouble, whereas DELETE FROM table works.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">sql</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">;&#39;</span> <span class="o">%</span> \
+                    <span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="s">&#39;DELETE&#39;</span><span class="p">),</span>
+                     <span class="n">style</span><span class="o">.</span><span class="n">SQL_KEYWORD</span><span class="p">(</span><span class="s">&#39;FROM&#39;</span><span class="p">),</span>
+                     <span class="n">style</span><span class="o">.</span><span class="n">SQL_FIELD</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table</span><span class="p">)))</span>
+                    <span class="k">for</span> <span class="n">table</span> <span class="ow">in</span> <span class="n">tables</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Since we've just deleted all the rows, running our sequence
+ALTER code will reset the sequence to 0.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">for</span> <span class="n">sequence_info</span> <span class="ow">in</span> <span class="n">sequences</span><span class="p">:</span>
+                <span class="n">sequence_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">sequence_info</span><span class="p">[</span><span class="s">&#39;table&#39;</span><span class="p">])</span>
+                <span class="n">table_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">sequence_info</span><span class="p">[</span><span class="s">&#39;table&#39;</span><span class="p">])</span>
+                <span class="n">column_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">sequence_info</span><span class="p">[</span><span class="s">&#39;column&#39;</span><span class="p">]</span> <span class="ow">or</span> <span class="s">&#39;id&#39;</span><span class="p">)</span>
+                <span class="n">query</span> <span class="o">=</span> <span class="n">_get_sequence_reset_sql</span><span class="p">()</span> <span class="o">%</span> <span class="p">{</span><span class="s">&#39;sequence&#39;</span><span class="p">:</span> <span class="n">sequence_name</span><span class="p">,</span>
+                                                     <span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="n">table_name</span><span class="p">,</span>
+                                                     <span class="s">&#39;column&#39;</span><span class="p">:</span> <span class="n">column_name</span><span class="p">}</span>
+                <span class="n">sql</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">sql</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">sequence_reset_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">style</span><span class="p">,</span> <span class="n">model_list</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">_get_sequence_reset_sql</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">model_list</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">local_fields</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">AutoField</span><span class="p">):</span>
+                    <span class="n">table_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+                    <span class="n">sequence_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">db_table</span><span class="p">)</span>
+                    <span class="n">column_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">column</span><span class="p">)</span>
+                    <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">query</span> <span class="o">%</span> <span class="p">{</span><span class="s">&#39;sequence&#39;</span><span class="p">:</span> <span class="n">sequence_name</span><span class="p">,</span>
+                                           <span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="n">table_name</span><span class="p">,</span>
+                                           <span class="s">&#39;column&#39;</span><span class="p">:</span> <span class="n">column_name</span><span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Only one AutoField is allowed per model, so don't
+continue to loop</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">break</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">many_to_many</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">through</span><span class="p">:</span>
+                    <span class="n">table_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">m2m_db_table</span><span class="p">())</span>
+                    <span class="n">sequence_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_sequence_name</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">m2m_db_table</span><span class="p">())</span>
+                    <span class="n">column_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">)</span>
+                    <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">query</span> <span class="o">%</span> <span class="p">{</span><span class="s">&#39;sequence&#39;</span><span class="p">:</span> <span class="n">sequence_name</span><span class="p">,</span>
+                                           <span class="s">&#39;table&#39;</span><span class="p">:</span> <span class="n">table_name</span><span class="p">,</span>
+                                           <span class="s">&#39;column&#39;</span><span class="p">:</span> <span class="n">column_name</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="k">def</span> <span class="nf">start_transaction_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">tablespace_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tablespace</span><span class="p">,</span> <span class="n">inline</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inline</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;USING INDEX TABLESPACE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">tablespace</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;TABLESPACE </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">tablespace</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">value_to_db_datetime</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Oracle doesn't support tz-aware datetimes</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">timezone</span><span class="o">.</span><span class="n">is_aware</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">astimezone</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Oracle backend does not support timezone-aware datetimes when USE_TZ is False.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">value_to_db_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;%H:%M:%S&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Oracle doesn't support tz-aware times</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">timezone</span><span class="o">.</span><span class="n">is_aware</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Oracle backend does not support timezone-aware times.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">1900</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">hour</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">minute</span><span class="p">,</span>
+                                 <span class="n">value</span><span class="o">.</span><span class="n">second</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">microsecond</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">year_lookup_bounds_for_date_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">-01-01&#39;</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">-12-31&#39;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">first</span> <span class="o">%</span> <span class="n">value</span><span class="p">,</span> <span class="n">second</span> <span class="o">%</span> <span class="n">value</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">combine_expression</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connector</span><span class="p">,</span> <span class="n">sub_expressions</span><span class="p">):</span>
+        <span class="s">&quot;Oracle requires special cases for </span><span class="si">%%</span><span class="s"> and &amp; operators in query expressions&quot;</span>
+        <span class="k">if</span> <span class="n">connector</span> <span class="o">==</span> <span class="s">&#39;</span><span class="si">%%</span><span class="s">&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;MOD(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sub_expressions</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">connector</span> <span class="o">==</span> <span class="s">&#39;&amp;&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;BITAND(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="s">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sub_expressions</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">connector</span> <span class="o">==</span> <span class="s">&#39;|&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Bit-wise or is not supported in Oracle.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">DatabaseOperations</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">combine_expression</span><span class="p">(</span><span class="n">connector</span><span class="p">,</span> <span class="n">sub_expressions</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_sequence_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">):</span>
+        <span class="n">name_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_name_length</span><span class="p">()</span> <span class="o">-</span> <span class="mi">3</span>
+        <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">_SQ&#39;</span> <span class="o">%</span> <span class="n">util</span><span class="o">.</span><span class="n">truncate_name</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">name_length</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_get_trigger_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">):</span>
+        <span class="n">name_length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_name_length</span><span class="p">()</span> <span class="o">-</span> <span class="mi">3</span>
+        <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">_TR&#39;</span> <span class="o">%</span> <span class="n">util</span><span class="o">.</span><span class="n">truncate_name</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="n">name_length</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">bulk_insert_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="n">num_values</span><span class="p">):</span>
+        <span class="n">items_sql</span> <span class="o">=</span> <span class="s">&quot;SELECT </span><span class="si">%s</span><span class="s"> FROM DUAL&quot;</span> <span class="o">%</span> <span class="s">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s">&quot;</span><span class="si">%s</span><span class="s">&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">fields</span><span class="p">))</span>
+        <span class="k">return</span> <span class="s">&quot; UNION ALL &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">items_sql</span><span class="p">]</span> <span class="o">*</span> <span class="n">num_values</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">_UninitializedOperatorsDescriptor</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">owner</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>If connection.operators is looked up before a connection has been
+created, transparently initialize connection.operators to avert an
+AttributeError.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s">&quot;operators not available as class attribute&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>Creating a cursor will initialize the operators.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">instance</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">instance</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="s">&#39;operators&#39;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">DatabaseWrapper</span><span class="p">(</span><span class="n">BaseDatabaseWrapper</span><span class="p">):</span>
+    <span class="n">vendor</span> <span class="o">=</span> <span class="s">&#39;oracle&#39;</span>
+    <span class="n">operators</span> <span class="o">=</span> <span class="n">_UninitializedOperatorsDescriptor</span><span class="p">()</span>
+
+    <span class="n">_standard_operators</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;exact&#39;</span><span class="p">:</span> <span class="s">&#39;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;iexact&#39;</span><span class="p">:</span> <span class="s">&#39;= UPPER(</span><span class="si">%s</span><span class="s">)&#39;</span><span class="p">,</span>
+        <span class="s">&#39;contains&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+        <span class="s">&#39;icontains&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE UPPER(TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS)) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+        <span class="s">&#39;gt&#39;</span><span class="p">:</span> <span class="s">&#39;&gt; </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;gte&#39;</span><span class="p">:</span> <span class="s">&#39;&gt;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;lt&#39;</span><span class="p">:</span> <span class="s">&#39;&lt; </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;lte&#39;</span><span class="p">:</span> <span class="s">&#39;&lt;= </span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+        <span class="s">&#39;startswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+        <span class="s">&#39;endswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+        <span class="s">&#39;istartswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE UPPER(TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS)) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+        <span class="s">&#39;iendswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKE UPPER(TRANSLATE(</span><span class="si">%s</span><span class="s"> USING NCHAR_CS)) ESCAPE TRANSLATE(&#39;</span><span class="se">\\</span><span class="s">&#39; USING NCHAR_CS)&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">_likec_operators</span> <span class="o">=</span> <span class="n">_standard_operators</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">_likec_operators</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+        <span class="s">&#39;contains&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC </span><span class="si">%s</span><span class="s"> ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+        <span class="s">&#39;icontains&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC UPPER(</span><span class="si">%s</span><span class="s">) ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+        <span class="s">&#39;startswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC </span><span class="si">%s</span><span class="s"> ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+        <span class="s">&#39;endswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC </span><span class="si">%s</span><span class="s"> ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+        <span class="s">&#39;istartswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC UPPER(</span><span class="si">%s</span><span class="s">) ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+        <span class="s">&#39;iendswith&#39;</span><span class="p">:</span> <span class="s">&quot;LIKEC UPPER(</span><span class="si">%s</span><span class="s">) ESCAPE &#39;</span><span class="se">\\</span><span class="s">&#39;&quot;</span><span class="p">,</span>
+    <span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">DatabaseWrapper</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">oracle_version</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">features</span> <span class="o">=</span> <span class="n">DatabaseFeatures</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="n">use_returning_into</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&quot;OPTIONS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;use_returning_into&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">can_return_id_from_insert</span> <span class="o">=</span> <span class="n">use_returning_into</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ops</span> <span class="o">=</span> <span class="n">DatabaseOperations</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">DatabaseClient</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">creation</span> <span class="o">=</span> <span class="n">DatabaseCreation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">introspection</span> <span class="o">=</span> <span class="n">DatabaseIntrospection</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validation</span> <span class="o">=</span> <span class="n">BaseDatabaseValidation</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">check_constraints</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_names</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        To check constraints, we set constraints to immediate. Then, when, we&#39;re done we must ensure they</span>
+<span class="sd">        are returned to deferred.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SET CONSTRAINTS ALL IMMEDIATE&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SET CONSTRAINTS ALL DEFERRED&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_valid_connection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_connect_string</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings_dict</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;HOST&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;HOST&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;localhost&#39;</span>
+        <span class="k">if</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PORT&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="n">dsn</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">makedsn</span><span class="p">(</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;HOST&#39;</span><span class="p">],</span>
+                                   <span class="nb">int</span><span class="p">(</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PORT&#39;</span><span class="p">]),</span>
+                                   <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dsn</span> <span class="o">=</span> <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">/</span><span class="si">%s</span><span class="s">@</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;USER&#39;</span><span class="p">],</span>
+                             <span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;PASSWORD&#39;</span><span class="p">],</span> <span class="n">dsn</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_cursor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_valid_connection</span><span class="p">():</span>
+            <span class="n">conn_string</span> <span class="o">=</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connect_string</span><span class="p">())</span>
+            <span class="n">conn_params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s">&#39;use_returning_into&#39;</span> <span class="ow">in</span> <span class="n">conn_params</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">conn_params</span><span class="p">[</span><span class="s">&#39;use_returning_into&#39;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">conn_string</span><span class="p">,</span> <span class="o">**</span><span class="n">conn_params</span><span class="p">)</span>
+            <span class="n">cursor</span> <span class="o">=</span> <span class="n">FormatStylePlaceholderCursor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Set the territory first. The territory overrides NLS<em>DATE</em>FORMAT
+and NLS<em>TIMESTAMP</em>FORMAT to the territory default. When all of
+these are set in single statement it isn't clear what is supposed
+to happen.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;ALTER SESSION SET NLS_TERRITORY = &#39;AMERICA&#39;&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>Set oracle date to ansi date format.  This only needs to execute
+once when we create a new connection. We also set the Territory
+to 'AMERICA' which forces Sunday to evaluate to a '1' in
+TO_CHAR().</p></td><td class="code"><div class="highlight"><pre>            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                <span class="s">&quot;ALTER SESSION SET NLS_DATE_FORMAT = &#39;YYYY-MM-DD HH24:MI:SS&#39;&quot;</span>
+                <span class="s">&quot; NLS_TIMESTAMP_FORMAT = &#39;YYYY-MM-DD HH24:MI:SS.FF&#39;&quot;</span>
+                <span class="o">+</span> <span class="p">(</span><span class="s">&quot; TIME_ZONE = &#39;UTC&#39;&quot;</span> <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="k">else</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="s">&#39;operators&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Ticket #14149: Check whether our LIKE implementation will
+work for this connection or we need to fall back on LIKEC.
+This check is performed only once per DatabaseWrapper
+instance per thread, since subsequent connections will use
+the same settings.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT 1 FROM DUAL WHERE DUMMY </span><span class="si">%s</span><span class="s">&quot;</span>
+                                   <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_standard_operators</span><span class="p">[</span><span class="s">&#39;contains&#39;</span><span class="p">],</span>
+                                   <span class="p">[</span><span class="s">&#39;X&#39;</span><span class="p">])</span>
+                <span class="k">except</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">operators</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_likec_operators</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">operators</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_standard_operators</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">oracle_version</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>There's no way for the DatabaseOperations class to know the
+currently active Oracle version, so we do some setups here.
+TODO: Multi-db support will need a better solution (a way to
+communicate the current version).</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">oracle_version</span> <span class="o">&lt;=</span> <span class="mi">9</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup_9</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup_10</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">stmtcachesize</span> <span class="o">=</span> <span class="mi">20</span>
+            <span class="k">except</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Django docs specify cx_Oracle version 4.3.1 or higher, but
+stmtcachesize is available only in 4.3.2 and up.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">pass</span>
+            <span class="n">connection_created</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">sender</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cursor</span><span class="p">:</span>
+            <span class="n">cursor</span> <span class="o">=</span> <span class="n">FormatStylePlaceholderCursor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cursor</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Oracle doesn't support savepoint commits.  Ignore them.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_savepoint_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sid</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>In case cx_Oracle implements (now or in a future version)
+raising this specific exception</p></td><td class="code"><div class="highlight"><pre>                <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>cx<em>Oracle 5.0.4 raises a cx</em>Oracle.DatabaseError exception
+with the following attributes and values:
+ code = 2091
+ message = 'ORA-02091: transaction rolled back
+           'ORA-02291: integrity constraint (TEST_DJANGOTEST.SYS
+              _C00102056) violated - parent key not found'
+We convert that particular case to our IntegrityError exception</p></td><td class="code"><div class="highlight"><pre>                <span class="n">x</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s">&#39;code&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s">&#39;message&#39;</span><span class="p">)</span> \
+                   <span class="ow">and</span> <span class="n">x</span><span class="o">.</span><span class="n">code</span> <span class="o">==</span> <span class="mi">2091</span> <span class="ow">and</span> <span class="s">&#39;ORA-02291&#39;</span> <span class="ow">in</span> <span class="n">x</span><span class="o">.</span><span class="n">message</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+                <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">OracleParam</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wrapper object for formatting parameters for Oracle. If the string</span>
+<span class="sd">    representation of the value is large enough (greater than 4000 characters)</span>
+<span class="sd">    the input size needs to be set as CLOB. Alternatively, if the parameter</span>
+<span class="sd">    has an `input_size` attribute, then the value of the `input_size` attribute</span>
+<span class="sd">    will be used instead. Otherwise, no input size will be set for the</span>
+<span class="sd">    parameter when executing the query.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">param</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">strings_only</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>With raw SQL queries, datetimes can reach this function
+without being converted by DateTimeField.get<em>db</em>prep_value.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">timezone</span><span class="o">.</span><span class="n">is_naive</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;Oracle received a naive datetime (</span><span class="si">%s</span><span class="s">)&quot;</span>
+                              <span class="s">&quot; while time zone support is active.&quot;</span> <span class="o">%</span> <span class="n">param</span><span class="p">,</span>
+                              <span class="ne">RuntimeWarning</span><span class="p">)</span>
+                <span class="n">default_timezone</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">get_default_timezone</span><span class="p">()</span>
+                <span class="n">param</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">make_aware</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">default_timezone</span><span class="p">)</span>
+            <span class="n">param</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">astimezone</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="s">&#39;bind_parameter&#39;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smart_str</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">bind_parameter</span><span class="p">(</span><span class="n">cursor</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">smart_str</span> <span class="o">=</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">cursor</span><span class="o">.</span><span class="n">charset</span><span class="p">,</span>
+                                             <span class="n">strings_only</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="s">&#39;input_size&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>If parameter has <code>input_size</code> attribute, use that.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">input_size</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">input_size</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">param</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">4000</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Mark any string param greater than 4000 characters as a CLOB.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">input_size</span> <span class="o">=</span> <span class="n">Database</span><span class="o">.</span><span class="n">CLOB</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_size</span> <span class="o">=</span> <span class="bp">None</span>
+
+
+<span class="k">class</span> <span class="nc">VariableWrapper</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An adapter class for cursor variables that prevents the wrapped object</span>
+<span class="sd">    from being converted into a string when used to instanciate an OracleParam.</span>
+<span class="sd">    This can be used generally for any other object that should be passed into</span>
+<span class="sd">    Cursor.execute as-is.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">var</span> <span class="o">=</span> <span class="n">var</span>
+
+    <span class="k">def</span> <span class="nf">bind_parameter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">var</span>
+
+    <span class="k">def</span> <span class="nf">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">var</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s">&#39;var&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">var</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">InsertIdVar</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A late-binding cursor variable that can be passed to Cursor.execute</span>
+<span class="sd">    as a parameter, in order to receive the id of the row created by an</span>
+<span class="sd">    insert statement.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">bind_parameter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="n">param</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">Database</span><span class="o">.</span><span class="n">NUMBER</span><span class="p">)</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">_insert_id_var</span> <span class="o">=</span> <span class="n">param</span>
+        <span class="k">return</span> <span class="n">param</span>
+
+
+<span class="k">class</span> <span class="nc">FormatStylePlaceholderCursor</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Django uses &quot;format&quot; (e.g. &#39;%s&#39;) style placeholders, but Oracle uses &quot;:var&quot;</span>
+<span class="sd">    style. This fixes it -- but note that if you want to use a literal &quot;%s&quot; in</span>
+<span class="sd">    a query, you&#39;ll need to use &quot;%%s&quot;.</span>
+
+<span class="sd">    We also do automatic conversion between Unicode on the Python side and</span>
+<span class="sd">    UTF-8 -- for talking to Oracle -- in here.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">charset</span> <span class="o">=</span> <span class="s">&#39;utf-8&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Necessary to retrieve decimal values without rounding error.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">numbersAsStrings</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Default arraysize of 1 is highly sub-optimal.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">arraysize</span> <span class="o">=</span> <span class="mi">100</span>
+
+    <span class="k">def</span> <span class="nf">_format_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">OracleParam</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">params</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_guess_input_sizes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">params_list</span><span class="p">):</span>
+        <span class="n">sizes</span> <span class="o">=</span> <span class="p">[</span><span class="bp">None</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">params_list</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">params</span> <span class="ow">in</span> <span class="n">params_list</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">value</span><span class="o">.</span><span class="n">input_size</span><span class="p">:</span>
+                    <span class="n">sizes</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">input_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setinputsizes</span><span class="p">(</span><span class="o">*</span><span class="n">sizes</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_param_generator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">smart_str</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">params</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">params</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_format_params</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="p">[(</span><span class="s">&#39;:arg</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">))]</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>cx_Oracle wants no trailing ';' for SQL statements.  For PL/SQL, it
+it does want a trailing ';' but not a trailing '/'.  However, these
+characters must be included in the original query in case the query
+is being passed to SQL*Plus.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;;&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">query</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="n">query</span> <span class="o">%</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">args</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">charset</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_guess_input_sizes</span><span class="p">([</span><span class="n">params</span><span class="p">])</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_param_generator</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>cx_Oracle &lt;= 4.4.0 wrongly raises a DatabaseError for ORA-01400.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s">&#39;code&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">code</span> <span class="o">==</span> <span class="mi">1400</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">IntegrityError</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">executemany</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>cx_Oracle doesn't support iterators, convert them to lists</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">params</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="p">[(</span><span class="s">&#39;:arg</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">]))]</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>No params given, nothing to do</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>cx_Oracle wants no trailing ';' for SQL statements.  For PL/SQL, it
+it does want a trailing ';' but not a trailing '/'.  However, these
+characters must be included in the original query in case the query
+is being passed to SQL*Plus.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;;&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">query</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">convert_unicode</span><span class="p">(</span><span class="n">query</span> <span class="o">%</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">args</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">charset</span><span class="p">)</span>
+        <span class="n">formatted</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_format_params</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">params</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_guess_input_sizes</span><span class="p">(</span><span class="n">formatted</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">executemany</span><span class="p">(</span><span class="n">query</span><span class="p">,</span>
+                                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_param_generator</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">formatted</span><span class="p">])</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">IntegrityError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">except</span> <span class="n">Database</span><span class="o">.</span><span class="n">DatabaseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>cx_Oracle &lt;= 4.4.0 wrongly raises a DatabaseError for ORA-01400.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s">&#39;code&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">code</span> <span class="o">==</span> <span class="mi">1400</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">IntegrityError</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">raise</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">,</span> <span class="n">utils</span><span class="o">.</span><span class="n">DatabaseError</span><span class="p">(</span><span class="o">*</span><span class="nb">tuple</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">fetchone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">row</span>
+        <span class="k">return</span> <span class="n">_rowfactory</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">fetchmany</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">size</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">arraysize</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">_rowfactory</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+                      <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchmany</span><span class="p">(</span><span class="n">size</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">fetchall</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">_rowfactory</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+                      <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()])</span>
+
+    <span class="k">def</span> <span class="nf">var</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">VariableWrapper</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">arrayvar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">VariableWrapper</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="o">.</span><span class="n">arrayvar</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">attr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="p">[</span><span class="n">attr</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CursorIterator</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CursorIterator</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="sd">&quot;&quot;&quot;Cursor iterator wrapper that invokes our custom row factory.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="n">cursor</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iter</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">cursor</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_rowfactory</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_rowfactory</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>Cast numeric values as the appropriate Python type based upon the
+cursor description, and convert strings to unicode.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">casted</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">value</span><span class="p">,</span> <span class="n">desc</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">cursor</span><span class="o">.</span><span class="n">description</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">desc</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="n">Database</span><span class="o">.</span><span class="n">NUMBER</span><span class="p">:</span>
+            <span class="n">precision</span><span class="p">,</span> <span class="n">scale</span> <span class="o">=</span> <span class="n">desc</span><span class="p">[</span><span class="mi">4</span><span class="p">:</span><span class="mi">6</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">scale</span> <span class="o">==</span> <span class="o">-</span><span class="mi">127</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">precision</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>NUMBER column: decimal-precision floating point
+This will normally be an integer from a sequence,
+but it could be a decimal value.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="s">&#39;.&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>FLOAT column: binary-precision floating point.
+This comes from FloatField columns.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">value</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">precision</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>NUMBER(p,s) column: decimal-precision fixed point.
+This comes from IntField and DecimalField columns.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">scale</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="s">&#39;.&#39;</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>No type information. This normally comes from a
+mathematical expression in the SELECT list. Guess int
+or Decimal based on whether it has a decimal point.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">value</span> <span class="o">=</span> <span class="n">decimal</span><span class="o">.</span><span class="n">Decimal</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>datetimes are returned as TIMESTAMP, except the results
+of "dates" queries, which are returned as DATETIME.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">elif</span> <span class="n">desc</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="n">Database</span><span class="o">.</span><span class="n">TIMESTAMP</span><span class="p">,</span> <span class="n">Database</span><span class="o">.</span><span class="n">DATETIME</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Confirm that dt is naive before overwriting its tzinfo.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="ow">and</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">timezone</span><span class="o">.</span><span class="n">is_naive</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">desc</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="n">Database</span><span class="o">.</span><span class="n">STRING</span><span class="p">,</span> <span class="n">Database</span><span class="o">.</span><span class="n">FIXED_CHAR</span><span class="p">,</span>
+                         <span class="n">Database</span><span class="o">.</span><span class="n">LONG_STRING</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">to_unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">casted</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">casted</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">to_unicode</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert strings to Unicode objects (and return all other data types</span>
+<span class="sd">    unchanged).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">s</span>
+
+
+<span class="k">def</span> <span class="nf">_get_sequence_reset_sql</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>TODO: colorize this SQL code with style.SQL_KEYWORD(), etc.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">return</span> <span class="s">&quot;&quot;&quot;</span>
+<span class="s">DECLARE</span>
+<span class="s">    table_value integer;</span>
+<span class="s">    seq_value integer;</span>
+<span class="s">BEGIN</span>
+<span class="s">    SELECT NVL(MAX(</span><span class="si">%(column)s</span><span class="s">), 0) INTO table_value FROM </span><span class="si">%(table)s</span><span class="s">;</span>
+<span class="s">    SELECT NVL(last_number - cache_size, 0) INTO seq_value FROM user_sequences</span>
+<span class="s">           WHERE sequence_name = &#39;</span><span class="si">%(sequence)s</span><span class="s">&#39;;</span>
+<span class="s">    WHILE table_value &gt; seq_value LOOP</span>
+<span class="s">        SELECT &quot;</span><span class="si">%(sequence)s</span><span class="s">&quot;.nextval INTO seq_value FROM dual;</span>
+<span class="s">    END LOOP;</span>
+<span class="s">END;</span>
+<span class="s">/&quot;&quot;&quot;</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

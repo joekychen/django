@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › requests › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span> <span class="nn">StringIO</span> <span class="kn">import</span> <span class="n">StringIO</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.handlers.wsgi</span> <span class="kn">import</span> <span class="n">WSGIRequest</span><span class="p">,</span> <span class="n">LimitedStream</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpRequest</span><span class="p">,</span> <span class="n">HttpResponse</span><span class="p">,</span> <span class="n">parse_cookie</span><span class="p">,</span> <span class="n">build_request_repr</span><span class="p">,</span> <span class="n">UnreadablePostError</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">str_prefix</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+<span class="kn">from</span> <span class="nn">django.utils.http</span> <span class="kn">import</span> <span class="n">cookie_date</span>
+<span class="kn">from</span> <span class="nn">django.utils.timezone</span> <span class="kn">import</span> <span class="n">utc</span>
+
+
+<span class="k">class</span> <span class="nc">RequestsTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_httprequest</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">COOKIES</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_httprequest_repr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="s">&#39;/somepath/&#39;</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">GET</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;get-key&#39;</span><span class="p">:</span> <span class="s">&#39;get-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">COOKIES</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="n">str_prefix</span><span class="p">(</span><span class="s">&quot;&lt;HttpRequest</span><span class="se">\n</span><span class="s">path:/somepath/,</span><span class="se">\n</span><span class="s">GET:{</span><span class="si">%(_)s</span><span class="s">&#39;get-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;get-value&#39;},</span><span class="se">\n</span><span class="s">POST:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;},</span><span class="se">\n</span><span class="s">COOKIES:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;},</span><span class="se">\n</span><span class="s">META:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;}&gt;&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">build_request_repr</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">build_request_repr</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">path_override</span><span class="o">=</span><span class="s">&#39;/otherpath/&#39;</span><span class="p">,</span> <span class="n">GET_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;a&#39;</span><span class="p">:</span> <span class="s">&#39;b&#39;</span><span class="p">},</span> <span class="n">POST_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;c&#39;</span><span class="p">:</span> <span class="s">&#39;d&#39;</span><span class="p">},</span> <span class="n">COOKIES_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;e&#39;</span><span class="p">:</span> <span class="s">&#39;f&#39;</span><span class="p">},</span> <span class="n">META_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;g&#39;</span><span class="p">:</span> <span class="s">&#39;h&#39;</span><span class="p">}),</span>
+                         <span class="n">str_prefix</span><span class="p">(</span><span class="s">&quot;&lt;HttpRequest</span><span class="se">\n</span><span class="s">path:/otherpath/,</span><span class="se">\n</span><span class="s">GET:{</span><span class="si">%(_)s</span><span class="s">&#39;a&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;b&#39;},</span><span class="se">\n</span><span class="s">POST:{</span><span class="si">%(_)s</span><span class="s">&#39;c&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;d&#39;},</span><span class="se">\n</span><span class="s">COOKIES:{</span><span class="si">%(_)s</span><span class="s">&#39;e&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;f&#39;},</span><span class="se">\n</span><span class="s">META:{</span><span class="si">%(_)s</span><span class="s">&#39;g&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;h&#39;}&gt;&quot;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_wsgirequest</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span> <span class="s">&#39;bogus&#39;</span><span class="p">,</span> <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;bogus&#39;</span><span class="p">,</span> <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">GET</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">COOKIES</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span> <span class="nb">set</span><span class="p">([</span><span class="s">&#39;PATH_INFO&#39;</span><span class="p">,</span> <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">,</span> <span class="s">&#39;SCRIPT_NAME&#39;</span><span class="p">,</span> <span class="s">&#39;wsgi.input&#39;</span><span class="p">]))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;PATH_INFO&#39;</span><span class="p">],</span> <span class="s">&#39;bogus&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">],</span> <span class="s">&#39;bogus&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">META</span><span class="p">[</span><span class="s">&#39;SCRIPT_NAME&#39;</span><span class="p">],</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_wsgirequest_repr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;PATH_INFO&#39;</span><span class="p">:</span> <span class="s">&#39;/somepath/&#39;</span><span class="p">,</span> <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;get&#39;</span><span class="p">,</span> <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)})</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">GET</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;get-key&#39;</span><span class="p">:</span> <span class="s">&#39;get-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">POST</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">COOKIES</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;post-key&#39;</span><span class="p">:</span> <span class="s">&#39;post-value&#39;</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="n">str_prefix</span><span class="p">(</span><span class="s">&quot;&lt;WSGIRequest</span><span class="se">\n</span><span class="s">path:/somepath/,</span><span class="se">\n</span><span class="s">GET:{</span><span class="si">%(_)s</span><span class="s">&#39;get-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;get-value&#39;},</span><span class="se">\n</span><span class="s">POST:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;},</span><span class="se">\n</span><span class="s">COOKIES:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;},</span><span class="se">\n</span><span class="s">META:{</span><span class="si">%(_)s</span><span class="s">&#39;post-key&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;post-value&#39;}&gt;&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">build_request_repr</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">build_request_repr</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">path_override</span><span class="o">=</span><span class="s">&#39;/otherpath/&#39;</span><span class="p">,</span> <span class="n">GET_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;a&#39;</span><span class="p">:</span> <span class="s">&#39;b&#39;</span><span class="p">},</span> <span class="n">POST_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;c&#39;</span><span class="p">:</span> <span class="s">&#39;d&#39;</span><span class="p">},</span> <span class="n">COOKIES_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;e&#39;</span><span class="p">:</span> <span class="s">&#39;f&#39;</span><span class="p">},</span> <span class="n">META_override</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;g&#39;</span><span class="p">:</span> <span class="s">&#39;h&#39;</span><span class="p">}),</span>
+                         <span class="n">str_prefix</span><span class="p">(</span><span class="s">&quot;&lt;WSGIRequest</span><span class="se">\n</span><span class="s">path:/otherpath/,</span><span class="se">\n</span><span class="s">GET:{</span><span class="si">%(_)s</span><span class="s">&#39;a&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;b&#39;},</span><span class="se">\n</span><span class="s">POST:{</span><span class="si">%(_)s</span><span class="s">&#39;c&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;d&#39;},</span><span class="se">\n</span><span class="s">COOKIES:{</span><span class="si">%(_)s</span><span class="s">&#39;e&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;f&#39;},</span><span class="se">\n</span><span class="s">META:{</span><span class="si">%(_)s</span><span class="s">&#39;g&#39;: </span><span class="si">%(_)s</span><span class="s">&#39;h&#39;}&gt;&quot;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_parse_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">parse_cookie</span><span class="p">(</span><span class="s">&#39;invalid:key=true&#39;</span><span class="p">),</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_httprequest_location</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">build_absolute_uri</span><span class="p">(</span><span class="n">location</span><span class="o">=</span><span class="s">&quot;https://www.example.com/asdf&quot;</span><span class="p">),</span>
+            <span class="s">&#39;https://www.example.com/asdf&#39;</span><span class="p">)</span>
+
+        <span class="n">request</span><span class="o">.</span><span class="n">get_host</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="s">&#39;www.example.com&#39;</span>
+        <span class="n">request</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">build_absolute_uri</span><span class="p">(</span><span class="n">location</span><span class="o">=</span><span class="s">&quot;/path/with:colons&quot;</span><span class="p">),</span>
+            <span class="s">&#39;http://www.example.com/path/with:colons&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_http_get_host</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">old_USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="bp">False</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Check if X<em>FORWARDED</em>HOST is provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;HTTP_X_FORWARDED_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;forward.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;HTTP_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;example.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>X<em>FORWARDED</em>HOST is ignored.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;example.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Check if X<em>FORWARDED</em>HOST isn't provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;HTTP_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;example.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;example.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Check if HTTP_HOST isn't provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;internal.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Check if HTTP_HOST isn't provided, and we're on a nonstandard port</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">8042</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;internal.com:8042&#39;</span><span class="p">)</span>
+
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="n">old_USE_X_FORWARDED_HOST</span>
+
+    <span class="k">def</span> <span class="nf">test_http_get_host_with_x_forwarded_host</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">old_USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Check if X<em>FORWARDED</em>HOST is provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;HTTP_X_FORWARDED_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;forward.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;HTTP_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;example.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>X<em>FORWARDED</em>HOST is obeyed.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;forward.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Check if X<em>FORWARDED</em>HOST isn't provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;HTTP_HOST&#39;</span><span class="p">:</span> <span class="s">&#39;example.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;example.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Check if HTTP_HOST isn't provided.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;internal.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Check if HTTP_HOST isn't provided, and we're on a nonstandard port</p></td><td class="code"><div class="highlight"><pre>            <span class="n">request</span> <span class="o">=</span> <span class="n">HttpRequest</span><span class="p">()</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">META</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;SERVER_NAME&#39;</span><span class="p">:</span> <span class="s">&#39;internal.com&#39;</span><span class="p">,</span>
+                <span class="s">&#39;SERVER_PORT&#39;</span><span class="p">:</span> <span class="mi">8042</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">get_host</span><span class="p">(),</span> <span class="s">&#39;internal.com:8042&#39;</span><span class="p">)</span>
+
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">USE_X_FORWARDED_HOST</span> <span class="o">=</span> <span class="n">old_USE_X_FORWARDED_HOST</span>
+
+    <span class="k">def</span> <span class="nf">test_near_expiration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Cookie will expire when an near expiration time is provided&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>There is a timing weakness in this test; The
+expected result for max-age requires that there be
+a very slight difference between the evaluated expiration
+time, and the time evaluated in set_cookie(). If this
+difference doesn't exist, the cookie time will be
+1 second larger. To avoid the problem, put in a quick sleep,
+which guarantees that there will be a time difference.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">expires</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.001</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">set_cookie</span><span class="p">(</span><span class="s">&#39;datetime&#39;</span><span class="p">,</span> <span class="n">expires</span><span class="o">=</span><span class="n">expires</span><span class="p">)</span>
+        <span class="n">datetime_cookie</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="s">&#39;datetime&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">datetime_cookie</span><span class="p">[</span><span class="s">&#39;max-age&#39;</span><span class="p">],</span> <span class="mi">10</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_aware_expiration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Cookie accepts an aware datetime as expiration time&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">expires</span> <span class="o">=</span> <span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="mi">10</span><span class="p">))</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">utc</span><span class="p">)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.001</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">set_cookie</span><span class="p">(</span><span class="s">&#39;datetime&#39;</span><span class="p">,</span> <span class="n">expires</span><span class="o">=</span><span class="n">expires</span><span class="p">)</span>
+        <span class="n">datetime_cookie</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="s">&#39;datetime&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">datetime_cookie</span><span class="p">[</span><span class="s">&#39;max-age&#39;</span><span class="p">],</span> <span class="mi">10</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_far_expiration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Cookie will expire when an distant expiration time is provided&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">set_cookie</span><span class="p">(</span><span class="s">&#39;datetime&#39;</span><span class="p">,</span> <span class="n">expires</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2028</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+        <span class="n">datetime_cookie</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="s">&#39;datetime&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">datetime_cookie</span><span class="p">[</span><span class="s">&#39;expires&#39;</span><span class="p">],</span> <span class="s">&#39;Sat, 01-Jan-2028 04:05:06 GMT&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_max_age_expiration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Cookie will expire if max_age is provided&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">set_cookie</span><span class="p">(</span><span class="s">&#39;max_age&#39;</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+        <span class="n">max_age_cookie</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="s">&#39;max_age&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">max_age_cookie</span><span class="p">[</span><span class="s">&#39;max-age&#39;</span><span class="p">],</span> <span class="mi">10</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">max_age_cookie</span><span class="p">[</span><span class="s">&#39;expires&#39;</span><span class="p">],</span> <span class="n">cookie_date</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="o">+</span><span class="mi">10</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_httponly_cookie</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">HttpResponse</span><span class="p">()</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">set_cookie</span><span class="p">(</span><span class="s">&#39;example&#39;</span><span class="p">,</span> <span class="n">httponly</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">example_cookie</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">cookies</span><span class="p">[</span><span class="s">&#39;example&#39;</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>A compat cookie may be in use -- check that it has worked
+both as an output string, and using the cookie attributes</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;; httponly&#39;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">example_cookie</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">example_cookie</span><span class="p">[</span><span class="s">&#39;httponly&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_limited_stream</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Read all of a limited stream</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;test&#39;</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;te&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Reading again returns nothing.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Read a number of characters greater than the stream has to offer</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;test&#39;</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;te&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Reading again returns nothing.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Read sequentially from a stream</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;12345678&#39;</span><span class="p">),</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;12345&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;678&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Reading again returns nothing.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Read lines from a stream</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">5678</span><span class="se">\n</span><span class="s">abcd</span><span class="se">\n</span><span class="s">efgh</span><span class="se">\n</span><span class="s">ijkl&#39;</span><span class="p">),</span> <span class="mi">24</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Read a full line, unconditionally</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Read a number of characters less than a line</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;56&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Read the rest of the partial line</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;78</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Read a full line, with a character limit greater than the line length</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">6</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;abcd</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>Read the next line, deliberately terminated at the line end</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">4</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;efgh&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Read the next line... just the line end</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>Read everything else.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;ijkl&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Regression for #15018
+If a stream contains a newline, but the provided length
+is less than the number of provided characters, the newline
+doesn't reset the available character count</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">abcdef&#39;</span><span class="p">),</span> <span class="mi">9</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;abc&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Now expire the available characters</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">3</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;d&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Reading again returns nothing.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Same test, but with read, not readline.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">stream</span> <span class="o">=</span> <span class="n">LimitedStream</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">abcdef&#39;</span><span class="p">),</span> <span class="mi">9</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">6</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;1234</span><span class="se">\n</span><span class="s">a&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;bc&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;d&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">stream</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_stream</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_read_after_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Reading from request is allowed after accessing request contents as</span>
+<span class="sd">        POST or body.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;value&#39;</span><span class="p">]})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">body</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_value_after_read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Construction of POST or body is not allowed after reading</span>
+<span class="sd">        from request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;na&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">Exception</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">request</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_body_after_POST_multipart</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Reading body after parsing multipart is not allowed</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Because multipart is used for large amounts fo data i.e. file uploads,
+we don't want the data held in memory twice, and we don't want to
+silence the error by setting body = '' either.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+                <span class="s">&#39;--boundary&#39;</span><span class="p">,</span>
+                <span class="s">&#39;Content-Disposition: form-data; name=&quot;name&quot;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;value&#39;</span><span class="p">,</span>
+                <span class="s">&#39;--boundary--&#39;</span>
+                <span class="s">&#39;&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span> <span class="s">&#39;multipart/form-data; boundary=boundary&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;value&#39;</span><span class="p">]})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">Exception</span><span class="p">,</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">request</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_POST_multipart_with_content_length_zero</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Multipart POST requests with Content-Length &gt;= 0 are valid and need to be handled.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>According to:
+http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.13
+Every request.POST with Content-Length >= 0 is a valid request,
+this test ensures that we handle Content-Length == 0.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+                <span class="s">&#39;--boundary&#39;</span><span class="p">,</span>
+                <span class="s">&#39;Content-Disposition: form-data; name=&quot;name&quot;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;value&#39;</span><span class="p">,</span>
+                <span class="s">&#39;--boundary--&#39;</span>
+                <span class="s">&#39;&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span> <span class="s">&#39;multipart/form-data; boundary=boundary&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_read_by_lines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">request</span><span class="p">),</span> <span class="p">[</span><span class="n">b</span><span class="s">&#39;name=value&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_POST_after_body_read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        POST should be populated even if body is read first</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="n">raw_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">body</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;value&#39;</span><span class="p">]})</span>
+
+    <span class="k">def</span> <span class="nf">test_POST_after_body_read_and_stream_read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        POST should be populated even if body is read first, and then</span>
+<span class="sd">        the stream is read second.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="n">raw_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">body</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;n&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;value&#39;</span><span class="p">]})</span>
+
+    <span class="k">def</span> <span class="nf">test_POST_after_body_read_and_stream_read_multipart</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        POST should be populated even if body is read first, and then</span>
+<span class="sd">        the stream is read second. Using multipart/form-data instead of urlencoded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span>
+                <span class="s">&#39;--boundary&#39;</span><span class="p">,</span>
+                <span class="s">&#39;Content-Disposition: form-data; name=&quot;name&quot;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;&#39;</span><span class="p">,</span>
+                <span class="s">&#39;value&#39;</span><span class="p">,</span>
+                <span class="s">&#39;--boundary--&#39;</span>
+                <span class="s">&#39;&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;utf-8&#39;</span><span class="p">)</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_TYPE&#39;</span><span class="p">:</span> <span class="s">&#39;multipart/form-data; boundary=boundary&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+        <span class="n">raw_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">body</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Consume enough data to mess up the parsing:</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">13</span><span class="p">),</span> <span class="n">b</span><span class="s">&#39;--boundary</span><span class="se">\r\n</span><span class="s">C&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;value&#39;</span><span class="p">]})</span>
+
+    <span class="k">def</span> <span class="nf">test_raw_post_data_returns_body</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        HttpRequest.raw_post_body should be the same as HttpRequest.body</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;Hello There!&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span>
+            <span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+            <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+            <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+        <span class="p">})</span>
+
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">(</span><span class="n">record</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">body</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">raw_post_data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_POST_connection_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If wsgi.input.read() raises an exception while trying to read() the</span>
+<span class="sd">        POST, the exception should be identifiable (not a generic IOError).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">ExplodingStringIO</span><span class="p">(</span><span class="n">StringIO</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">len</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s">&quot;kaboom!&quot;</span><span class="p">)</span>
+
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">b</span><span class="s">&#39;name=value&#39;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">WSGIRequest</span><span class="p">({</span><span class="s">&#39;REQUEST_METHOD&#39;</span><span class="p">:</span> <span class="s">&#39;POST&#39;</span><span class="p">,</span>
+                               <span class="s">&#39;CONTENT_LENGTH&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">),</span>
+                               <span class="s">&#39;wsgi.input&#39;</span><span class="p">:</span> <span class="n">ExplodingStringIO</span><span class="p">(</span><span class="n">payload</span><span class="p">)})</span>
+
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">(</span><span class="n">record</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">w</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s">&quot;always&quot;</span><span class="p">)</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">UnreadablePostError</span><span class="p">):</span>
+                <span class="n">request</span><span class="o">.</span><span class="n">raw_post_data</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

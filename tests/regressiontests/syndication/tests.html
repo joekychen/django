@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › syndication › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">xml.dom</span> <span class="kn">import</span> <span class="n">minidom</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.syndication</span> <span class="kn">import</span> <span class="n">views</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">tzinfo</span>
+<span class="kn">from</span> <span class="nn">django.utils.feedgenerator</span> <span class="kn">import</span> <span class="n">rfc2822_date</span><span class="p">,</span> <span class="n">rfc3339_date</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Entry</span>
+
+
+<span class="k">class</span> <span class="nc">FeedTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">fixtures</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;feeddata.json&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">assertChildNodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+        <span class="n">actual</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">n</span><span class="o">.</span><span class="n">nodeName</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">elem</span><span class="o">.</span><span class="n">childNodes</span><span class="p">])</span>
+        <span class="n">expected</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">expected</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertChildNodeContent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">expected</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+                <span class="n">elem</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="n">k</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">assertCategories</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">i</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">elem</span><span class="o">.</span><span class="n">childNodes</span> <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">nodeName</span> <span class="o">==</span> <span class="s">&#39;category&#39;</span><span class="p">),</span> <span class="nb">set</span><span class="p">(</span><span class="n">expected</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><h6>#</h6>
+
+<p>Feed view</p>
+
+<h6>#</h6></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">SyndicationFeedTest</span><span class="p">(</span><span class="n">FeedTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for the high-level syndication feed framework.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&#39;regressiontests.syndication.urls&#39;</span>
+
+    <span class="k">def</span> <span class="nf">test_rss2_feed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the structure and content of feeds generated by Rss201rev2Feed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/rss2/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Making sure there's only 1 <code>rss</code> element and that the correct
+RSS version was specified.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">feed_elem</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;rss&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">feed_elem</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="n">feed_elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;version&#39;</span><span class="p">),</span> <span class="s">&#39;2.0&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Making sure there's only one <code>channel</code> element w/in the
+<code>rss</code> element.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">chan_elem</span> <span class="o">=</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;channel&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chan_elem</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">chan</span> <span class="o">=</span> <span class="n">chan_elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Find the last build date</p></td><td class="code"><div class="highlight"><pre>        <span class="n">d</span> <span class="o">=</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">latest</span><span class="p">(</span><span class="s">&#39;date&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">date</span>
+        <span class="n">ltz</span> <span class="o">=</span> <span class="n">tzinfo</span><span class="o">.</span><span class="n">LocalTimezone</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">last_build_date</span> <span class="o">=</span> <span class="n">rfc2822_date</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">ltz</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;description&#39;</span><span class="p">,</span> <span class="s">&#39;language&#39;</span><span class="p">,</span> <span class="s">&#39;lastBuildDate&#39;</span><span class="p">,</span> <span class="s">&#39;item&#39;</span><span class="p">,</span> <span class="s">&#39;atom:link&#39;</span><span class="p">,</span> <span class="s">&#39;ttl&#39;</span><span class="p">,</span> <span class="s">&#39;copyright&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;My blog&#39;</span><span class="p">,</span>
+            <span class="s">&#39;description&#39;</span><span class="p">:</span> <span class="s">&#39;A more thorough description of my blog.&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;language&#39;</span><span class="p">:</span> <span class="s">&#39;en&#39;</span><span class="p">,</span>
+            <span class="s">&#39;lastBuildDate&#39;</span><span class="p">:</span> <span class="n">last_build_date</span><span class="p">,</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>'atom:link': '',</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;ttl&#39;</span><span class="p">:</span> <span class="s">&#39;600&#39;</span><span class="p">,</span>
+            <span class="s">&#39;copyright&#39;</span><span class="p">:</span> <span class="s">&#39;Copyright (c) 2007, Sally Smith&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertCategories</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;python&#39;</span><span class="p">,</span> <span class="s">&#39;django&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Ensure the content of the channel is correct</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;My blog&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/&#39;</span><span class="p">,</span>
+        <span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Check feed_url is passed</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;atom:link&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">),</span>
+            <span class="s">&#39;http://example.com/syndication/rss2/&#39;</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Find the pubdate of the first feed item</p></td><td class="code"><div class="highlight"><pre>        <span class="n">d</span> <span class="o">=</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">date</span>
+        <span class="n">ltz</span> <span class="o">=</span> <span class="n">tzinfo</span><span class="o">.</span><span class="n">LocalTimezone</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">pub_date</span> <span class="o">=</span> <span class="n">rfc2822_date</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">ltz</span><span class="p">))</span>
+
+        <span class="n">items</span> <span class="o">=</span> <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;item&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">),</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">items</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;description&#39;</span><span class="p">:</span> <span class="s">&#39;Overridden description: My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/1/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;guid&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/1/&#39;</span><span class="p">,</span>
+            <span class="s">&#39;pubDate&#39;</span><span class="p">:</span> <span class="n">pub_date</span><span class="p">,</span>
+            <span class="s">&#39;author&#39;</span><span class="p">:</span> <span class="s">&#39;test@example.com (Sally Smith)&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertCategories</span><span class="p">(</span><span class="n">items</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="s">&#39;python&#39;</span><span class="p">,</span> <span class="s">&#39;testing&#39;</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;description&#39;</span><span class="p">,</span> <span class="s">&#39;guid&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">,</span> <span class="s">&#39;pubDate&#39;</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_rss091_feed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the structure and content of feeds generated by RssUserland091Feed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/rss091/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Making sure there's only 1 <code>rss</code> element and that the correct
+RSS version was specified.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">feed_elem</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;rss&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">feed_elem</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="n">feed_elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;version&#39;</span><span class="p">),</span> <span class="s">&#39;0.91&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Making sure there's only one <code>channel</code> element w/in the
+<code>rss</code> element.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">chan_elem</span> <span class="o">=</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;channel&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chan_elem</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">chan</span> <span class="o">=</span> <span class="n">chan_elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;description&#39;</span><span class="p">,</span> <span class="s">&#39;language&#39;</span><span class="p">,</span> <span class="s">&#39;lastBuildDate&#39;</span><span class="p">,</span> <span class="s">&#39;item&#39;</span><span class="p">,</span> <span class="s">&#39;atom:link&#39;</span><span class="p">,</span> <span class="s">&#39;ttl&#39;</span><span class="p">,</span> <span class="s">&#39;copyright&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Ensure the content of the channel is correct</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;My blog&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertCategories</span><span class="p">(</span><span class="n">chan</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;python&#39;</span><span class="p">,</span> <span class="s">&#39;django&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Check feed_url is passed</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;atom:link&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">),</span>
+            <span class="s">&#39;http://example.com/syndication/rss091/&#39;</span>
+        <span class="p">)</span>
+
+        <span class="n">items</span> <span class="o">=</span> <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;item&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">),</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">items</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;description&#39;</span><span class="p">:</span> <span class="s">&#39;Overridden description: My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/1/&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;description&#39;</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertCategories</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_atom_feed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the structure and content of feeds generated by Atom1Feed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/atom/&#39;</span><span class="p">)</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span><span class="o">.</span><span class="n">firstChild</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">nodeName</span><span class="p">,</span> <span class="s">&#39;feed&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;xmlns&#39;</span><span class="p">),</span> <span class="s">&#39;http://www.w3.org/2005/Atom&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">feed</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;subtitle&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;updated&#39;</span><span class="p">,</span> <span class="s">&#39;entry&#39;</span><span class="p">,</span> <span class="s">&#39;rights&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;link&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;rel&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s">&#39;self&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">),</span> <span class="s">&#39;http://example.com/syndication/atom/&#39;</span><span class="p">)</span>
+
+        <span class="n">entries</span> <span class="o">=</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;entry&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">),</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;summary&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">,</span> <span class="s">&#39;updated&#39;</span><span class="p">,</span> <span class="s">&#39;rights&#39;</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">])</span>
+            <span class="n">summary</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;summary&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">summary</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">),</span> <span class="s">&#39;html&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_feed_generator</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/custom/&#39;</span><span class="p">)</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span><span class="o">.</span><span class="n">firstChild</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">nodeName</span><span class="p">,</span> <span class="s">&#39;feed&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">feed</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;django&#39;</span><span class="p">),</span> <span class="s">&#39;rocks&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">feed</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;subtitle&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;updated&#39;</span><span class="p">,</span> <span class="s">&#39;entry&#39;</span><span class="p">,</span> <span class="s">&#39;spam&#39;</span><span class="p">,</span> <span class="s">&#39;rights&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">])</span>
+
+        <span class="n">entries</span> <span class="o">=</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;entry&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">),</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;bacon&#39;</span><span class="p">),</span> <span class="s">&#39;yum&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodes</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;link&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;summary&#39;</span><span class="p">,</span> <span class="s">&#39;ministry&#39;</span><span class="p">,</span> <span class="s">&#39;rights&#39;</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">,</span> <span class="s">&#39;updated&#39;</span><span class="p">,</span> <span class="s">&#39;category&#39;</span><span class="p">])</span>
+            <span class="n">summary</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;summary&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">summary</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;type&#39;</span><span class="p">),</span> <span class="s">&#39;html&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_title_escaping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that titles are escaped correctly in RSS feeds.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/rss2/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;item&#39;</span><span class="p">):</span>
+            <span class="n">link</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;link&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">link</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span> <span class="o">==</span> <span class="s">&#39;http://example.com/blog/4/&#39;</span><span class="p">:</span>
+                <span class="n">title</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">title</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span><span class="p">,</span> <span class="s">&#39;A &amp;amp; B &amp;lt; C &amp;gt; D&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_naive_datetime_conversion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that datetimes are correctly converted to the local time zone.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Naive date times passed in get converted to the local time zone, so
+check the recived zone offset against the local offset.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/naive-dates/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;updated&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span>
+
+        <span class="n">d</span> <span class="o">=</span> <span class="n">Entry</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">latest</span><span class="p">(</span><span class="s">&#39;date&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">date</span>
+        <span class="n">ltz</span> <span class="o">=</span> <span class="n">tzinfo</span><span class="o">.</span><span class="n">LocalTimezone</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">latest</span> <span class="o">=</span> <span class="n">rfc3339_date</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">ltz</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">updated</span><span class="p">,</span> <span class="n">latest</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_aware_datetime_conversion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that datetimes with timezones don&#39;t get trodden on.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/aware-dates/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">updated</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;updated&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">updated</span><span class="p">[</span><span class="o">-</span><span class="mi">6</span><span class="p">:],</span> <span class="s">&#39;+00:42&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_feed_url</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the feed_url can be overridden.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/feedurl/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;link&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;rel&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s">&#39;self&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">),</span> <span class="s">&#39;http://example.com/customfeedurl/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_secure_urls</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test URLs are prefixed with https:// when feed is requested over HTTPS.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/rss2/&#39;</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span>
+            <span class="s">&#39;wsgi.url_scheme&#39;</span><span class="p">:</span> <span class="s">&#39;https&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">chan</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;channel&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;link&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">firstChild</span><span class="o">.</span><span class="n">wholeText</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">5</span><span class="p">],</span>
+            <span class="s">&#39;https&#39;</span>
+        <span class="p">)</span>
+        <span class="n">atom_link</span> <span class="o">=</span> <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;atom:link&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">atom_link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">:</span><span class="mi">5</span><span class="p">],</span> <span class="s">&#39;https&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;link&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;rel&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="s">&#39;self&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;href&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">:</span><span class="mi">5</span><span class="p">],</span> <span class="s">&#39;https&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_item_link_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that a ImproperlyConfigured is raised if no link could be found</span>
+<span class="sd">        for the item(s).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                          <span class="s">&#39;/syndication/articles/&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_feed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the item title and description can be overridden with</span>
+<span class="sd">        templates.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/syndication/template/&#39;</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">feed</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;rss&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">chan</span> <span class="o">=</span> <span class="n">feed</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;channel&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">items</span> <span class="o">=</span> <span class="n">chan</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;item&#39;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertChildNodeContent</span><span class="p">(</span><span class="n">items</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">{</span>
+            <span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;Title in your templates: My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;description&#39;</span><span class="p">:</span> <span class="s">&#39;Description in your templates: My first entry&#39;</span><span class="p">,</span>
+            <span class="s">&#39;link&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/blog/1/&#39;</span><span class="p">,</span>
+        <span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_add_domain</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test add_domain() prefixes domains onto the correct URLs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;/foo/?arg=value&#39;</span><span class="p">),</span>
+            <span class="s">&#39;http://example.com/foo/?arg=value&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;/foo/?arg=value&#39;</span><span class="p">,</span> <span class="bp">True</span><span class="p">),</span>
+            <span class="s">&#39;https://example.com/foo/?arg=value&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;http://djangoproject.com/doc/&#39;</span><span class="p">),</span>
+            <span class="s">&#39;http://djangoproject.com/doc/&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;https://djangoproject.com/doc/&#39;</span><span class="p">),</span>
+            <span class="s">&#39;https://djangoproject.com/doc/&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;mailto:uhoh@djangoproject.com&#39;</span><span class="p">),</span>
+            <span class="s">&#39;mailto:uhoh@djangoproject.com&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">views</span><span class="o">.</span><span class="n">add_domain</span><span class="p">(</span><span class="s">&#39;example.com&#39;</span><span class="p">,</span> <span class="s">&#39;//example.com/foo/?arg=value&#39;</span><span class="p">),</span>
+            <span class="s">&#39;http://example.com/foo/?arg=value&#39;</span>
+        <span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

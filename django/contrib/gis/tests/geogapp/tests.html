@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › geogapp › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Tests for geography support in PostGIS 1.5+</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis</span> <span class="kn">import</span> <span class="n">gdal</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.measure</span> <span class="kn">import</span> <span class="n">D</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">City</span><span class="p">,</span> <span class="n">County</span><span class="p">,</span> <span class="n">Zipcode</span>
+
+
+<span class="k">class</span> <span class="nc">GeographyTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test01_fixture_load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Ensure geography features loaded properly.&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test02_distance_lookup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet distance lookup support on non-point geography fields.&quot;</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">Zipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">code</span><span class="o">=</span><span class="s">&#39;77002&#39;</span><span class="p">)</span>
+        <span class="n">cities1</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span>
+                       <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">mi</span><span class="o">=</span><span class="mi">500</span><span class="p">)))</span>
+                       <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+                       <span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+        <span class="n">cities2</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span>
+                       <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__dwithin</span><span class="o">=</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">mi</span><span class="o">=</span><span class="mi">500</span><span class="p">)))</span>
+                       <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+                       <span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">cities</span> <span class="ow">in</span> <span class="p">[</span><span class="n">cities1</span><span class="p">,</span> <span class="n">cities2</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="s">&#39;Dallas&#39;</span><span class="p">,</span> <span class="s">&#39;Houston&#39;</span><span class="p">,</span> <span class="s">&#39;Oklahoma City&#39;</span><span class="p">],</span> <span class="n">cities</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test03_distance_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.distance() support on non-point geography fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p><code>GeoQuerySet.distance</code> is not allowed geometry fields.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">htown</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">Zipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">htown</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test04_invalid_operators_functions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Ensuring exceptions are raised for operators &amp; functions invalid on geography fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Only a subset of the geometry functions &amp; operator are available
+to PostGIS geography types.  For more information, visit:
+ http://postgis.refractions.net/documentation/manual-1.5/ch08.html#PostGIS_GeographyFunctions</p></td><td class="code"><div class="highlight"><pre>        <span class="n">z</span> <span class="o">=</span> <span class="n">Zipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">code</span><span class="o">=</span><span class="s">&#39;77002&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>ST_Within not available.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__within</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p><code>@</code> operator not available.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__contained</span><span class="o">=</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Regression test for #14060, <code>~=</code> was never really implemented for PostGIS.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">htown</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Houston&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="n">point__exact</span><span class="o">=</span><span class="n">htown</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test05_geography_layermapping</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing LayerMapping support on models with geography fields.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>There is a similar test in <code>layermap</code> that uses the same data set,
+but the County model here is a bit different.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">gdal</span><span class="o">.</span><span class="n">HAS_GDAL</span><span class="p">:</span> <span class="k">return</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.utils</span> <span class="kn">import</span> <span class="n">LayerMapping</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Getting the shapefile and mapping dictionary.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">shp_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;..&#39;</span><span class="p">,</span> <span class="s">&#39;data&#39;</span><span class="p">))</span>
+        <span class="n">co_shp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shp_path</span><span class="p">,</span> <span class="s">&#39;counties&#39;</span><span class="p">,</span> <span class="s">&#39;counties.shp&#39;</span><span class="p">)</span>
+        <span class="n">co_mapping</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;name&#39;</span> <span class="p">:</span> <span class="s">&#39;Name&#39;</span><span class="p">,</span>
+                      <span class="s">&#39;state&#39;</span> <span class="p">:</span> <span class="s">&#39;State&#39;</span><span class="p">,</span>
+                      <span class="s">&#39;mpoly&#39;</span> <span class="p">:</span> <span class="s">&#39;MULTIPOLYGON&#39;</span><span class="p">,</span>
+                      <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Reference county names, number of polygons, and state names.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Bexar&#39;</span><span class="p">,</span> <span class="s">&#39;Galveston&#39;</span><span class="p">,</span> <span class="s">&#39;Harris&#39;</span><span class="p">,</span> <span class="s">&#39;Honolulu&#39;</span><span class="p">,</span> <span class="s">&#39;Pueblo&#39;</span><span class="p">]</span>
+        <span class="n">num_polys</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">19</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span> <span class="c"># Number of polygons for each.</span>
+        <span class="n">st_names</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Texas&#39;</span><span class="p">,</span> <span class="s">&#39;Hawaii&#39;</span><span class="p">,</span> <span class="s">&#39;Colorado&#39;</span><span class="p">]</span>
+
+        <span class="n">lm</span> <span class="o">=</span> <span class="n">LayerMapping</span><span class="p">(</span><span class="n">County</span><span class="p">,</span> <span class="n">co_shp</span><span class="p">,</span> <span class="n">co_mapping</span><span class="p">,</span> <span class="n">source_srs</span><span class="o">=</span><span class="mi">4269</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="n">lm</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">silent</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">num_poly</span><span class="p">,</span> <span class="n">state</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">County</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">),</span> <span class="n">names</span><span class="p">,</span> <span class="n">num_polys</span><span class="p">,</span> <span class="n">st_names</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4326</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">num_poly</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mpoly</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">state</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test06_geography_area</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing that Area calculations work on geography columns.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>SELECT ST<em>Area(poly) FROM geogapp</em>zipcode WHERE code='77002';</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ref_area</span> <span class="o">=</span> <span class="mf">5439084.70637573</span>
+        <span class="n">tol</span> <span class="o">=</span> <span class="mi">5</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">Zipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">area</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">code</span><span class="o">=</span><span class="s">&#39;77002&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">area</span><span class="o">.</span><span class="n">sq_m</span><span class="p">,</span> <span class="n">ref_area</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

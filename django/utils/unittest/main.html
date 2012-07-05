@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › utils › unittest › main.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>main.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;Unittest main program&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">types</span>
+
+<span class="kn">from</span> <span class="nn">django.utils.unittest</span> <span class="kn">import</span> <span class="n">loader</span><span class="p">,</span> <span class="n">runner</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">django.utils.unittest.signals</span> <span class="kn">import</span> <span class="n">installHandler</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">installHandler</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="n">__unittest</span> <span class="o">=</span> <span class="bp">True</span>
+
+<span class="n">FAILFAST</span>     <span class="o">=</span> <span class="s">&quot;  -f, --failfast   Stop on first failure</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="n">CATCHBREAK</span>   <span class="o">=</span> <span class="s">&quot;  -c, --catch      Catch control-C and display results</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="n">BUFFEROUTPUT</span> <span class="o">=</span> <span class="s">&quot;  -b, --buffer     Buffer stdout and stderr during test runs</span><span class="se">\n</span><span class="s">&quot;</span>
+
+<span class="n">USAGE_AS_MAIN</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s">Usage: </span><span class="si">%(progName)s</span><span class="s"> [options] [tests]</span>
+
+<span class="s">Options:</span>
+<span class="s">  -h, --help       Show this message</span>
+<span class="s">  -v, --verbose    Verbose output</span>
+<span class="s">  -q, --quiet      Minimal output</span>
+<span class="si">%(failfast)s%(catchbreak)s%(buffer)s</span><span class="s"></span>
+<span class="s">Examples:</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> test_module                       - run tests from test_module</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> test_module.TestClass             - run tests from</span>
+<span class="s">                                                   test_module.TestClass</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> test_module.TestClass.test_method - run specified test method</span>
+
+<span class="s">[tests] can be a list of any number of test modules, classes and test</span>
+<span class="s">methods.</span>
+
+<span class="s">Alternative Usage: </span><span class="si">%(progName)s</span><span class="s"> discover [options]</span>
+
+<span class="s">Options:</span>
+<span class="s">  -v, --verbose    Verbose output</span>
+<span class="si">%(failfast)s%(catchbreak)s%(buffer)s</span><span class="s">  -s directory     Directory to start discovery (&#39;.&#39; default)</span>
+<span class="s">  -p pattern       Pattern to match test files (&#39;test*.py&#39; default)</span>
+<span class="s">  -t directory     Top level directory of project (default to</span>
+<span class="s">                   start directory)</span>
+
+<span class="s">For test discovery all test modules must be importable from the top</span>
+<span class="s">level directory of the project.</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+<span class="n">USAGE_FROM_MODULE</span> <span class="o">=</span> <span class="s">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s">Usage: </span><span class="si">%(progName)s</span><span class="s"> [options] [test] [...]</span>
+
+<span class="s">Options:</span>
+<span class="s">  -h, --help       Show this message</span>
+<span class="s">  -v, --verbose    Verbose output</span>
+<span class="s">  -q, --quiet      Minimal output</span>
+<span class="si">%(failfast)s%(catchbreak)s%(buffer)s</span><span class="s"></span>
+<span class="s">Examples:</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s">                               - run default set of tests</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> MyTestSuite                   - run suite &#39;MyTestSuite&#39;</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> MyTestCase.testSomething      - run MyTestCase.testSomething</span>
+<span class="s">  </span><span class="si">%(progName)s</span><span class="s"> MyTestCase                    - run all &#39;test*&#39; test methods</span>
+<span class="s">                                               in MyTestCase</span>
+<span class="s">&quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">TestProgram</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A command-line program that runs a set of tests; this is primarily</span>
+<span class="sd">       for making test modules conveniently executable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">USAGE</span> <span class="o">=</span> <span class="n">USAGE_FROM_MODULE</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>defaults for testing</p></td><td class="code"><div class="highlight"><pre>    <span class="n">failfast</span> <span class="o">=</span> <span class="n">catchbreak</span> <span class="o">=</span> <span class="nb">buffer</span> <span class="o">=</span> <span class="n">progName</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="o">=</span><span class="s">&#39;__main__&#39;</span><span class="p">,</span> <span class="n">defaultTest</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">argv</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">testRunner</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">testLoader</span><span class="o">=</span><span class="n">loader</span><span class="o">.</span><span class="n">defaultTestLoader</span><span class="p">,</span> <span class="nb">exit</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                 <span class="n">verbosity</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">failfast</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">catchbreak</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="nb">buffer</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="nb">__import__</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">:]:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
+        <span class="k">if</span> <span class="n">argv</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">argv</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="nb">exit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">verbosity</span> <span class="o">=</span> <span class="n">verbosity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="o">=</span> <span class="n">failfast</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="o">=</span> <span class="n">catchbreak</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">=</span> <span class="nb">buffer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">defaultTest</span> <span class="o">=</span> <span class="n">defaultTest</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span> <span class="o">=</span> <span class="n">testRunner</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">testLoader</span> <span class="o">=</span> <span class="n">testLoader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">progName</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parseArgs</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">runTests</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">usageExit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">msg</span><span class="p">:</span>
+            <span class="k">print</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">usage</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;progName&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">progName</span><span class="p">,</span> <span class="s">&#39;catchbreak&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;failfast&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">,</span>
+                 <span class="s">&#39;buffer&#39;</span><span class="p">:</span> <span class="s">&#39;&#39;</span><span class="p">}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="o">!=</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">usage</span><span class="p">[</span><span class="s">&#39;failfast&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">FAILFAST</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="o">!=</span> <span class="bp">False</span> <span class="ow">and</span> <span class="n">installHandler</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">usage</span><span class="p">[</span><span class="s">&#39;catchbreak&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">CATCHBREAK</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">!=</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">usage</span><span class="p">[</span><span class="s">&#39;buffer&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">BUFFEROUTPUT</span>
+        <span class="k">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">USAGE</span> <span class="o">%</span> <span class="n">usage</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">parseArgs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">argv</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s">&#39;discover&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_do_discovery</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span>
+            <span class="k">return</span>
+
+        <span class="kn">import</span> <span class="nn">getopt</span>
+        <span class="n">long_opts</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;help&#39;</span><span class="p">,</span> <span class="s">&#39;verbose&#39;</span><span class="p">,</span> <span class="s">&#39;quiet&#39;</span><span class="p">,</span> <span class="s">&#39;failfast&#39;</span><span class="p">,</span> <span class="s">&#39;catch&#39;</span><span class="p">,</span> <span class="s">&#39;buffer&#39;</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">options</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">getopt</span><span class="o">.</span><span class="n">getopt</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="s">&#39;hHvqfcb&#39;</span><span class="p">,</span> <span class="n">long_opts</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">opt</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">options</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-h&#39;</span><span class="p">,</span><span class="s">&#39;-H&#39;</span><span class="p">,</span><span class="s">&#39;--help&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">usageExit</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-q&#39;</span><span class="p">,</span><span class="s">&#39;--quiet&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">verbosity</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span><span class="s">&#39;--verbose&#39;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">verbosity</span> <span class="o">=</span> <span class="mi">2</span>
+                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-f&#39;</span><span class="p">,</span><span class="s">&#39;--failfast&#39;</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Should this raise an exception if -f is not valid?</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-c&#39;</span><span class="p">,</span><span class="s">&#39;--catch&#39;</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">installHandler</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Should this raise an exception if -c is not valid?</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;-b&#39;</span><span class="p">,</span><span class="s">&#39;--buffer&#39;</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Should this raise an exception if -b is not valid?</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">defaultTest</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>createTests will load tests from self.module</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">testNames</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">testNames</span> <span class="o">=</span> <span class="n">args</span>
+                <span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>to support python -m unittest ...</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">testNames</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">defaultTest</span><span class="p">,)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">createTests</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">getopt</span><span class="o">.</span><span class="n">error</span><span class="p">,</span> <span class="n">msg</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">usageExit</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">createTests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">testNames</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">test</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testLoader</span><span class="o">.</span><span class="n">loadTestsFromModule</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">test</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testLoader</span><span class="o">.</span><span class="n">loadTestsFromNames</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testNames</span><span class="p">,</span>
+                                                           <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_do_discovery</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">argv</span><span class="p">,</span> <span class="n">Loader</span><span class="o">=</span><span class="n">loader</span><span class="o">.</span><span class="n">TestLoader</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>handle command line args for test discovery</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">progName</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s"> discover&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">progName</span>
+        <span class="kn">import</span> <span class="nn">optparse</span>
+        <span class="n">parser</span> <span class="o">=</span> <span class="n">optparse</span><span class="o">.</span><span class="n">OptionParser</span><span class="p">()</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">prog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">progName</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-v&#39;</span><span class="p">,</span> <span class="s">&#39;--verbose&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;verbose&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                          <span class="n">help</span><span class="o">=</span><span class="s">&#39;Verbose output&#39;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="o">!=</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-f&#39;</span><span class="p">,</span> <span class="s">&#39;--failfast&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;failfast&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                              <span class="n">help</span><span class="o">=</span><span class="s">&#39;Stop on first fail or error&#39;</span><span class="p">,</span>
+                              <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="o">!=</span> <span class="bp">False</span> <span class="ow">and</span> <span class="n">installHandler</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-c&#39;</span><span class="p">,</span> <span class="s">&#39;--catch&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;catchbreak&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                              <span class="n">help</span><span class="o">=</span><span class="s">&#39;Catch ctrl-C and display results so far&#39;</span><span class="p">,</span>
+                              <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">!=</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-b&#39;</span><span class="p">,</span> <span class="s">&#39;--buffer&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;buffer&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                              <span class="n">help</span><span class="o">=</span><span class="s">&#39;Buffer stdout and stderr during tests&#39;</span><span class="p">,</span>
+                              <span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-s&#39;</span><span class="p">,</span> <span class="s">&#39;--start-directory&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;start&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s">&#39;.&#39;</span><span class="p">,</span>
+                          <span class="n">help</span><span class="o">=</span><span class="s">&quot;Directory to start discovery (&#39;.&#39; default)&quot;</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-p&#39;</span><span class="p">,</span> <span class="s">&#39;--pattern&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;pattern&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s">&#39;test*.py&#39;</span><span class="p">,</span>
+                          <span class="n">help</span><span class="o">=</span><span class="s">&quot;Pattern to match tests (&#39;test*.py&#39; default)&quot;</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_option</span><span class="p">(</span><span class="s">&#39;-t&#39;</span><span class="p">,</span> <span class="s">&#39;--top-level-directory&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s">&#39;top&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                          <span class="n">help</span><span class="o">=</span><span class="s">&#39;Top level directory of project (defaults to start directory)&#39;</span><span class="p">)</span>
+
+        <span class="n">options</span><span class="p">,</span> <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">usageExit</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">((</span><span class="s">&#39;start&#39;</span><span class="p">,</span> <span class="s">&#39;pattern&#39;</span><span class="p">,</span> <span class="s">&#39;top&#39;</span><span class="p">),</span> <span class="n">args</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>only set options from the parsing here
+if they weren't set explicitly in the constructor</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">failfast</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">failfast</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">installHandler</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">catchbreak</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">buffer</span>
+
+        <span class="k">if</span> <span class="n">options</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verbosity</span> <span class="o">=</span> <span class="mi">2</span>
+
+        <span class="n">start_dir</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">start</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">pattern</span>
+        <span class="n">top_level_dir</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">top</span>
+
+        <span class="n">loader</span> <span class="o">=</span> <span class="n">Loader</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">test</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">discover</span><span class="p">(</span><span class="n">start_dir</span><span class="p">,</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">top_level_dir</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">runTests</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">catchbreak</span><span class="p">:</span>
+            <span class="n">installHandler</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">TextTestRunner</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span><span class="p">,</span> <span class="p">(</span><span class="nb">type</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">ClassType</span><span class="p">)):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">testRunner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span><span class="p">(</span><span class="n">verbosity</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verbosity</span><span class="p">,</span>
+                                             <span class="n">failfast</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">failfast</span><span class="p">,</span>
+                                             <span class="nb">buffer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>didn't accept the verbosity, buffer or failfast arguments</p></td><td class="code"><div class="highlight"><pre>                <span class="n">testRunner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>it is assumed to be a TestRunner instance</p></td><td class="code"><div class="highlight"><pre>            <span class="n">testRunner</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">testRunner</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">result</span> <span class="o">=</span> <span class="n">testRunner</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">test</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exit</span><span class="p">:</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">wasSuccessful</span><span class="p">())</span>
+
+<span class="n">main</span> <span class="o">=</span> <span class="n">TestProgram</span>
+
+<span class="k">def</span> <span class="nf">main_</span><span class="p">():</span>
+    <span class="n">TestProgram</span><span class="o">.</span><span class="n">USAGE</span> <span class="o">=</span> <span class="n">USAGE_AS_MAIN</span>
+    <span class="n">main</span><span class="p">(</span><span class="n">module</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

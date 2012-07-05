@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › utils › _os.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>_os.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">stat</span>
+<span class="kn">from</span> <span class="nn">os.path</span> <span class="kn">import</span> <span class="n">join</span><span class="p">,</span> <span class="n">normcase</span><span class="p">,</span> <span class="n">normpath</span><span class="p">,</span> <span class="n">abspath</span><span class="p">,</span> <span class="n">isabs</span><span class="p">,</span> <span class="n">sep</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="ne">WindowsError</span> <span class="o">=</span> <span class="ne">WindowsError</span>
+<span class="k">except</span> <span class="ne">NameError</span><span class="p">:</span>
+    <span class="k">class</span> <span class="nc">WindowsError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+        <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Define our own abspath function that can handle joining
+unicode paths to a current working directory that has non-ASCII
+characters in it.  This isn't necessary on Windows since the
+Windows version of abspath handles this correctly.  The Windows
+abspath also handles drive letters differently than the pure
+Python implementation, so it's best not to replace it.</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&#39;nt&#39;</span><span class="p">:</span>
+    <span class="n">abspathu</span> <span class="o">=</span> <span class="n">abspath</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">abspathu</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Version of os.path.abspath that uses the unicode representation</span>
+<span class="sd">        of the current working directory, thus avoiding a UnicodeDecodeError</span>
+<span class="sd">        in join when the cwd has non-ASCII characters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">isabs</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getcwdu</span><span class="p">(),</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">normpath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">safe_join</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="o">*</span><span class="n">paths</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Joins one or more path components to the base path component intelligently.</span>
+<span class="sd">    Returns a normalized, absolute version of the final path.</span>
+
+<span class="sd">    The final path must be located inside of the base path component (otherwise</span>
+<span class="sd">    a ValueError is raised).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">base</span><span class="p">)</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="p">[</span><span class="n">force_unicode</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">]</span>
+    <span class="n">final_path</span> <span class="o">=</span> <span class="n">abspathu</span><span class="p">(</span><span class="n">join</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="o">*</span><span class="n">paths</span><span class="p">))</span>
+    <span class="n">base_path</span> <span class="o">=</span> <span class="n">abspathu</span><span class="p">(</span><span class="n">base</span><span class="p">)</span>
+    <span class="n">base_path_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">base_path</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Ensure final<em>path starts with base</em>path (using normcase to ensure we
+don't false-negative on case insensitive operating systems like Windows)
+and that the next character after the final path is os.sep (or nothing,
+in which case final<em>path must be equal to base</em>path).</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="ow">not</span> <span class="n">normcase</span><span class="p">(</span><span class="n">final_path</span><span class="p">)</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">normcase</span><span class="p">(</span><span class="n">base_path</span><span class="p">))</span> \
+       <span class="ow">or</span> <span class="n">final_path</span><span class="p">[</span><span class="n">base_path_len</span><span class="p">:</span><span class="n">base_path_len</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">sep</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;The joined path (</span><span class="si">%s</span><span class="s">) is located outside of the base &#39;</span>
+                         <span class="s">&#39;path component (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">final_path</span><span class="p">,</span> <span class="n">base_path</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">final_path</span>
+
+
+<span class="k">def</span> <span class="nf">rmtree_errorhandler</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">exc_info</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    On Windows, some files are read-only (e.g. in in .svn dirs), so when</span>
+<span class="sd">    rmtree() tries to remove them, an exception is thrown.</span>
+<span class="sd">    We catch that here, remove the read-only attribute, and hopefully</span>
+<span class="sd">    continue without problems.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">exctype</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">exc_info</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>looking for a windows error</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">exctype</span> <span class="ow">is</span> <span class="ow">not</span> <span class="ne">WindowsError</span> <span class="ow">or</span> <span class="s">&#39;Access is denied&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+        <span class="k">raise</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>file type should currently be read only</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="p">((</span><span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IREAD</span><span class="p">)</span> <span class="o">!=</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IREAD</span><span class="p">):</span>
+        <span class="k">raise</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>convert to read/write</p></td><td class="code"><div class="highlight"><pre>    <span class="n">os</span><span class="o">.</span><span class="n">chmod</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IWRITE</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>use the original function to repeat the operation</p></td><td class="code"><div class="highlight"><pre>    <span class="n">func</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

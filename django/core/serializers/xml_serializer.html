@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › core › serializers › xml_serializer.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>xml_serializer.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">XML serializer.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.serializers</span> <span class="kn">import</span> <span class="n">base</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+<span class="kn">from</span> <span class="nn">django.utils.xmlutils</span> <span class="kn">import</span> <span class="n">SimplerXMLGenerator</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_unicode</span>
+<span class="kn">from</span> <span class="nn">xml.dom</span> <span class="kn">import</span> <span class="n">pulldom</span>
+
+<span class="k">class</span> <span class="nc">Serializer</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">Serializer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Serializes a QuerySet to XML.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">indent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">level</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;indent&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">ignorableWhitespace</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">+</span> <span class="s">&#39; &#39;</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;indent&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="o">*</span> <span class="n">level</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">start_serialization</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Start serialization -- open the XML document and the root element.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span> <span class="o">=</span> <span class="n">SimplerXMLGenerator</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&quot;encoding&quot;</span><span class="p">,</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEFAULT_CHARSET</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startDocument</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;django-objects&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;version&quot;</span> <span class="p">:</span> <span class="s">&quot;1.0&quot;</span><span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">end_serialization</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        End serialization -- end the document.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;django-objects&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endDocument</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">start_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called as each object is handled.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s">&quot;_meta&quot;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">base</span><span class="o">.</span><span class="n">SerializationError</span><span class="p">(</span><span class="s">&quot;Non-model object (</span><span class="si">%s</span><span class="s">) encountered during serialization&quot;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">obj</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">obj_pk</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">_get_pk_val</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">obj_pk</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;model&quot;</span><span class="p">:</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">_meta</span><span class="p">),}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">attrs</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&quot;pk&quot;</span><span class="p">:</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">_get_pk_val</span><span class="p">()),</span>
+                <span class="s">&quot;model&quot;</span><span class="p">:</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">_meta</span><span class="p">),</span>
+            <span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">,</span> <span class="n">attrs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">end_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called after handling all fields for an object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called to handle each field on an object (except for ForeignKeys and</span>
+<span class="sd">        ManyToManyFields)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&quot;name&quot;</span> <span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s">&quot;type&quot;</span> <span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">get_internal_type</span><span class="p">()</span>
+        <span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Get a "string version" of the object's data.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">characters</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">value_to_string</span><span class="p">(</span><span class="n">obj</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">addQuickElement</span><span class="p">(</span><span class="s">&quot;None&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle_fk_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called to handle a ForeignKey (we need to treat them slightly</span>
+<span class="sd">        differently from regular fields).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_start_relational_field</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="n">related_att</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">get_attname</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">related_att</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_natural_keys</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="s">&#39;natural_key&#39;</span><span class="p">):</span>
+                <span class="n">related</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>If related object has a natural key, use it</p></td><td class="code"><div class="highlight"><pre>                <span class="n">related</span> <span class="o">=</span> <span class="n">related</span><span class="o">.</span><span class="n">natural_key</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Iterable natural keys are rolled out as subelements</p></td><td class="code"><div class="highlight"><pre>                <span class="k">for</span> <span class="n">key_value</span> <span class="ow">in</span> <span class="n">related</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;natural&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">characters</span><span class="p">(</span><span class="n">smart_unicode</span><span class="p">(</span><span class="n">key_value</span><span class="p">))</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;natural&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">characters</span><span class="p">(</span><span class="n">smart_unicode</span><span class="p">(</span><span class="n">related_att</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">addQuickElement</span><span class="p">(</span><span class="s">&quot;None&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle_m2m_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called to handle a ManyToManyField. Related objects are only</span>
+<span class="sd">        serialized as references to the object&#39;s PK (i.e. the related *data*</span>
+<span class="sd">        is not dumped, just the relation).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">through</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">auto_created</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_start_relational_field</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_natural_keys</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="s">&#39;natural_key&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>If the objects in the m2m have a natural key, use it</p></td><td class="code"><div class="highlight"><pre>                <span class="k">def</span> <span class="nf">handle_m2m</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+                    <span class="n">natural</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">natural_key</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Iterable natural keys are rolled out as subelements</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                    <span class="k">for</span> <span class="n">key_value</span> <span class="ow">in</span> <span class="n">natural</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;natural&quot;</span><span class="p">,</span> <span class="p">{})</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">characters</span><span class="p">(</span><span class="n">smart_unicode</span><span class="p">(</span><span class="n">key_value</span><span class="p">))</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;natural&quot;</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">def</span> <span class="nf">handle_m2m</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">addQuickElement</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">,</span> <span class="n">attrs</span><span class="o">=</span><span class="p">{</span>
+                        <span class="s">&#39;pk&#39;</span> <span class="p">:</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">_get_pk_val</span><span class="p">())</span>
+                    <span class="p">})</span>
+            <span class="k">for</span> <span class="n">relobj</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">)</span><span class="o">.</span><span class="n">iterator</span><span class="p">():</span>
+                <span class="n">handle_m2m</span><span class="p">(</span><span class="n">relobj</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">endElement</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_start_relational_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper to output the &lt;field&gt; element for relational fields</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">xml</span><span class="o">.</span><span class="n">startElement</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&quot;name&quot;</span> <span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s">&quot;rel&quot;</span>  <span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">,</span>
+            <span class="s">&quot;to&quot;</span>   <span class="p">:</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="p">),</span>
+        <span class="p">})</span>
+
+<span class="k">class</span> <span class="nc">Deserializer</span><span class="p">(</span><span class="n">base</span><span class="o">.</span><span class="n">Deserializer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Deserialize XML.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream_or_string</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">Deserializer</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">stream_or_string</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_stream</span> <span class="o">=</span> <span class="n">pulldom</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;using&#39;</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">event</span><span class="p">,</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_stream</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">event</span> <span class="o">==</span> <span class="s">&quot;START_ELEMENT&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">nodeName</span> <span class="o">==</span> <span class="s">&quot;object&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">event_stream</span><span class="o">.</span><span class="n">expandNode</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_object</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">StopIteration</span>
+
+    <span class="k">def</span> <span class="nf">_handle_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Convert an &lt;object&gt; node to a DeserializedObject.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Look up the model using the model loading mechanism. If this fails,
+bail.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">Model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_model_from_node</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="s">&quot;model&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Start building a data dictionary from the object.
+If the node is missing the pk set it to None</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">hasAttribute</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">):</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="n">Model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">attname</span> <span class="p">:</span> <span class="n">Model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">pk</span><span class="p">)}</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Also start building a dict of m2m data (this is saved as
+{m2m<em>accessor</em>attribute : [list<em>of</em>related_objects]})</p></td><td class="code"><div class="highlight"><pre>        <span class="n">m2m_data</span> <span class="o">=</span> <span class="p">{}</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Deseralize each field.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">field_node</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>If the field is missing the name attribute, bail (are you
+sensing a pattern here?)</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_name</span> <span class="o">=</span> <span class="n">field_node</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">field_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">base</span><span class="o">.</span><span class="n">DeserializationError</span><span class="p">(</span><span class="s">&quot;&lt;field&gt; node is missing the &#39;name&#39; attribute&quot;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Get the field from the Model. This will raise a
+FieldDoesNotExist if, well, the field doesn't exist, which will
+be propagated correctly.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field</span> <span class="o">=</span> <span class="n">Model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>As is usually the case, relation fields get the special treatment.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToManyRel</span><span class="p">):</span>
+                <span class="n">m2m_data</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_m2m_field_node</span><span class="p">(</span><span class="n">field_node</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">ManyToOneRel</span><span class="p">):</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">attname</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handle_fk_field_node</span><span class="p">(</span><span class="n">field_node</span><span class="p">,</span> <span class="n">field</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">field_node</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;None&#39;</span><span class="p">):</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">getInnerText</span><span class="p">(</span><span class="n">field_node</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">field</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Return a DeserializedObject so that the m2m data has a place to live.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">base</span><span class="o">.</span><span class="n">DeserializedObject</span><span class="p">(</span><span class="n">Model</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">),</span> <span class="n">m2m_data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_handle_fk_field_node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle a &lt;field&gt; node for a ForeignKey</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Check if there is a child node named 'None', returning None if so.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;None&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_default_manager</span><span class="p">,</span> <span class="s">&#39;get_by_natural_key&#39;</span><span class="p">):</span>
+                <span class="n">keys</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;natural&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">keys</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>If there are 'natural' subelements, it must be a natural key</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">field_value</span> <span class="o">=</span> <span class="p">[</span><span class="n">getInnerText</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+                    <span class="n">obj</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">db_manager</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">get_by_natural_key</span><span class="p">(</span><span class="o">*</span><span class="n">field_value</span><span class="p">)</span>
+                    <span class="n">obj_pk</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>If this is a natural foreign key to an object that
+has a FK/O2O as the foreign key, use the FK value</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">rel</span><span class="p">:</span>
+                        <span class="n">obj_pk</span> <span class="o">=</span> <span class="n">obj_pk</span><span class="o">.</span><span class="n">pk</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Otherwise, treat like a normal PK</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">field_value</span> <span class="o">=</span> <span class="n">getInnerText</span><span class="p">(</span><span class="n">node</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                    <span class="n">obj_pk</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span><span class="p">)</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">field_value</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">obj_pk</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">field_value</span> <span class="o">=</span> <span class="n">getInnerText</span><span class="p">(</span><span class="n">node</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span><span class="p">)</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">field_value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_handle_m2m_field_node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle a &lt;field&gt; node for a ManyToManyField.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_default_manager</span><span class="p">,</span> <span class="s">&#39;get_by_natural_key&#39;</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">m2m_convert</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+                <span class="n">keys</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&#39;natural&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">keys</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>If there are 'natural' subelements, it must be a natural key</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">field_value</span> <span class="o">=</span> <span class="p">[</span><span class="n">getInnerText</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+                    <span class="n">obj_pk</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">db_manager</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="p">)</span><span class="o">.</span><span class="n">get_by_natural_key</span><span class="p">(</span><span class="o">*</span><span class="n">field_value</span><span class="p">)</span><span class="o">.</span><span class="n">pk</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Otherwise, treat like a normal PK value.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">obj_pk</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">))</span>
+                <span class="k">return</span> <span class="n">obj_pk</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">m2m_convert</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="n">field</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">to_python</span><span class="p">(</span><span class="n">n</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">))</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">m2m_convert</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">)]</span>
+
+    <span class="k">def</span> <span class="nf">_get_model_from_node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">attr</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper to look up a model from a &lt;object model=...&gt; or a &lt;field</span>
+<span class="sd">        rel=... to=...&gt; node.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">model_identifier</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="n">attr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">model_identifier</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">base</span><span class="o">.</span><span class="n">DeserializationError</span><span class="p">(</span>
+                <span class="s">&quot;&lt;</span><span class="si">%s</span><span class="s">&gt; node is missing the required &#39;</span><span class="si">%s</span><span class="s">&#39; attribute&quot;</span> \
+                    <span class="o">%</span> <span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">nodeName</span><span class="p">,</span> <span class="n">attr</span><span class="p">))</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">Model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">get_model</span><span class="p">(</span><span class="o">*</span><span class="n">model_identifier</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&quot;.&quot;</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+            <span class="n">Model</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">Model</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">base</span><span class="o">.</span><span class="n">DeserializationError</span><span class="p">(</span>
+                <span class="s">&quot;&lt;</span><span class="si">%s</span><span class="s">&gt; node has invalid model identifier: &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> \
+                    <span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">nodeName</span><span class="p">,</span> <span class="n">model_identifier</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">Model</span>
+
+
+<span class="k">def</span> <span class="nf">getInnerText</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get all the inner text of a DOM node (recursively).</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>inspired by http://mail.python.org/pipermail/xml-sig/2005-March/011022.html</p></td><td class="code"><div class="highlight"><pre>    <span class="n">inner_text</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">childNodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">nodeType</span> <span class="o">==</span> <span class="n">child</span><span class="o">.</span><span class="n">TEXT_NODE</span> <span class="ow">or</span> <span class="n">child</span><span class="o">.</span><span class="n">nodeType</span> <span class="o">==</span> <span class="n">child</span><span class="o">.</span><span class="n">CDATA_SECTION_NODE</span><span class="p">:</span>
+            <span class="n">inner_text</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">child</span><span class="o">.</span><span class="n">nodeType</span> <span class="o">==</span> <span class="n">child</span><span class="o">.</span><span class="n">ELEMENT_NODE</span><span class="p">:</span>
+            <span class="n">inner_text</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">getInnerText</span><span class="p">(</span><span class="n">child</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+           <span class="k">pass</span>
+    <span class="k">return</span> <span class="s">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">inner_text</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › views › tests › debug.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>debug.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.files.uploadedfile</span> <span class="kn">import</span> <span class="n">SimpleUploadedFile</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">RequestFactory</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="p">(</span><span class="n">setup_test_template_loader</span><span class="p">,</span>
+                               <span class="n">restore_template_loaders</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.core.urlresolvers</span> <span class="kn">import</span> <span class="n">reverse</span>
+<span class="kn">from</span> <span class="nn">django.views.debug</span> <span class="kn">import</span> <span class="n">ExceptionReporter</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">mail</span>
+
+<span class="kn">from</span> <span class="nn">..</span> <span class="kn">import</span> <span class="n">BrokenException</span><span class="p">,</span> <span class="n">except_args</span>
+<span class="kn">from</span> <span class="nn">..views</span> <span class="kn">import</span> <span class="p">(</span><span class="n">sensitive_view</span><span class="p">,</span> <span class="n">non_sensitive_view</span><span class="p">,</span> <span class="n">paranoid_view</span><span class="p">,</span>
+    <span class="n">custom_exception_reporter_filter_view</span><span class="p">,</span> <span class="n">sensitive_method_view</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">DebugViewTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">urls</span> <span class="o">=</span> <span class="s">&quot;regressiontests.views.urls&quot;</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_debug</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_template_debug</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DEBUG</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_debug</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DEBUG</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_template_debug</span>
+
+    <span class="k">def</span> <span class="nf">test_files</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/raises/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;file_data.txt&#39;</span><span class="p">:</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;file_data.txt&#39;</span><span class="p">,</span> <span class="s">&#39;haha&#39;</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/raises/&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;file_data.txt&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;haha&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_403</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Ensure no 403.html template exists to test the default case.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">setup_test_template_loader</span><span class="p">({})</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/views/raises403/&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;&lt;h1&gt;403 Forbidden&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">403</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">restore_template_loaders</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_403_template</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Set up a test 403.html template.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">setup_test_template_loader</span><span class="p">(</span>
+            <span class="p">{</span><span class="s">&#39;403.html&#39;</span><span class="p">:</span> <span class="s">&#39;This is a test template for a 403 Forbidden error.&#39;</span><span class="p">}</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/views/raises403/&#39;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;test template&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">403</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">restore_template_loaders</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_404</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/views/raises404/&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="p">,</span> <span class="mi">404</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_view_exceptions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">except_args</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">BrokenException</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+                <span class="n">reverse</span><span class="p">(</span><span class="s">&#39;view_exception&#39;</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,)))</span>
+
+    <span class="k">def</span> <span class="nf">test_template_exceptions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">except_args</span><span class="p">)):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">reverse</span><span class="p">(</span><span class="s">&#39;template_exception&#39;</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">n</span><span class="p">,)))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">raising_loc</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">trace</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="o">-</span><span class="mi">2</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">raising_loc</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s">&#39;raise BrokenException&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;Failed to find &#39;raise BrokenException&#39; in last frame of traceback, instead found: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span>
+                        <span class="n">raising_loc</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_template_loader_postmortem</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">reverse</span><span class="p">(</span><span class="s">&#39;raises_template_does_not_exist&#39;</span><span class="p">))</span>
+        <span class="n">template_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s">&#39;templates&#39;</span><span class="p">,</span> <span class="s">&#39;i_dont_exist.html&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">template_path</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ExceptionReporterTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_request_and_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;A simple exception report can be generated&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_html</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h1&gt;ValueError at /test_view/&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;pre class=&quot;exception_value&quot;&gt;Can&amp;#39;t find my keys&lt;/pre&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request Method:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request URL:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Type:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Value:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Traceback &#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Request information&lt;/h2&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;p&gt;Request data not supplied&lt;/p&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An exception report can be generated without request&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_html</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h1&gt;ValueError&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;pre class=&quot;exception_value&quot;&gt;Can&amp;#39;t find my keys&lt;/pre&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request Method:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request URL:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Type:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Value:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Traceback &#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Request information&lt;/h2&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;p&gt;Request data not supplied&lt;/p&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An exception report can be generated for just a request&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_html</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h1&gt;Report at /test_view/&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;pre class=&quot;exception_value&quot;&gt;No exception supplied&lt;/pre&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request Method:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request URL:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Type:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Value:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Traceback &#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Request information&lt;/h2&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;p&gt;Request data not supplied&lt;/p&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_request_and_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;A message can be provided in addition to a request&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&quot;I&#39;m a little teapot&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_html</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h1&gt;Report at /test_view/&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;pre class=&quot;exception_value&quot;&gt;I&amp;#39;m a little teapot&lt;/pre&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request Method:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request URL:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Type:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Value:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Traceback &#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Request information&lt;/h2&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;p&gt;Request data not supplied&lt;/p&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_message_only</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&quot;I&#39;m a little teapot&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">html</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_html</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h1&gt;Report&lt;/h1&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;pre class=&quot;exception_value&quot;&gt;I&amp;#39;m a little teapot&lt;/pre&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request Method:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Request URL:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Type:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;th&gt;Exception Value:&lt;/th&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Traceback &#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;h2&gt;Request information&lt;/h2&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;&lt;p&gt;Request data not supplied&lt;/p&gt;&#39;</span><span class="p">,</span> <span class="n">html</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PlainTextReportTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_request_and_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;A simple exception report can be generated&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_text</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;ValueError at /test_view/&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Request Method:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Request URL:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Exception Type:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Exception Value:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Traceback:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Request information:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;Request data not supplied&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An exception report can be generated without request&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">tb</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_text</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;ValueError&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&quot;Can&#39;t find my keys&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;Request Method:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;Request URL:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Exception Type:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Exception Value:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Traceback:&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;Request data not supplied&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_exception</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An exception report can be generated for just a request&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_text</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_request_and_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;A message can be provided in addition to a request&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/test_view/&#39;</span><span class="p">)</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&quot;I&#39;m a little teapot&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_text</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_message_only</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">reporter</span> <span class="o">=</span> <span class="n">ExceptionReporter</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="s">&quot;I&#39;m a little teapot&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">get_traceback_text</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">ExceptionReportTestMixin</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Mixin used in the ExceptionReporterFilterTests and
+AjaxResponseExceptionReporterFilter tests below</p></td><td class="code"><div class="highlight"><pre>    <span class="n">breakfast_data</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;sausage-key&#39;</span><span class="p">:</span> <span class="s">&#39;sausage-value&#39;</span><span class="p">,</span>
+                      <span class="s">&#39;baked-beans-key&#39;</span><span class="p">:</span> <span class="s">&#39;baked-beans-value&#39;</span><span class="p">,</span>
+                      <span class="s">&#39;hash-brown-key&#39;</span><span class="p">:</span> <span class="s">&#39;hash-brown-value&#39;</span><span class="p">,</span>
+                      <span class="s">&#39;bacon-key&#39;</span><span class="p">:</span> <span class="s">&#39;bacon-value&#39;</span><span class="p">,}</span>
+
+    <span class="k">def</span> <span class="nf">verify_unsafe_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                               <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that potentially sensitive info are displayed in the response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_vars</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>All variables are shown.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_POST_params</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>All POST parameters are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">verify_safe_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                             <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that certain sensitive info are not displayed in the response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_vars</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Non-sensitive variable's name and value are shown.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Sensitive variable's name is shown but not its value.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_POST_params</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>All POST parameters' names are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Non-sensitive POST parameters' values are shown.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;baked-beans-value&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;hash-brown-value&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Sensitive POST parameters' values are not shown.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;sausage-value&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;bacon-value&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">verify_paranoid_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                                 <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that no variables or POST parameters are displayed in the response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_vars</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Show variable names but not their values.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">check_for_POST_params</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>All POST parameters' names are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>No POST parameters' values are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertNotContains</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">status_code</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">verify_unsafe_email</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that potentially sensitive info are displayed in the email report.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;Admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@fattie-breakie.com&#39;</span><span class="p">),)):</span>
+            <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Empty outbox</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Frames vars are never shown in plain text email reports.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">check_for_POST_params</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>All POST parameters are shown.</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">verify_safe_email</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">,</span> <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that certain sensitive info are not displayed in the email report.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;Admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@fattie-breakie.com&#39;</span><span class="p">),)):</span>
+            <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Empty outbox</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Frames vars are never shown in plain text email reports.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">check_for_POST_params</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>All POST parameters' names are shown.</p></td><td class="code"><div class="highlight"><pre>                    <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Non-sensitive POST parameters' values are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;baked-beans-value&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;hash-brown-value&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Sensitive POST parameters' values are not shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;sausage-value&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;bacon-value&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">verify_paranoid_email</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">view</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Asserts that no variables or POST parameters are displayed in the email report.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;Admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@fattie-breakie.com&#39;</span><span class="p">),)):</span>
+            <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span> <span class="o">=</span> <span class="p">[]</span> <span class="c"># Empty outbox</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rf</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s">&#39;/some_url/&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="p">)</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">view</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">email</span> <span class="o">=</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Frames vars are never shown in plain text email reports.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;cooked_eggs&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;scrambled&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;sauce&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;worcestershire&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">breakfast_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>All POST parameters' names are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>No POST parameters' values are shown.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">email</span><span class="o">.</span><span class="n">body</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ExceptionReporterFilterTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">,</span> <span class="n">ExceptionReportTestMixin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Ensure that sensitive information can be filtered out of error reports.</span>
+<span class="sd">    Refs #14614.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_non_sensitive_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that everything (request info and frame variables) can bee seen</span>
+<span class="sd">        in the default error reports for non-sensitive requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_sensitive_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that sensitive POST parameters and frame variables cannot be</span>
+<span class="sd">        seen in the default error reports for sensitive requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_safe_response</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_safe_email</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_paranoid_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that no POST parameters and frame variables can be seen in the</span>
+<span class="sd">        default error reports for &quot;paranoid&quot; requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_paranoid_response</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_paranoid_email</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_exception_reporter_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that it&#39;s possible to assign an exception reporter filter to</span>
+<span class="sd">        the request to bypass the one set in DEFAULT_EXCEPTION_REPORTER_FILTER.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_sensitive_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the sensitive_variables decorator works with object</span>
+<span class="sd">        methods.</span>
+<span class="sd">        Refs #18379.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">sensitive_method_view</span><span class="p">,</span>
+                                        <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_email</span><span class="p">(</span><span class="n">sensitive_method_view</span><span class="p">,</span>
+                                     <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_safe_response</span><span class="p">(</span><span class="n">sensitive_method_view</span><span class="p">,</span>
+                                      <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_safe_email</span><span class="p">(</span><span class="n">sensitive_method_view</span><span class="p">,</span>
+                                   <span class="n">check_for_POST_params</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">AjaxResponseExceptionReporterFilter</span><span class="p">(</span><span class="n">TestCase</span><span class="p">,</span> <span class="n">ExceptionReportTestMixin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Ensure that sensitive information can be filtered out of error reports.</span>
+
+<span class="sd">    Here we specifically test the plain text 500 debug-only error page served</span>
+<span class="sd">    when it has been detected the request was sent by JS code. We don&#39;t check</span>
+<span class="sd">    for (non)existence of frames vars in the traceback information section of</span>
+<span class="sd">    the response content because we don&#39;t include them in these error pages.</span>
+<span class="sd">    Refs #14614.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">(</span><span class="n">HTTP_X_REQUESTED_WITH</span><span class="o">=</span><span class="s">&#39;XMLHttpRequest&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_non_sensitive_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that request info can bee seen in the default error reports for</span>
+<span class="sd">        non-sensitive requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">non_sensitive_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_sensitive_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that sensitive POST parameters cannot be seen in the default</span>
+<span class="sd">        error reports for sensitive requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_safe_response</span><span class="p">(</span><span class="n">sensitive_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_paranoid_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that no POST parameters can be seen in the default error reports</span>
+<span class="sd">        for &quot;paranoid&quot; requests.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_paranoid_response</span><span class="p">(</span><span class="n">paranoid_view</span><span class="p">,</span> <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_exception_reporter_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that it&#39;s possible to assign an exception reporter filter to</span>
+<span class="sd">        the request to bypass the one set in DEFAULT_EXCEPTION_REPORTER_FILTER.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">,</span>
+                <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">verify_unsafe_response</span><span class="p">(</span><span class="n">custom_exception_reporter_filter_view</span><span class="p">,</span>
+                <span class="n">check_for_vars</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

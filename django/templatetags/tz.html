@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › templatetags › tz.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>tz.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">tzinfo</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">pytz</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">pytz</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">Node</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">TemplateSyntaxError</span><span class="p">,</span> <span class="n">Library</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">timezone</span>
+
+<span class="n">register</span> <span class="o">=</span> <span class="n">Library</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>HACK: datetime is an old-style class, create a new-style equivalent
+so we can define additional attributes.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">datetimeobject</span><span class="p">(</span><span class="n">datetime</span><span class="p">,</span> <span class="nb">object</span><span class="p">):</span>
+    <span class="k">pass</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Template filters</p></td><td class="code"><div class="highlight"><pre><span class="nd">@register.filter</span>
+<span class="k">def</span> <span class="nf">localtime</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Converts a datetime to local time in the active time zone.</span>
+
+<span class="sd">    This only makes sense within a {% localtime off %} block.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">do_timezone</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">timezone</span><span class="o">.</span><span class="n">get_current_timezone</span><span class="p">())</span>
+
+
+<span class="nd">@register.filter</span>
+<span class="k">def</span> <span class="nf">utc</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Converts a datetime to UTC.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">do_timezone</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+
+
+<span class="nd">@register.filter</span><span class="p">(</span><span class="s">&#39;timezone&#39;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">do_timezone</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Converts a datetime to local time in a given time zone.</span>
+
+<span class="sd">    The argument must be an instance of a tzinfo subclass or a time zone name.</span>
+<span class="sd">    If it is a time zone name, pytz is required.</span>
+
+<span class="sd">    Naive datetimes are assumed to be in local time in the default time zone.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Obtain a timezone-aware datetime</p></td><td class="code"><div class="highlight"><pre>    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">timezone</span><span class="o">.</span><span class="n">is_naive</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="n">default_timezone</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">get_default_timezone</span><span class="p">()</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">make_aware</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">default_timezone</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Filters must never raise exceptions, and pytz' exceptions inherit
+Exception directly, not a specific subclass. So catch everything.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Obtain a tzinfo instance</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">tzinfo</span><span class="p">):</span>
+        <span class="n">tz</span> <span class="o">=</span> <span class="n">arg</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pytz</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">tz</span> <span class="o">=</span> <span class="n">pytz</span><span class="o">.</span><span class="n">timezone</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">pytz</span><span class="o">.</span><span class="n">UnknownTimeZoneError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">localtime</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">tz</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>HACK: the convert<em>to</em>local_time flag will prevent
+      automatic conversion of the value to local time.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">result</span> <span class="o">=</span> <span class="n">datetimeobject</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">year</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">day</span><span class="p">,</span>
+                            <span class="n">result</span><span class="o">.</span><span class="n">hour</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">minute</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">second</span><span class="p">,</span>
+                            <span class="n">result</span><span class="o">.</span><span class="n">microsecond</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">tzinfo</span><span class="p">)</span>
+    <span class="n">result</span><span class="o">.</span><span class="n">convert_to_local_time</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="k">return</span> <span class="n">result</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Template tags</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">LocalTimeNode</span><span class="p">(</span><span class="n">Node</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Template node class used by ``localtime_tag``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodelist</span><span class="p">,</span> <span class="n">use_tz</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span> <span class="o">=</span> <span class="n">nodelist</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_tz</span> <span class="o">=</span> <span class="n">use_tz</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="n">old_setting</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">use_tz</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">use_tz</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_tz</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">use_tz</span> <span class="o">=</span> <span class="n">old_setting</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+
+<span class="k">class</span> <span class="nc">TimezoneNode</span><span class="p">(</span><span class="n">Node</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Template node class used by ``timezone_tag``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodelist</span><span class="p">,</span> <span class="n">tz</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span> <span class="o">=</span> <span class="n">nodelist</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tz</span> <span class="o">=</span> <span class="n">tz</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">timezone</span><span class="o">.</span><span class="n">override</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tz</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">context</span><span class="p">)):</span>
+            <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodelist</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+
+<span class="k">class</span> <span class="nc">GetCurrentTimezoneNode</span><span class="p">(</span><span class="n">Node</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Template node class used by ``get_current_timezone_tag``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">variable</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">variable</span> <span class="o">=</span> <span class="n">variable</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="n">context</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">variable</span><span class="p">]</span> <span class="o">=</span> <span class="n">timezone</span><span class="o">.</span><span class="n">get_current_timezone_name</span><span class="p">()</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span>
+
+
+<span class="nd">@register.tag</span><span class="p">(</span><span class="s">&#39;localtime&#39;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">localtime_tag</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Forces or prevents conversion of datetime objects to local time,</span>
+<span class="sd">    regardless of the value of ``settings.USE_TZ``.</span>
+
+<span class="sd">    Sample usage::</span>
+
+<span class="sd">        {% localtime off %}{{ value_in_utc }}{% endlocaltime %}</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">bits</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">split_contents</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">use_tz</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">bits</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;on&#39;</span><span class="p">,</span> <span class="s">&#39;off&#39;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%r</span><span class="s"> argument should be &#39;on&#39; or &#39;off&#39;&quot;</span> <span class="o">%</span>
+                                  <span class="n">bits</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">use_tz</span> <span class="o">=</span> <span class="n">bits</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;on&#39;</span>
+    <span class="n">nodelist</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">((</span><span class="s">&#39;endlocaltime&#39;</span><span class="p">,))</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">delete_first_token</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">LocalTimeNode</span><span class="p">(</span><span class="n">nodelist</span><span class="p">,</span> <span class="n">use_tz</span><span class="p">)</span>
+
+
+<span class="nd">@register.tag</span><span class="p">(</span><span class="s">&#39;timezone&#39;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">timezone_tag</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Enables a given time zone just for this block.</span>
+
+<span class="sd">    The ``timezone`` argument must be an instance of a ``tzinfo`` subclass, a</span>
+<span class="sd">    time zone name, or ``None``. If is it a time zone name, pytz is required.</span>
+<span class="sd">    If it is ``None``, the default time zone is used within the block.</span>
+
+<span class="sd">    Sample usage::</span>
+
+<span class="sd">        {% timezone &quot;Europe/Paris&quot; %}</span>
+<span class="sd">            It is {{ now }} in Paris.</span>
+<span class="sd">        {% endtimezone %}</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">bits</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">split_contents</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&quot;&#39;</span><span class="si">%s</span><span class="s">&#39; takes one argument (timezone)&quot;</span> <span class="o">%</span>
+                                  <span class="n">bits</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">tz</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">compile_filter</span><span class="p">(</span><span class="n">bits</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">nodelist</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">((</span><span class="s">&#39;endtimezone&#39;</span><span class="p">,))</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">delete_first_token</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">TimezoneNode</span><span class="p">(</span><span class="n">nodelist</span><span class="p">,</span> <span class="n">tz</span><span class="p">)</span>
+
+
+<span class="nd">@register.tag</span><span class="p">(</span><span class="s">&quot;get_current_timezone&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">get_current_timezone_tag</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Stores the name of the current time zone in the context.</span>
+
+<span class="sd">    Usage::</span>
+
+<span class="sd">        {% get_current_timezone as TIME_ZONE %}</span>
+
+<span class="sd">    This will fetch the currently active time zone and put its name</span>
+<span class="sd">    into the ``TIME_ZONE`` context variable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">contents</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span> <span class="ow">or</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#39;as&#39;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">TemplateSyntaxError</span><span class="p">(</span><span class="s">&quot;&#39;get_current_timezone&#39; requires &quot;</span>
+                                  <span class="s">&quot;&#39;as variable&#39; (got </span><span class="si">%r</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="n">args</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">GetCurrentTimezoneNode</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

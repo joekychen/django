@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › template › response.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>response.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpResponse</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">loader</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">RequestContext</span>
+
+
+<span class="k">class</span> <span class="nc">ContentNotRenderedError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">SimpleTemplateResponse</span><span class="p">(</span><span class="n">HttpResponse</span><span class="p">):</span>
+    <span class="n">rendering_attrs</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;template_name&#39;</span><span class="p">,</span> <span class="s">&#39;context_data&#39;</span><span class="p">,</span> <span class="s">&#39;_post_render_callbacks&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+            <span class="n">mimetype</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>It would seem obvious to call these next two members 'template' and
+'context', but those names are reserved as part of the test Client
+API. To avoid the name collision, we use tricky-to-debug problems</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">template_name</span> <span class="o">=</span> <span class="n">template</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_data</span> <span class="o">=</span> <span class="n">context</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_post_render_callbacks</span> <span class="o">=</span> <span class="p">[]</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>content argument doesn't make sense here because it will be replaced
+with rendered template so we always pass empty string in order to
+prevent errors and provide shorter signature.</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">super</span><span class="p">(</span><span class="n">SimpleTemplateResponse</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span>
+                                                     <span class="n">mimetype</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p><em>is</em>rendered tracks whether the template and context has been baked
+into a final response.
+Super <strong>init</strong> doesn't know any better than to set self.content to
+the empty string we just gave it, which wrongly sets <em>is</em>rendered
+True, so we initialize it to False after the call to super <strong>init</strong>.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">__getstate__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Pickling support function.</span>
+
+<span class="sd">        Ensures that the object can&#39;t be pickled before it has been</span>
+<span class="sd">        rendered, and that the pickled state only includes rendered</span>
+<span class="sd">        data, not the data used to construct the response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">obj_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ContentNotRenderedError</span><span class="p">(</span><span class="s">&#39;The response content must be &#39;</span>
+                                          <span class="s">&#39;rendered before it can be pickled.&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">rendering_attrs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">attr</span> <span class="ow">in</span> <span class="n">obj_dict</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">obj_dict</span><span class="p">[</span><span class="n">attr</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">obj_dict</span>
+
+    <span class="k">def</span> <span class="nf">resolve_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="p">):</span>
+        <span class="s">&quot;Accepts a template object, path-to-template or list of paths&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">loader</span><span class="o">.</span><span class="n">select_template</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">loader</span><span class="o">.</span><span class="n">get_template</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">template</span>
+
+    <span class="k">def</span> <span class="nf">resolve_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Converts context data into a full Context object</span>
+<span class="sd">        (assuming it isn&#39;t already a Context object).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">Context</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">context</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Context</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">rendered_content</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the freshly rendered content for the template and context</span>
+<span class="sd">        described by the TemplateResponse.</span>
+
+<span class="sd">        This *does not* set the final content of the response. To set the</span>
+<span class="sd">        response content, you must either call render(), or set the</span>
+<span class="sd">        content explicitly using the value of this property.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve_template</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">template_name</span><span class="p">)</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve_context</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">context_data</span><span class="p">)</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="n">template</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">content</span>
+
+    <span class="k">def</span> <span class="nf">add_post_render_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">callback</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Adds a new post-rendering callback.</span>
+
+<span class="sd">        If the response has already been rendered,</span>
+<span class="sd">        invoke the callback immediately.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span><span class="p">:</span>
+            <span class="n">callback</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_post_render_callbacks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">render</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Renders (thereby finalizing) the content of the response.</span>
+
+<span class="sd">        If the content has already been rendered, this is a no-op.</span>
+
+<span class="sd">        Returns the baked response instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">retval</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_content</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rendered_content</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">post_callback</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_post_render_callbacks</span><span class="p">:</span>
+                <span class="n">newretval</span> <span class="o">=</span> <span class="n">post_callback</span><span class="p">(</span><span class="n">retval</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">newretval</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="n">retval</span> <span class="o">=</span> <span class="n">newretval</span>
+        <span class="k">return</span> <span class="n">retval</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_rendered</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ContentNotRenderedError</span><span class="p">(</span><span class="s">&#39;The response content must be &#39;</span>
+                                          <span class="s">&#39;rendered before it can be iterated over.&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">SimpleTemplateResponse</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__iter__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_get_content</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ContentNotRenderedError</span><span class="p">(</span><span class="s">&#39;The response content must be &#39;</span>
+                                          <span class="s">&#39;rendered before it can be accessed.&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">SimpleTemplateResponse</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">_get_content</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_set_content</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sets the content for the response</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SimpleTemplateResponse</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">_set_content</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_rendered</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="n">content</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_content</span><span class="p">,</span> <span class="n">_set_content</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TemplateResponse</span><span class="p">(</span><span class="n">SimpleTemplateResponse</span><span class="p">):</span>
+    <span class="n">rendering_attrs</span> <span class="o">=</span> <span class="n">SimpleTemplateResponse</span><span class="o">.</span><span class="n">rendering_attrs</span> <span class="o">+</span> \
+        <span class="p">[</span><span class="s">&#39;_request&#39;</span><span class="p">,</span> <span class="s">&#39;_current_app&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">template</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">content_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+            <span class="n">status</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">mimetype</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">current_app</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>self.request gets over-written by django.test.client.Client - and
+unlike context<em>data and template</em>name the _request should not
+be considered part of the public API.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_request</span> <span class="o">=</span> <span class="n">request</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>As a convenience we'll allow callers to provide current_app without
+having to avoid needing to create the RequestContext directly</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_current_app</span> <span class="o">=</span> <span class="n">current_app</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">TemplateResponse</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span>
+            <span class="n">template</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="n">content_type</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">mimetype</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">resolve_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Convert context data into a full RequestContext object</span>
+<span class="sd">        (assuming it isn&#39;t already a Context object).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">Context</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">context</span>
+        <span class="k">return</span> <span class="n">RequestContext</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_request</span><span class="p">,</span> <span class="n">context</span><span class="p">,</span> <span class="n">current_app</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_app</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

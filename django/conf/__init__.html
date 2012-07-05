@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › conf › __init__.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>__init__.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Settings and configuration for Django.</span>
+
+<span class="sd">Values will be read from the module specified by the DJANGO_SETTINGS_MODULE environment</span>
+<span class="sd">variable, and then from django.conf.global_settings; see the global settings file for</span>
+<span class="sd">a list of all possible variables.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">time</span>     <span class="c"># Needed for Windows</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">global_settings</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.utils.functional</span> <span class="kn">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">empty</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">importlib</span>
+
+<span class="n">ENVIRONMENT_VARIABLE</span> <span class="o">=</span> <span class="s">&quot;DJANGO_SETTINGS_MODULE&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">LazySettings</span><span class="p">(</span><span class="n">LazyObject</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A lazy proxy for either global Django settings or a custom settings object.</span>
+<span class="sd">    The user can manually configure settings prior to using them. Otherwise,</span>
+<span class="sd">    Django uses the settings module pointed to by DJANGO_SETTINGS_MODULE.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">_setup</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Load the settings module pointed to by the environment variable. This</span>
+<span class="sd">        is used the first time we need any settings at all, if the user has not</span>
+<span class="sd">        previously configured the settings manually.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">settings_module</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="n">ENVIRONMENT_VARIABLE</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">settings_module</span><span class="p">:</span> <span class="c"># If it&#39;s set but is an empty string.</span>
+                <span class="k">raise</span> <span class="ne">KeyError</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>NOTE: This is arguably an EnvironmentError, but that causes
+problems with Python's interactive help.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s">&quot;Settings cannot be imported, because environment variable </span><span class="si">%s</span><span class="s"> is undefined.&quot;</span> <span class="o">%</span> <span class="n">ENVIRONMENT_VARIABLE</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">Settings</span><span class="p">(</span><span class="n">settings_module</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">configure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default_settings</span><span class="o">=</span><span class="n">global_settings</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Called to manually configure the settings. The &#39;default_settings&#39;</span>
+<span class="sd">        parameter sets where to retrieve any unspecified values from (its</span>
+<span class="sd">        argument must support attribute access (__getattr__)).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wrapped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">empty</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;Settings already configured.&#39;</span><span class="p">)</span>
+        <span class="n">holder</span> <span class="o">=</span> <span class="n">UserSettingsHolder</span><span class="p">(</span><span class="n">default_settings</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">options</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">holder</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wrapped</span> <span class="o">=</span> <span class="n">holder</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">configured</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns True if the settings have already been configured.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wrapped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">empty</span>
+
+
+<span class="k">class</span> <span class="nc">BaseSettings</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Common logic for settings whether set by a module or by the user.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&quot;MEDIA_URL&quot;</span><span class="p">,</span> <span class="s">&quot;STATIC_URL&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">value</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;If set, </span><span class="si">%s</span><span class="s"> must end with a slash&quot;</span> <span class="o">%</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s">&quot;ADMIN_MEDIA_PREFIX&quot;</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;The ADMIN_MEDIA_PREFIX setting has been removed; &quot;</span>
+                          <span class="s">&quot;use STATIC_URL instead.&quot;</span><span class="p">,</span> <span class="ne">DeprecationWarning</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s">&quot;ALLOWED_INCLUDE_ROOTS&quot;</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;The ALLOWED_INCLUDE_ROOTS setting must be set &quot;</span>
+                <span class="s">&quot;to a tuple, not a string.&quot;</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="n">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">Settings</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">settings_module</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>update this dict from global settings (but only for ALL_CAPS settings)</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">setting</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">global_settings</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">setting</span> <span class="o">==</span> <span class="n">setting</span><span class="o">.</span><span class="n">upper</span><span class="p">():</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">setting</span><span class="p">,</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">global_settings</span><span class="p">,</span> <span class="n">setting</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>store the settings module in case someone later cares</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">SETTINGS_MODULE</span> <span class="o">=</span> <span class="n">settings_module</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mod</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">SETTINGS_MODULE</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s">&quot;Could not import settings &#39;</span><span class="si">%s</span><span class="s">&#39; (Is it on sys.path?): </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">SETTINGS_MODULE</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Settings that should be converted into tuples if they're mistakenly entered
+as strings.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tuple_settings</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;INSTALLED_APPS&quot;</span><span class="p">,</span> <span class="s">&quot;TEMPLATE_DIRS&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">setting</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">mod</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">setting</span> <span class="o">==</span> <span class="n">setting</span><span class="o">.</span><span class="n">upper</span><span class="p">():</span>
+                <span class="n">setting_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">setting</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">setting</span> <span class="ow">in</span> <span class="n">tuple_settings</span> <span class="ow">and</span> \
+                        <span class="nb">isinstance</span><span class="p">(</span><span class="n">setting_value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+                    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;The </span><span class="si">%s</span><span class="s"> setting must be a tuple. Please fix your &quot;</span>
+                                  <span class="s">&quot;settings, as auto-correction is now deprecated.&quot;</span> <span class="o">%</span> <span class="n">setting</span><span class="p">,</span>
+                        <span class="ne">PendingDeprecationWarning</span><span class="p">)</span>
+                    <span class="n">setting_value</span> <span class="o">=</span> <span class="p">(</span><span class="n">setting_value</span><span class="p">,)</span> <span class="c"># In case the user forgot the comma.</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">setting</span><span class="p">,</span> <span class="n">setting_value</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">SECRET_KEY</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&quot;The SECRET_KEY setting must not be empty.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">time</span><span class="p">,</span> <span class="s">&#39;tzset&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">TIME_ZONE</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>When we can, attempt to validate the timezone. If we can't find
+this file, no check happens and it's harmless.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">zoneinfo_root</span> <span class="o">=</span> <span class="s">&#39;/usr/share/zoneinfo&#39;</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">zoneinfo_root</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">zoneinfo_root</span><span class="p">,</span> <span class="o">*</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TIME_ZONE</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">))))):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Incorrect timezone setting: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">TIME_ZONE</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Move the time zone info into os.environ. See ticket #2315 for why
+we don't do this unconditionally (breaks Windows).</p></td><td class="code"><div class="highlight"><pre>            <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;TZ&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">TIME_ZONE</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">tzset</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Settings are configured, so we can set up the logger if required</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">LOGGING_CONFIG</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>First find the logging configuration function ...</p></td><td class="code"><div class="highlight"><pre>            <span class="n">logging_config_path</span><span class="p">,</span> <span class="n">logging_config_func_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">LOGGING_CONFIG</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">logging_config_module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">logging_config_path</span><span class="p">)</span>
+            <span class="n">logging_config_func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">logging_config_module</span><span class="p">,</span> <span class="n">logging_config_func_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Backwards-compatibility shim for #16288 fix</p></td><td class="code"><div class="highlight"><pre>            <span class="n">compat_patch_logging_config</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">LOGGING</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>... then invoke it with the logging settings</p></td><td class="code"><div class="highlight"><pre>            <span class="n">logging_config_func</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">LOGGING</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">UserSettingsHolder</span><span class="p">(</span><span class="n">BaseSettings</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Holder for user configured settings.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>SETTINGS_MODULE doesn't make much sense in the manually configured
+(standalone) case.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">SETTINGS_MODULE</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default_settings</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Requests for configuration variables not in this class are satisfied</span>
+<span class="sd">        from the module specified in default_settings (if possible).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default_settings</span> <span class="o">=</span> <span class="n">default_settings</span>
+
+    <span class="k">def</span> <span class="nf">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_settings</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__dir__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="o">+</span> <span class="nb">dir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_settings</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>For Python &lt; 2.6:</p></td><td class="code"><div class="highlight"><pre>    <span class="n">__members__</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dir__</span><span class="p">())</span>
+
+<span class="n">settings</span> <span class="o">=</span> <span class="n">LazySettings</span><span class="p">()</span>
+
+
+
+<span class="k">def</span> <span class="nf">compat_patch_logging_config</span><span class="p">(</span><span class="n">logging_config</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Backwards-compatibility shim for #16288 fix. Takes initial value of</span>
+<span class="sd">    ``LOGGING`` setting and patches it in-place (issuing deprecation warning)</span>
+<span class="sd">    if &quot;mail_admins&quot; logging handler is configured but has no filters.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Shim only if LOGGING["handlers"]["mail_admins"] exists,
+ but has no "filters" key</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="s">&quot;filters&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">logging_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s">&quot;handlers&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s">&quot;mail_admins&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;filters&quot;</span><span class="p">:</span> <span class="p">[]}):</span>
+
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s">&quot;You have no filters defined on the &#39;mail_admins&#39; logging &quot;</span>
+            <span class="s">&quot;handler: adding implicit debug-false-only filter. &quot;</span>
+            <span class="s">&quot;See http://docs.djangoproject.com/en/dev/releases/1.4/&quot;</span>
+            <span class="s">&quot;#request-exceptions-are-now-always-logged&quot;</span><span class="p">,</span>
+            <span class="ne">DeprecationWarning</span><span class="p">)</span>
+
+        <span class="n">filter_name</span> <span class="o">=</span> <span class="s">&quot;require_debug_false&quot;</span>
+
+        <span class="n">filters</span> <span class="o">=</span> <span class="n">logging_config</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&quot;filters&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">while</span> <span class="n">filter_name</span> <span class="ow">in</span> <span class="n">filters</span><span class="p">:</span>
+            <span class="n">filter_name</span> <span class="o">=</span> <span class="n">filter_name</span> <span class="o">+</span> <span class="s">&quot;_&quot;</span>
+
+        <span class="n">filters</span><span class="p">[</span><span class="n">filter_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;()&quot;</span><span class="p">:</span> <span class="s">&quot;django.utils.log.RequireDebugFalse&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="n">logging_config</span><span class="p">[</span><span class="s">&quot;handlers&quot;</span><span class="p">][</span><span class="s">&quot;mail_admins&quot;</span><span class="p">][</span><span class="s">&quot;filters&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">filter_name</span><span class="p">]</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › builtin_server › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">StringIO</span> <span class="kn">import</span> <span class="n">StringIO</span>
+
+<span class="kn">from</span> <span class="nn">django.core.servers.basehttp</span> <span class="kn">import</span> <span class="n">ServerHandler</span>
+<span class="kn">from</span> <span class="nn">django.utils.unittest</span> <span class="kn">import</span> <span class="n">TestCase</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Tests for #9659: wsgi.file_wrapper in the builtin server.
+We need to mock a couple of of handlers and keep track of what
+gets called when using a couple kinds of WSGI apps.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">DummyHandler</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">log_request</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">FileWrapperHandler</span><span class="p">(</span><span class="n">ServerHandler</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">ServerHandler</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">request_handler</span> <span class="o">=</span> <span class="n">DummyHandler</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_used_sendfile</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">sendfile</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_used_sendfile</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+<span class="k">def</span> <span class="nf">wsgi_app</span><span class="p">(</span><span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">):</span>
+    <span class="n">start_response</span><span class="p">(</span><span class="s">&#39;200 OK&#39;</span><span class="p">,</span> <span class="p">[(</span><span class="s">&#39;Content-Type&#39;</span><span class="p">,</span> <span class="s">&#39;text/plain&#39;</span><span class="p">)])</span>
+    <span class="k">return</span> <span class="p">[</span><span class="s">&#39;Hello World!&#39;</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="nf">wsgi_app_file_wrapper</span><span class="p">(</span><span class="n">environ</span><span class="p">,</span> <span class="n">start_response</span><span class="p">):</span>
+    <span class="n">start_response</span><span class="p">(</span><span class="s">&#39;200 OK&#39;</span><span class="p">,</span> <span class="p">[(</span><span class="s">&#39;Content-Type&#39;</span><span class="p">,</span> <span class="s">&#39;text/plain&#39;</span><span class="p">)])</span>
+    <span class="k">return</span> <span class="n">environ</span><span class="p">[</span><span class="s">&#39;wsgi.file_wrapper&#39;</span><span class="p">](</span><span class="n">StringIO</span><span class="p">(</span><span class="s">&#39;foo&#39;</span><span class="p">))</span>
+
+<span class="k">class</span> <span class="nc">WSGIFileWrapperTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test that the wsgi.file_wrapper works for the builting server.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">test_file_wrapper_uses_sendfile</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;SERVER_PROTOCOL&#39;</span><span class="p">:</span> <span class="s">&#39;HTTP/1.0&#39;</span><span class="p">}</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">()</span>
+        <span class="n">handler</span> <span class="o">=</span> <span class="n">FileWrapperHandler</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">StringIO</span><span class="p">(),</span> <span class="n">err</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+        <span class="n">handler</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">wsgi_app_file_wrapper</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">handler</span><span class="o">.</span><span class="n">_used_sendfile</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_file_wrapper_no_sendfile</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;SERVER_PROTOCOL&#39;</span><span class="p">:</span> <span class="s">&#39;HTTP/1.0&#39;</span><span class="p">}</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">()</span>
+        <span class="n">handler</span> <span class="o">=</span> <span class="n">FileWrapperHandler</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">StringIO</span><span class="p">(),</span> <span class="n">err</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+        <span class="n">handler</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">wsgi_app</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">handler</span><span class="o">.</span><span class="n">_used_sendfile</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">handler</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span><span class="s">&#39;Hello World!&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

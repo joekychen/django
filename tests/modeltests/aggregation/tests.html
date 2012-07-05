@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › modeltests › aggregation › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">from</span> <span class="nn">decimal</span> <span class="kn">import</span> <span class="n">Decimal</span>
+
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">Avg</span><span class="p">,</span> <span class="n">Sum</span><span class="p">,</span> <span class="n">Count</span><span class="p">,</span> <span class="n">Max</span><span class="p">,</span> <span class="n">Min</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">Approximate</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Author</span><span class="p">,</span> <span class="n">Publisher</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Store</span>
+
+
+<span class="k">class</span> <span class="nc">BaseAggregateTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">fixtures</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;aggregation.json&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(),</span> <span class="p">{})</span>
+
+    <span class="k">def</span> <span class="nf">test_single_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;age__avg&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">37.4</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">)})</span>
+
+    <span class="k">def</span> <span class="nf">test_multiple_aggregates</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">),</span> <span class="n">Avg</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;age__sum&quot;</span><span class="p">:</span> <span class="mi">337</span><span class="p">,</span> <span class="s">&quot;age__avg&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">37.4</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">)})</span>
+
+    <span class="k">def</span> <span class="nf">test_filter_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">age__gt</span><span class="o">=</span><span class="mi">29</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;age__sum&quot;</span><span class="p">],</span> <span class="mi">254</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_related_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;friends__age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;friends__age__avg&quot;</span><span class="p">],</span> <span class="mf">34.07</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">rating__lt</span><span class="o">=</span><span class="mf">4.5</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;authors__age__avg&quot;</span><span class="p">],</span> <span class="mf">38.2857</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name__contains</span><span class="o">=</span><span class="s">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;book__rating&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;book__rating__avg&quot;</span><span class="p">],</span> <span class="mf">4.0</span><span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;publisher__num_awards&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;publisher__num_awards__sum&quot;</span><span class="p">],</span> <span class="mi">30</span><span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;book__price&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;book__price__sum&quot;</span><span class="p">],</span> <span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;270.27&quot;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_aggregate_multi_join</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Store</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Max</span><span class="p">(</span><span class="s">&quot;books__authors__age&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;books__authors__age__max&quot;</span><span class="p">],</span> <span class="mi">57</span><span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Min</span><span class="p">(</span><span class="s">&quot;book__publisher__num_awards&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;book__publisher__num_awards__min&quot;</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_aggregate_alias</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Store</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Amazon.com&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">amazon_mean</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;books__rating&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vals</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">[</span><span class="s">&quot;amazon_mean&quot;</span><span class="p">],</span> <span class="mf">4.08</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotate_basic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">()</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">),</span> <span class="p">[</span>
+                <span class="s">&quot;The Definitive Guide to Django: Web Development Done Right&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Sams Teach Yourself Django in 24 Hours&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Practical Django Projects&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Python Web Development with Django&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Artificial Intelligence: A Modern Approach&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp&quot;</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="n">b</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">books</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s">&#39;The Definitive Guide to Django: Web Development Done Right&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">mean_age</span><span class="p">,</span> <span class="mf">34.5</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotate_m2m</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">rating__lt</span><span class="o">=</span><span class="mf">4.5</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Artificial Intelligence: A Modern Approach&#39;</span><span class="p">,</span> <span class="mf">51.5</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Practical Django Projects&#39;</span><span class="p">,</span> <span class="mf">29.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Python Web Development with Django&#39;</span><span class="p">,</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">30.3</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">)),</span>
+                <span class="p">(</span><span class="s">&#39;Sams Teach Yourself Django in 24 Hours&#39;</span><span class="p">,</span> <span class="mf">45.0</span><span class="p">)</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">authors__age__avg</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Artificial Intelligence: A Modern Approach&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Practical Django Projects&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Python Web Development with Django&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Sams Teach Yourself Django in 24 Hours&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;The Definitive Guide to Django: Web Development Done Right&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">num_authors</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_backwards_m2m_annotate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">authors</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name__contains</span><span class="o">=</span><span class="s">&quot;a&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;book__rating&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">authors</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Adrian Holovaty&#39;</span><span class="p">,</span> <span class="mf">4.5</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Brad Dayley&#39;</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Jacob Kaplan-Moss&#39;</span><span class="p">,</span> <span class="mf">4.5</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;James Bennett&#39;</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Paul Bissex&#39;</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Stuart Russell&#39;</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">)</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">a</span><span class="p">:</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">a</span><span class="o">.</span><span class="n">book__rating__avg</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">authors</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">authors</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Adrian Holovaty&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Brad Dayley&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Jacob Kaplan-Moss&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;James Bennett&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Jeffrey Forcier&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Paul Bissex&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Peter Norvig&#39;</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Stuart Russell&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Wesley J. Chun&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">a</span><span class="p">:</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">a</span><span class="o">.</span><span class="n">num_books</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_reverse_fkey_annotate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;publisher__num_awards&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Artificial Intelligence: A Modern Approach&#39;</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Paradigms of Artificial Intelligence Programming: Case Studies in Common Lisp&#39;</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Practical Django Projects&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Python Web Development with Django&#39;</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Sams Teach Yourself Django in 24 Hours&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;The Definitive Guide to Django: Web Development Done Right&#39;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">publisher__num_awards__sum</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Sum</span><span class="p">(</span><span class="s">&quot;book__price&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Apress&#39;</span><span class="p">,</span> <span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;59.69&quot;</span><span class="p">)),</span>
+                <span class="p">(</span><span class="s">&quot;Jonno&#39;s House of Books&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Morgan Kaufmann&#39;</span><span class="p">,</span> <span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;75.00&quot;</span><span class="p">)),</span>
+                <span class="p">(</span><span class="s">&#39;Prentice Hall&#39;</span><span class="p">,</span> <span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;112.49&quot;</span><span class="p">)),</span>
+                <span class="p">(</span><span class="s">&#39;Sams&#39;</span><span class="p">,</span> <span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;23.09&quot;</span><span class="p">))</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">book__price__sum</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotate_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;contact_id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;isbn&quot;</span><span class="p">:</span> <span class="s">&quot;159059725&quot;</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">34.5</span><span class="p">,</span>
+                    <span class="s">&quot;name&quot;</span><span class="p">:</span> <span class="s">&quot;The Definitive Guide to Django: Web Development Done Right&quot;</span><span class="p">,</span>
+                    <span class="s">&quot;pages&quot;</span><span class="p">:</span> <span class="mi">447</span><span class="p">,</span>
+                    <span class="s">&quot;price&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;30&quot;</span><span class="p">)),</span>
+                    <span class="s">&quot;pubdate&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2007</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                    <span class="s">&quot;publisher_id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&#39;authors__age&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;pk&#39;</span><span class="p">,</span> <span class="s">&#39;isbn&#39;</span><span class="p">,</span> <span class="s">&#39;mean_age&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;pk&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;isbn&quot;</span><span class="p">:</span> <span class="s">&quot;159059725&quot;</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">34.5</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;name&quot;</span><span class="p">:</span> <span class="s">&quot;The Definitive Guide to Django: Web Development Done Right&quot;</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="p">()</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&#39;authors__age&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;contact_id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;isbn&quot;</span><span class="p">:</span> <span class="s">&quot;159059725&quot;</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">34.5</span><span class="p">,</span>
+                    <span class="s">&quot;name&quot;</span><span class="p">:</span> <span class="s">&quot;The Definitive Guide to Django: Web Development Done Right&quot;</span><span class="p">,</span>
+                    <span class="s">&quot;pages&quot;</span><span class="p">:</span> <span class="mi">447</span><span class="p">,</span>
+                    <span class="s">&quot;price&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;30&quot;</span><span class="p">)),</span>
+                    <span class="s">&quot;pubdate&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2007</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                    <span class="s">&quot;publisher_id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">n_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors__id&quot;</span><span class="p">),</span> <span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span>
+                    <span class="s">&quot;n_authors&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">45.0</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.0</span><span class="p">,</span>
+                    <span class="s">&quot;n_authors&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">37.16</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">,</span>
+                    <span class="s">&quot;n_authors&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">34.5</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+                    <span class="s">&quot;n_authors&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&quot;mean_age&quot;</span><span class="p">:</span> <span class="mf">57.0</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">authors</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;friends__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">authors</span><span class="p">),</span> <span class="mi">9</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">authors</span><span class="p">,</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;Adrian Holovaty&#39;</span><span class="p">,</span> <span class="mf">32.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Brad Dayley&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Jacob Kaplan-Moss&#39;</span><span class="p">,</span> <span class="mf">29.5</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;James Bennett&#39;</span><span class="p">,</span> <span class="mf">34.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Jeffrey Forcier&#39;</span><span class="p">,</span> <span class="mf">27.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Paul Bissex&#39;</span><span class="p">,</span> <span class="mf">31.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Peter Norvig&#39;</span><span class="p">,</span> <span class="mf">46.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Stuart Russell&#39;</span><span class="p">,</span> <span class="mf">57.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="s">&#39;Wesley J. Chun&#39;</span><span class="p">,</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">33.66</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">a</span><span class="p">:</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">a</span><span class="o">.</span><span class="n">friends__age__avg</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;rating__count&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">})</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">,</span> <span class="n">distinct</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;rating__count&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_fkey_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">explicit</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&#39;book__id&#39;</span><span class="p">)))</span>
+        <span class="n">implicit</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&#39;book&#39;</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">explicit</span><span class="p">,</span> <span class="n">implicit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotate_ordering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&#39;rating&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">oldest</span><span class="o">=</span><span class="n">Max</span><span class="p">(</span><span class="s">&#39;authors__age&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;oldest&#39;</span><span class="p">,</span> <span class="s">&#39;rating&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">35</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">45</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">57</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">57</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">oldest</span><span class="o">=</span><span class="n">Max</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;-oldest&quot;</span><span class="p">,</span> <span class="s">&quot;-rating&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">57</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">57</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">3.0</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">45</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&quot;rating&quot;</span><span class="p">:</span> <span class="mf">4.5</span><span class="p">,</span>
+                    <span class="s">&quot;oldest&quot;</span><span class="p">:</span> <span class="mi">35</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_aggregate_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;num_authors&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;num_authors__avg&quot;</span><span class="p">:</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">1.66</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">)})</span>
+
+    <span class="k">def</span> <span class="nf">test_filtering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Expensive Publisher&#39;</span><span class="p">,</span> <span class="n">num_awards</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;ExpensiveBook1&#39;</span><span class="p">,</span>
+            <span class="n">pages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">isbn</span><span class="o">=</span><span class="s">&#39;111&#39;</span><span class="p">,</span>
+            <span class="n">rating</span><span class="o">=</span><span class="mf">3.5</span><span class="p">,</span>
+            <span class="n">price</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;1000&quot;</span><span class="p">),</span>
+            <span class="n">publisher</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">contact_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">pubdate</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;ExpensiveBook2&#39;</span><span class="p">,</span>
+            <span class="n">pages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">isbn</span><span class="o">=</span><span class="s">&#39;222&#39;</span><span class="p">,</span>
+            <span class="n">rating</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span>
+            <span class="n">price</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;1000&quot;</span><span class="p">),</span>
+            <span class="n">publisher</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">contact_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">pubdate</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;ExpensiveBook3&#39;</span><span class="p">,</span>
+            <span class="n">pages</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">isbn</span><span class="o">=</span><span class="s">&#39;333&#39;</span><span class="p">,</span>
+            <span class="n">rating</span><span class="o">=</span><span class="mf">4.5</span><span class="p">,</span>
+            <span class="n">price</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;35&quot;</span><span class="p">),</span>
+            <span class="n">publisher</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
+            <span class="n">contact_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">pubdate</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Expensive Publisher&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">book__price__lt</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;40.0&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Sams&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Expensive Publisher&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">book__price__lt</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;40.0&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Expensive Publisher&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">book__price__lt</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;40.0&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__range</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Sams&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Morgan Kaufmann&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Expensive Publisher&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__range</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Sams&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Morgan Kaufmann&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__in</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Sams&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Morgan Kaufmann&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Expensive Publisher&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__isnull</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">publishers</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;friends__id&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;friends__id__count&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">})</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors__name&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_authors__ge</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;The Definitive Guide to Django: Web Development Done Right&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Artificial Intelligence: A Modern Approach&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="n">b</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">authors</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_friends</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;friends__id&quot;</span><span class="p">,</span> <span class="n">distinct</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_friends</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">authors</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Brad Dayley&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">a</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+                <span class="s">&quot;Prentice Hall&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">book__price__lt</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;40.0&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_books</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;book__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">num_books__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">publishers</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Apress&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">authors__name__contains</span><span class="o">=</span><span class="s">&quot;Norvig&quot;</span><span class="p">,</span> <span class="n">num_authors__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertQuerysetEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="p">,</span> <span class="p">[</span>
+                <span class="s">&quot;Artificial Intelligence: A Modern Approach&quot;</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="k">lambda</span> <span class="n">b</span><span class="p">:</span> <span class="n">b</span><span class="o">.</span><span class="n">name</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_more_aggregation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name__contains</span><span class="o">=</span><span class="s">&#39;Norvig&#39;</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name__contains</span><span class="o">=</span><span class="s">&#39;Done Right&#39;</span><span class="p">)</span>
+        <span class="n">b</span><span class="o">.</span><span class="n">authors</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">b</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">num_authors</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;authors__id&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">authors__name__contains</span><span class="o">=</span><span class="s">&quot;Norvig&quot;</span><span class="p">,</span> <span class="n">num_authors__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;rating&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;rating__avg&quot;</span><span class="p">:</span> <span class="mf">4.25</span><span class="p">})</span>
+
+    <span class="k">def</span> <span class="nf">test_even_more_aggregate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">publishers</span> <span class="o">=</span> <span class="n">Publisher</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">earliest_book</span><span class="o">=</span><span class="n">Min</span><span class="p">(</span><span class="s">&quot;book__pubdate&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">earliest_book</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;earliest_book&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">publishers</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s">&#39;earliest_book&#39;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">1991</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span>
+                    <span class="s">&#39;num_awards&#39;</span><span class="p">:</span> <span class="mi">9</span><span class="p">,</span>
+                    <span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+                    <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Morgan Kaufmann&#39;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&#39;earliest_book&#39;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">1995</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span>
+                    <span class="s">&#39;num_awards&#39;</span><span class="p">:</span> <span class="mi">7</span><span class="p">,</span>
+                    <span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+                    <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Prentice Hall&#39;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&#39;earliest_book&#39;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2007</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                    <span class="s">&#39;num_awards&#39;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+                    <span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Apress&#39;</span>
+                <span class="p">},</span>
+                <span class="p">{</span>
+                    <span class="s">&#39;earliest_book&#39;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">date</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+                    <span class="s">&#39;num_awards&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                    <span class="s">&#39;id&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+                    <span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;Sams&#39;</span>
+                <span class="p">}</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">Store</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">Max</span><span class="p">(</span><span class="s">&quot;friday_night_closing&quot;</span><span class="p">),</span> <span class="n">Min</span><span class="p">(</span><span class="s">&quot;original_opening&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">vals</span><span class="p">,</span>
+            <span class="p">{</span>
+                <span class="s">&quot;friday_night_closing__max&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">time</span><span class="p">(</span><span class="mi">23</span><span class="p">,</span> <span class="mi">59</span><span class="p">,</span> <span class="mi">59</span><span class="p">),</span>
+                <span class="s">&quot;original_opening__min&quot;</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">(</span><span class="mi">1945</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">14</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_annotate_values_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">,</span> <span class="s">&quot;isbn&quot;</span><span class="p">,</span> <span class="s">&quot;mean_age&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&quot;159059725&quot;</span><span class="p">,</span> <span class="mf">34.5</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&quot;isbn&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">(</span><span class="s">&#39;159059725&#39;</span><span class="p">,)</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&quot;mean_age&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">(</span><span class="mf">34.5</span><span class="p">,)</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">mean_age</span><span class="o">=</span><span class="n">Avg</span><span class="p">(</span><span class="s">&quot;authors__age&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&quot;mean_age&quot;</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span><span class="mf">34.5</span><span class="p">])</span>
+
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&quot;price&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="s">&quot;price&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;-count&quot;</span><span class="p">,</span> <span class="s">&quot;price&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">books</span><span class="p">),</span> <span class="p">[</span>
+                <span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&quot;29.69&quot;</span><span class="p">),</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&#39;23.09&#39;</span><span class="p">),</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&#39;30&#39;</span><span class="p">),</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&#39;75&#39;</span><span class="p">),</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">Decimal</span><span class="p">(</span><span class="s">&#39;82.8&#39;</span><span class="p">),</span> <span class="mi">1</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

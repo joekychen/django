@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › backends › mysql › introspection.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>introspection.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.db.backends</span> <span class="kn">import</span> <span class="n">BaseDatabaseIntrospection</span>
+<span class="kn">from</span> <span class="nn">MySQLdb</span> <span class="kn">import</span> <span class="n">ProgrammingError</span><span class="p">,</span> <span class="n">OperationalError</span>
+<span class="kn">from</span> <span class="nn">MySQLdb.constants</span> <span class="kn">import</span> <span class="n">FIELD_TYPE</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="n">foreign_key_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&quot;\sCONSTRAINT `[^`]*` FOREIGN KEY \(`([^`]*)`\) REFERENCES `([^`]*)` \(`([^`]*)`\)&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">DatabaseIntrospection</span><span class="p">(</span><span class="n">BaseDatabaseIntrospection</span><span class="p">):</span>
+    <span class="n">data_types_reverse</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">BLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">CHAR</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">DECIMAL</span><span class="p">:</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">NEWDECIMAL</span><span class="p">:</span> <span class="s">&#39;DecimalField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">DATE</span><span class="p">:</span> <span class="s">&#39;DateField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">DATETIME</span><span class="p">:</span> <span class="s">&#39;DateTimeField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">DOUBLE</span><span class="p">:</span> <span class="s">&#39;FloatField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">FLOAT</span><span class="p">:</span> <span class="s">&#39;FloatField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">INT24</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">LONG</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">LONGLONG</span><span class="p">:</span> <span class="s">&#39;BigIntegerField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">SHORT</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">STRING</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">TIMESTAMP</span><span class="p">:</span> <span class="s">&#39;DateTimeField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">TINY</span><span class="p">:</span> <span class="s">&#39;IntegerField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">TINY_BLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">MEDIUM_BLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">LONG_BLOB</span><span class="p">:</span> <span class="s">&#39;TextField&#39;</span><span class="p">,</span>
+        <span class="n">FIELD_TYPE</span><span class="o">.</span><span class="n">VAR_STRING</span><span class="p">:</span> <span class="s">&#39;CharField&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">get_table_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">):</span>
+        <span class="s">&quot;Returns a list of table names in the current database.&quot;</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SHOW TABLES&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()]</span>
+
+    <span class="k">def</span> <span class="nf">get_table_description</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="s">&quot;Returns a description of the table, with the DB-API cursor.description interface.&quot;</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SELECT * FROM </span><span class="si">%s</span><span class="s"> LIMIT 1&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table_name</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">description</span>
+
+    <span class="k">def</span> <span class="nf">_name_to_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of {field_name: field_index} for the given table.</span>
+<span class="sd">        Indexes are 0-based.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_table_description</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">))])</span>
+
+    <span class="k">def</span> <span class="nf">get_relations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of {field_index: (field_index_other_table, other_table)}</span>
+<span class="sd">        representing all relationships to the given table. Indexes are 0-based.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">my_field_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_name_to_index</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span>
+        <span class="n">constraints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_key_columns</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span>
+        <span class="n">relations</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">my_fieldname</span><span class="p">,</span> <span class="n">other_table</span><span class="p">,</span> <span class="n">other_field</span> <span class="ow">in</span> <span class="n">constraints</span><span class="p">:</span>
+            <span class="n">other_field_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_name_to_index</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">other_table</span><span class="p">)[</span><span class="n">other_field</span><span class="p">]</span>
+            <span class="n">my_field_index</span> <span class="o">=</span> <span class="n">my_field_dict</span><span class="p">[</span><span class="n">my_fieldname</span><span class="p">]</span>
+            <span class="n">relations</span><span class="p">[</span><span class="n">my_field_index</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">other_field_index</span><span class="p">,</span> <span class="n">other_table</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">relations</span>
+
+    <span class="k">def</span> <span class="nf">get_key_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list of (column_name, referenced_table_name, referenced_column_name) for all</span>
+<span class="sd">        key columns in given table.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">key_columns</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">            SELECT column_name, referenced_table_name, referenced_column_name</span>
+<span class="s">            FROM information_schema.key_column_usage</span>
+<span class="s">            WHERE table_name = </span><span class="si">%s</span><span class="s"></span>
+<span class="s">                AND table_schema = DATABASE()</span>
+<span class="s">                AND referenced_table_name IS NOT NULL</span>
+<span class="s">                AND referenced_column_name IS NOT NULL&quot;&quot;&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">table_name</span><span class="p">])</span>
+        <span class="n">key_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">key_columns</span>
+
+    <span class="k">def</span> <span class="nf">get_primary_key_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the name of the primary key column for the given table</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_indexes</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">column</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="s">&#39;primary_key&#39;</span><span class="p">]:</span>
+                <span class="k">return</span> <span class="n">column</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">get_indexes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cursor</span><span class="p">,</span> <span class="n">table_name</span><span class="p">):</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;SHOW INDEX FROM </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">quote_name</span><span class="p">(</span><span class="n">table_name</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Do a two-pass search for indexes: on first pass check which indexes
+are multicolumn, on second pass check which single-column indexes
+are present.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">rows</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">())</span>
+        <span class="n">multicol_indexes</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">multicol_indexes</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="n">indexes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="ow">in</span> <span class="n">multicol_indexes</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">indexes</span><span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="mi">4</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;primary_key&#39;</span><span class="p">:</span> <span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;PRIMARY&#39;</span><span class="p">),</span> <span class="s">&#39;unique&#39;</span><span class="p">:</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">])}</span>
+        <span class="k">return</span> <span class="n">indexes</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

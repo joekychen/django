@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › core › signing.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>signing.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Functions for creating and restoring url-safe signed JSON objects.</span>
+
+<span class="sd">The format used looks like this:</span>
+
+<span class="sd">&gt;&gt;&gt; signing.dumps(&quot;hello&quot;)</span>
+<span class="sd">&#39;ImhlbGxvIg:1QaUZC:YIye-ze3TTx7gtSv422nZA4sgmk&#39;</span>
+
+<span class="sd">There are two components here, separated by a &#39;:&#39;. The first component is a</span>
+<span class="sd">URLsafe base64 encoded JSON of the object passed to dumps(). The second</span>
+<span class="sd">component is a base64 encoded hmac/SHA1 hash of &quot;$first_component:$secret&quot;</span>
+
+<span class="sd">signing.loads(s) checks the signature and returns the deserialised object.</span>
+<span class="sd">If the signature fails, a BadSignature exception is raised.</span>
+
+<span class="sd">&gt;&gt;&gt; signing.loads(&quot;ImhlbGxvIg:1QaUZC:YIye-ze3TTx7gtSv422nZA4sgmk&quot;)</span>
+<span class="sd">u&#39;hello&#39;</span>
+<span class="sd">&gt;&gt;&gt; signing.loads(&quot;ImhlbGxvIg:1QaUZC:YIye-ze3TTx7gtSv422nZA4sgmk-modified&quot;)</span>
+<span class="sd">...</span>
+<span class="sd">BadSignature: Signature failed: ImhlbGxvIg:1QaUZC:YIye-ze3TTx7gtSv422nZA4sgmk-modified</span>
+
+<span class="sd">You can optionally compress the JSON prior to base64 encoding it to save</span>
+<span class="sd">space, using the compress=True argument. This checks if compression actually</span>
+<span class="sd">helps and only applies compression if the result is a shorter string:</span>
+
+<span class="sd">&gt;&gt;&gt; signing.dumps(range(1, 20), compress=True)</span>
+<span class="sd">&#39;.eJwFwcERACAIwLCF-rCiILN47r-GyZVJsNgkxaFxoDgxcOHGxMKD_T7vhAml:1QaUaL:BA0thEZrp4FQVXIXuOvYJtLJSrQ&#39;</span>
+
+<span class="sd">The fact that the string is compressed is signalled by the prefixed &#39;.&#39; at the</span>
+<span class="sd">start of the base64 JSON.</span>
+
+<span class="sd">There are 65 url-safe characters: the 64 used by url-safe base64 and the &#39;:&#39;.</span>
+<span class="sd">These functions make use of all of them.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">base64</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">zlib</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">baseconv</span>
+<span class="kn">from</span> <span class="nn">django.utils.crypto</span> <span class="kn">import</span> <span class="n">constant_time_compare</span><span class="p">,</span> <span class="n">salted_hmac</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">force_unicode</span><span class="p">,</span> <span class="n">smart_str</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+
+
+<span class="k">class</span> <span class="nc">BadSignature</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Signature does not match</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">SignatureExpired</span><span class="p">(</span><span class="n">BadSignature</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Signature timestamp is older than required max_age</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+
+<span class="k">def</span> <span class="nf">b64_encode</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">base64</span><span class="o">.</span><span class="n">urlsafe_b64encode</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">&#39;=&#39;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">b64_decode</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="n">pad</span> <span class="o">=</span> <span class="s">&#39;=&#39;</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="o">%</span> <span class="mi">4</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">base64</span><span class="o">.</span><span class="n">urlsafe_b64decode</span><span class="p">(</span><span class="n">s</span> <span class="o">+</span> <span class="n">pad</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">base64_hmac</span><span class="p">(</span><span class="n">salt</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">b64_encode</span><span class="p">(</span><span class="n">salted_hmac</span><span class="p">(</span><span class="n">salt</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">())</span>
+
+
+<span class="k">def</span> <span class="nf">get_cookie_signer</span><span class="p">(</span><span class="n">salt</span><span class="o">=</span><span class="s">&#39;django.core.signing.get_cookie_signer&#39;</span><span class="p">):</span>
+    <span class="n">modpath</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">SIGNING_BACKEND</span>
+    <span class="n">module</span><span class="p">,</span> <span class="n">attr</span> <span class="o">=</span> <span class="n">modpath</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">mod</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span>
+            <span class="s">&#39;Error importing cookie signer </span><span class="si">%s</span><span class="s">: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">modpath</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">Signer</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span>
+            <span class="s">&#39;Error importing cookie signer </span><span class="si">%s</span><span class="s">: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">modpath</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">Signer</span><span class="p">(</span><span class="s">&#39;django.http.cookies&#39;</span> <span class="o">+</span> <span class="n">settings</span><span class="o">.</span><span class="n">SECRET_KEY</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="n">salt</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">JSONSerializer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Simple wrapper around json to be used in signing.dumps and</span>
+<span class="sd">    signing.loads.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">dumps</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">separators</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">,</span> <span class="s">&#39;:&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">loads</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="s">&#39;django.core.signing&#39;</span><span class="p">,</span> <span class="n">serializer</span><span class="o">=</span><span class="n">JSONSerializer</span><span class="p">,</span> <span class="n">compress</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns URL-safe, sha1 signed base64 compressed JSON string. If key is</span>
+<span class="sd">    None, settings.SECRET_KEY is used instead.</span>
+
+<span class="sd">    If compress is True (not the default) checks if compressing using zlib can</span>
+<span class="sd">    save some space. Prepends a &#39;.&#39; to signify compression. This is included</span>
+<span class="sd">    in the signature, to protect against zip bombs.</span>
+
+<span class="sd">    Salt can be used to namespace the hash, so that a signed string is</span>
+<span class="sd">    only valid for a given namespace. Leaving this at the default</span>
+<span class="sd">    value or re-using a salt value across different parts of your</span>
+<span class="sd">    application without good cause is a security risk.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">serializer</span><span class="p">()</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Flag for if it's been compressed or not</p></td><td class="code"><div class="highlight"><pre>    <span class="n">is_compressed</span> <span class="o">=</span> <span class="bp">False</span>
+
+    <span class="k">if</span> <span class="n">compress</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Avoid zlib dependency unless compress is being used</p></td><td class="code"><div class="highlight"><pre>        <span class="n">compressed</span> <span class="o">=</span> <span class="n">zlib</span><span class="o">.</span><span class="n">compress</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">compressed</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">compressed</span>
+            <span class="n">is_compressed</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">base64d</span> <span class="o">=</span> <span class="n">b64_encode</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_compressed</span><span class="p">:</span>
+        <span class="n">base64d</span> <span class="o">=</span> <span class="s">&#39;.&#39;</span> <span class="o">+</span> <span class="n">base64d</span>
+    <span class="k">return</span> <span class="n">TimestampSigner</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="n">salt</span><span class="p">)</span><span class="o">.</span><span class="n">sign</span><span class="p">(</span><span class="n">base64d</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">loads</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="s">&#39;django.core.signing&#39;</span><span class="p">,</span> <span class="n">serializer</span><span class="o">=</span><span class="n">JSONSerializer</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Reverse of dumps(), raises BadSignature if signature fails</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">base64d</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span>
+        <span class="n">TimestampSigner</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="n">salt</span><span class="p">)</span><span class="o">.</span><span class="n">unsign</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="n">max_age</span><span class="p">))</span>
+    <span class="n">decompress</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="k">if</span> <span class="n">base64d</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;.&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>It's compressed; uncompress it first</p></td><td class="code"><div class="highlight"><pre>        <span class="n">base64d</span> <span class="o">=</span> <span class="n">base64d</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="n">decompress</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">b64_decode</span><span class="p">(</span><span class="n">base64d</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">decompress</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">zlib</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">serializer</span><span class="p">()</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">Signer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s">&#39;:&#39;</span><span class="p">,</span> <span class="n">salt</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sep</span> <span class="o">=</span> <span class="n">sep</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key</span> <span class="o">=</span> <span class="n">key</span> <span class="ow">or</span> <span class="n">settings</span><span class="o">.</span><span class="n">SECRET_KEY</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">salt</span> <span class="o">=</span> <span class="n">salt</span> <span class="ow">or</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">signature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">base64_hmac</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">salt</span> <span class="o">+</span> <span class="s">&#39;signer&#39;</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">sign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s%s%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">unsign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signed_value</span><span class="p">):</span>
+        <span class="n">signed_value</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="n">signed_value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">sep</span> <span class="ow">in</span> <span class="n">signed_value</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">BadSignature</span><span class="p">(</span><span class="s">&#39;No &quot;</span><span class="si">%s</span><span class="s">&quot; found in value&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">sig</span> <span class="o">=</span> <span class="n">signed_value</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">constant_time_compare</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">value</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="n">BadSignature</span><span class="p">(</span><span class="s">&#39;Signature &quot;</span><span class="si">%s</span><span class="s">&quot; does not match&#39;</span> <span class="o">%</span> <span class="n">sig</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TimestampSigner</span><span class="p">(</span><span class="n">Signer</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">timestamp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">baseconv</span><span class="o">.</span><span class="n">base62</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()))</span>
+
+    <span class="k">def</span> <span class="nf">sign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">smart_str</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s%s%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s%s%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">unsign</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">max_age</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span>  <span class="nb">super</span><span class="p">(</span><span class="n">TimestampSigner</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">unsign</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">value</span><span class="p">,</span> <span class="n">timestamp</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">timestamp</span> <span class="o">=</span> <span class="n">baseconv</span><span class="o">.</span><span class="n">base62</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">timestamp</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">max_age</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Check timestamp is not older than max_age</p></td><td class="code"><div class="highlight"><pre>            <span class="n">age</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">timestamp</span>
+            <span class="k">if</span> <span class="n">age</span> <span class="o">&gt;</span> <span class="n">max_age</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">SignatureExpired</span><span class="p">(</span>
+                    <span class="s">&#39;Signature age </span><span class="si">%s</span><span class="s"> &gt; </span><span class="si">%s</span><span class="s"> seconds&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">age</span><span class="p">,</span> <span class="n">max_age</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

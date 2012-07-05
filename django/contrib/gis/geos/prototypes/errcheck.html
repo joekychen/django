@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geos › prototypes › errcheck.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>errcheck.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd"> Error checking functions for GEOS ctypes prototype functions.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_void_p</span><span class="p">,</span> <span class="n">string_at</span><span class="p">,</span> <span class="n">CDLL</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.error</span> <span class="kn">import</span> <span class="n">GEOSException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.libgeos</span> <span class="kn">import</span> <span class="n">GEOS_VERSION</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos.prototypes.threadsafe</span> <span class="kn">import</span> <span class="n">GEOSFunc</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Getting the <code>free</code> routine used to free the memory allocated for
+string pointers returned by GEOS.</p></td><td class="code"><div class="highlight"><pre><span class="k">if</span> <span class="n">GEOS_VERSION</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>In versions 3.1.1 and above, <code>GEOSFree</code> was added to the C API
+because <code>free</code> isn't always available on all platforms.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">free</span> <span class="o">=</span> <span class="n">GEOSFunc</span><span class="p">(</span><span class="s">&#39;GEOSFree&#39;</span><span class="p">)</span>
+    <span class="n">free</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_void_p</span><span class="p">]</span>
+    <span class="n">free</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+<span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Getting the <code>free</code> routine from the C library of the platform.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&#39;nt&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>On NT, use the MS C library.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">libc</span> <span class="o">=</span> <span class="n">CDLL</span><span class="p">(</span><span class="s">&#39;msvcrt&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>On POSIX platforms C library is obtained by passing None into <code>CDLL</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">libc</span> <span class="o">=</span> <span class="n">CDLL</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+    <span class="n">free</span> <span class="o">=</span> <span class="n">libc</span><span class="o">.</span><span class="n">free</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><h2>ctypes error checking routines</h2></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">last_arg_byref</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+    <span class="s">&quot;Returns the last C argument&#39;s value by reference.&quot;</span>
+    <span class="k">return</span> <span class="n">args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">_obj</span><span class="o">.</span><span class="n">value</span>
+
+<span class="k">def</span> <span class="nf">check_dbl</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="s">&quot;Checks the status code and returns the double value passed in by reference.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Checking the status code</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">result</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span> <span class="k">return</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Double passed in by reference, return its value.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">return</span> <span class="n">last_arg_byref</span><span class="p">(</span><span class="n">cargs</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">check_geom</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="s">&quot;Error checking on routines that return Geometries.&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Error encountered checking Geometry returned from GEOS C function &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+<span class="k">def</span> <span class="nf">check_minus_one</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="s">&quot;Error checking on routines that should not return -1.&quot;</span>
+    <span class="k">if</span> <span class="n">result</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Error encountered in GEOS C function &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+<span class="k">def</span> <span class="nf">check_predicate</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="s">&quot;Error checking for unary/binary predicate functions.&quot;</span>
+    <span class="n">val</span> <span class="o">=</span> <span class="nb">ord</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="c"># getting the ordinal from the character</span>
+    <span class="k">if</span> <span class="n">val</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span> <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">elif</span> <span class="n">val</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span> <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Error encountered on GEOS C predicate function &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">check_sized_string</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error checking for routines that return explicitly sized strings.</span>
+
+<span class="sd">    This frees the memory allocated by GEOS at the result pointer.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Invalid string pointer returned by GEOS C function &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>A c<em>size</em>t object is passed in by reference for the second
+argument on these routines, and its needed to determine the
+correct size.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">s</span> <span class="o">=</span> <span class="n">string_at</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">last_arg_byref</span><span class="p">(</span><span class="n">cargs</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Freeing the memory allocated within GEOS</p></td><td class="code"><div class="highlight"><pre>    <span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">s</span>
+
+<span class="k">def</span> <span class="nf">check_string</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Error checking for routines that return strings.</span>
+
+<span class="sd">    This frees the memory allocated by GEOS at the result pointer.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="p">:</span> <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Error encountered checking string return value in GEOS C function &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Getting the string value at the pointer address.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">s</span> <span class="o">=</span> <span class="n">string_at</span><span class="p">(</span><span class="n">result</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Freeing the memory allocated within GEOS</p></td><td class="code"><div class="highlight"><pre>    <span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">s</span>
+
+<span class="k">def</span> <span class="nf">check_zero</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">cargs</span><span class="p">):</span>
+    <span class="s">&quot;Error checking on routines that should not return 0.&quot;</span>
+    <span class="k">if</span> <span class="n">result</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">GEOSException</span><span class="p">(</span><span class="s">&#39;Error encountered in GEOS C function &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

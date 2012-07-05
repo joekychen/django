@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › models › sql › where.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>where.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Code to manage the creation and SQL rendering of &#39;where&#39; constraints.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">import</span> <span class="nn">datetime</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">repeat</span>
+
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">tree</span>
+<span class="kn">from</span> <span class="nn">django.db.models.fields</span> <span class="kn">import</span> <span class="n">Field</span>
+<span class="kn">from</span> <span class="nn">django.db.models.sql.datastructures</span> <span class="kn">import</span> <span class="n">EmptyResultSet</span>
+<span class="kn">from</span> <span class="nn">django.db.models.sql.aggregates</span> <span class="kn">import</span> <span class="n">Aggregate</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Connection types</p></td><td class="code"><div class="highlight"><pre><span class="n">AND</span> <span class="o">=</span> <span class="s">&#39;AND&#39;</span>
+<span class="n">OR</span> <span class="o">=</span> <span class="s">&#39;OR&#39;</span>
+
+<span class="k">class</span> <span class="nc">EmptyShortCircuit</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Internal exception used to indicate that a &quot;matches nothing&quot; node should be</span>
+<span class="sd">    added to the where-clause.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">WhereNode</span><span class="p">(</span><span class="n">tree</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Used to represent the SQL where-clause.</span>
+
+<span class="sd">    The class is tied to the Query class that created it (in order to create</span>
+<span class="sd">    the correct SQL).</span>
+
+<span class="sd">    The children in this tree are usually either Q-like objects or lists of</span>
+<span class="sd">    [table_alias, field_name, db_type, lookup_type, value_annotation, params].</span>
+<span class="sd">    However, a child could also be any class with as_sql() and relabel_aliases() methods.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">default</span> <span class="o">=</span> <span class="n">AND</span>
+
+    <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">connector</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add a node to the where-tree. If the data is a list or tuple, it is</span>
+<span class="sd">        expected to be of the form (obj, lookup_type, value), where obj is</span>
+<span class="sd">        a Constraint object, and is then slightly munged before being stored</span>
+<span class="sd">        (to avoid storing any reference to field objects). Otherwise, the &#39;data&#39;</span>
+<span class="sd">        is stored unchanged and can be any class with an &#39;as_sql()&#39; method.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="nb">super</span><span class="p">(</span><span class="n">WhereNode</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">connector</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">obj</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">collections</span><span class="o">.</span><span class="n">Iterator</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Consume any generators immediately, so that we can determine
+emptiness and transform any non-empty values correctly.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">value</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The "value_annotation" parameter is used to pass auxilliary information
+about the value(s) to the query construction. Specifically, datetime
+and empty values need special handling. Other types could be used
+here in the future (using Python types is suggested for consistency).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">):</span>
+            <span class="n">value_annotation</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;value_annotation&#39;</span><span class="p">):</span>
+            <span class="n">value_annotation</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">value_annotation</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">value_annotation</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="s">&quot;prepare&quot;</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">prepare</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+        <span class="nb">super</span><span class="p">(</span><span class="n">WhereNode</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value_annotation</span><span class="p">,</span> <span class="n">value</span><span class="p">),</span> <span class="n">connector</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">as_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the SQL version of the where clause and the value to be</span>
+<span class="sd">        substituted in. Returns &#39;&#39;, [] if this node matches everything,</span>
+<span class="sd">        None, [] if this node is empty, and raises EmptyResultSet if this</span>
+<span class="sd">        node can&#39;t match anything.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Note that the logic here is made slightly more complex than
+necessary because there are two kind of empty nodes: Nodes
+containing 0 children, and nodes that are known to match everything.
+A match-everything node is different than empty node (which also
+technically matches everything) for backwards compatibility reasons.
+Refs #5261.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">result_params</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">everything_childs</span><span class="p">,</span> <span class="n">nothing_childs</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+        <span class="n">non_empty_childs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">children</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">children</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="s">&#39;as_sql&#39;</span><span class="p">):</span>
+                    <span class="n">sql</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">qn</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>A leaf node in the tree.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">sql</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_atom</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">EmptyResultSet</span><span class="p">:</span>
+                <span class="n">nothing_childs</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">sql</span><span class="p">:</span>
+                    <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+                    <span class="n">result_params</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">params</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">sql</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Skip empty childs totally.</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">non_empty_childs</span> <span class="o">-=</span> <span class="mi">1</span>
+                        <span class="k">continue</span>
+                    <span class="n">everything_childs</span> <span class="o">+=</span> <span class="mi">1</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Check if this node matches nothing or everything.
+First check the amount of full nodes and empty nodes
+to make this node empty/full.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connector</span> <span class="o">==</span> <span class="n">AND</span><span class="p">:</span>
+                <span class="n">full_needed</span><span class="p">,</span> <span class="n">empty_needed</span> <span class="o">=</span> <span class="n">non_empty_childs</span><span class="p">,</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">full_needed</span><span class="p">,</span> <span class="n">empty_needed</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">non_empty_childs</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Now, check if this node is full/empty using the
+counts.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">empty_needed</span> <span class="o">-</span> <span class="n">nothing_childs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">negated</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="p">[]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">EmptyResultSet</span>
+            <span class="k">if</span> <span class="n">full_needed</span> <span class="o">-</span> <span class="n">everything_childs</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">negated</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">EmptyResultSet</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="n">non_empty_childs</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>All the child nodes were empty, so this one is empty, too.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="bp">None</span><span class="p">,</span> <span class="p">[]</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="s">&#39; </span><span class="si">%s</span><span class="s"> &#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connector</span>
+        <span class="n">sql_string</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sql_string</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">negated</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Some backends (Oracle at least) need parentheses
+around the inner SQL in the negated case, even if the
+inner SQL contains just a single expression.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">sql_string</span> <span class="o">=</span> <span class="s">&#39;NOT (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">sql_string</span>
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">sql_string</span> <span class="o">=</span> <span class="s">&#39;(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">sql_string</span>
+        <span class="k">return</span> <span class="n">sql_string</span><span class="p">,</span> <span class="n">result_params</span>
+
+    <span class="k">def</span> <span class="nf">make_atom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">child</span><span class="p">,</span> <span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Turn a tuple (Constraint(table_alias, column_name, db_type),</span>
+<span class="sd">        lookup_type, value_annotation, params) into valid SQL.</span>
+
+<span class="sd">        The first item of the tuple may also be an Aggregate.</span>
+
+<span class="sd">        Returns the string for the SQL fragment and the parameters to use for</span>
+<span class="sd">        it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">lvalue</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value_annotation</span><span class="p">,</span> <span class="n">params_or_value</span> <span class="o">=</span> <span class="n">child</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lvalue</span><span class="p">,</span> <span class="n">Constraint</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">lvalue</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">lvalue</span><span class="o">.</span><span class="n">process</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">params_or_value</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">EmptyShortCircuit</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">EmptyResultSet</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lvalue</span><span class="p">,</span> <span class="n">Aggregate</span><span class="p">):</span>
+            <span class="n">params</span> <span class="o">=</span> <span class="n">lvalue</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">params_or_value</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;&#39;make_atom&#39; expects a Constraint or an Aggregate &quot;</span>
+                            <span class="s">&quot;as the first item of its &#39;child&#39; argument.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lvalue</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>A direct database column lookup.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_sql</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sql_for_columns</span><span class="p">(</span><span class="n">lvalue</span><span class="p">,</span> <span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>A smart object with an as_sql() method.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">field_sql</span> <span class="o">=</span> <span class="n">lvalue</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">value_annotation</span> <span class="ow">is</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="p">:</span>
+            <span class="n">cast_sql</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">datetime_cast_sql</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cast_sql</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="s">&#39;as_sql&#39;</span><span class="p">):</span>
+            <span class="n">extra</span><span class="p">,</span> <span class="n">params</span> <span class="o">=</span> <span class="n">params</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">)</span>
+            <span class="n">cast_sql</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">extra</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;&#39;</span> <span class="ow">and</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;exact&#39;</span>
+            <span class="ow">and</span> <span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">interprets_empty_strings_as_nulls</span><span class="p">):</span>
+            <span class="n">lookup_type</span> <span class="o">=</span> <span class="s">&#39;isnull&#39;</span>
+            <span class="n">value_annotation</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="k">if</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="n">connection</span><span class="o">.</span><span class="n">operators</span><span class="p">:</span>
+            <span class="n">format</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s"> </span><span class="si">%%</span><span class="s">s </span><span class="si">%%</span><span class="s">s&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">lookup_cast</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">),)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">format</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_sql</span><span class="p">,</span>
+                              <span class="n">connection</span><span class="o">.</span><span class="n">operators</span><span class="p">[</span><span class="n">lookup_type</span><span class="p">]</span> <span class="o">%</span> <span class="n">cast_sql</span><span class="p">,</span>
+                              <span class="n">extra</span><span class="p">),</span> <span class="n">params</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;in&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">value_annotation</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">EmptyResultSet</span>
+            <span class="k">if</span> <span class="n">extra</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> IN </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_sql</span><span class="p">,</span> <span class="n">extra</span><span class="p">),</span> <span class="n">params</span><span class="p">)</span>
+            <span class="n">max_in_list_size</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">max_in_list_size</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">max_in_list_size</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_in_list_size</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Break up the params list into an OR of manageable chunks.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">in_clause_elements</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;(&#39;</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">),</span> <span class="n">max_in_list_size</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">offset</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="n">in_clause_elements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39; OR &#39;</span><span class="p">)</span>
+                    <span class="n">in_clause_elements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> IN (&#39;</span> <span class="o">%</span> <span class="n">field_sql</span><span class="p">)</span>
+                    <span class="n">group_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">)</span> <span class="o">-</span> <span class="n">offset</span><span class="p">,</span> <span class="n">max_in_list_size</span><span class="p">)</span>
+                    <span class="n">param_group</span> <span class="o">=</span> <span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">repeat</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">group_size</span><span class="p">))</span>
+                    <span class="n">in_clause_elements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">param_group</span><span class="p">)</span>
+                    <span class="n">in_clause_elements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)</span>
+                <span class="n">in_clause_elements</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;)&#39;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">in_clause_elements</span><span class="p">),</span> <span class="n">params</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> IN (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_sql</span><span class="p">,</span>
+                                        <span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">repeat</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">)))),</span>
+                        <span class="n">params</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;range&#39;</span><span class="p">,</span> <span class="s">&#39;year&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> BETWEEN </span><span class="si">%%</span><span class="s">s and </span><span class="si">%%</span><span class="s">s&#39;</span> <span class="o">%</span> <span class="n">field_sql</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;month&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">,</span> <span class="s">&#39;week_day&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> = </span><span class="si">%%</span><span class="s">s&#39;</span> <span class="o">%</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">date_extract_sql</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">field_sql</span><span class="p">),</span>
+                    <span class="n">params</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;isnull&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> IS </span><span class="si">%s</span><span class="s">NULL&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_sql</span><span class="p">,</span>
+                <span class="p">(</span><span class="ow">not</span> <span class="n">value_annotation</span> <span class="ow">and</span> <span class="s">&#39;NOT &#39;</span> <span class="ow">or</span> <span class="s">&#39;&#39;</span><span class="p">)),</span> <span class="p">())</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;search&#39;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">fulltext_search_sql</span><span class="p">(</span><span class="n">field_sql</span><span class="p">),</span> <span class="n">params</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;regex&#39;</span><span class="p">,</span> <span class="s">&#39;iregex&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">regex_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">)</span> <span class="o">%</span> <span class="p">(</span><span class="n">field_sql</span><span class="p">,</span> <span class="n">cast_sql</span><span class="p">),</span> <span class="n">params</span>
+
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Invalid lookup_type: </span><span class="si">%r</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">sql_for_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">qn</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the SQL fragment used for the left-hand side of a column</span>
+<span class="sd">        constraint (for example, the &quot;T1.foo&quot; portion in the clause</span>
+<span class="sd">        &quot;WHERE ... T1.foo = 6&quot;).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">table_alias</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">db_type</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="k">if</span> <span class="n">table_alias</span><span class="p">:</span>
+            <span class="n">lhs</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">qn</span><span class="p">(</span><span class="n">table_alias</span><span class="p">),</span> <span class="n">qn</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lhs</span> <span class="o">=</span> <span class="n">qn</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">field_cast_sql</span><span class="p">(</span><span class="n">db_type</span><span class="p">)</span> <span class="o">%</span> <span class="n">lhs</span>
+
+    <span class="k">def</span> <span class="nf">relabel_aliases</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">change_map</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Relabels the alias values of any children. &#39;change_map&#39; is a dictionary</span>
+<span class="sd">        mapping old (current) alias values to the new values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">node</span><span class="p">:</span>
+            <span class="n">node</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="k">for</span> <span class="n">pos</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">children</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="s">&#39;relabel_aliases&#39;</span><span class="p">):</span>
+                <span class="n">child</span><span class="o">.</span><span class="n">relabel_aliases</span><span class="p">(</span><span class="n">change_map</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">tree</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">relabel_aliases</span><span class="p">(</span><span class="n">change_map</span><span class="p">,</span> <span class="n">child</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+                    <span class="n">elt</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">child</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="k">if</span> <span class="n">elt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="n">change_map</span><span class="p">:</span>
+                        <span class="n">elt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">change_map</span><span class="p">[</span><span class="n">elt</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+                        <span class="n">node</span><span class="o">.</span><span class="n">children</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">elt</span><span class="p">),)</span> <span class="o">+</span> <span class="n">child</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">child</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">relabel_aliases</span><span class="p">(</span><span class="n">change_map</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Check if the query value also requires relabelling</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">child</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="s">&#39;relabel_aliases&#39;</span><span class="p">):</span>
+                    <span class="n">child</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">.</span><span class="n">relabel_aliases</span><span class="p">(</span><span class="n">change_map</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">EverythingNode</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A node that matches everything.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">as_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qn</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">relabel_aliases</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">change_map</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span>
+
+<span class="k">class</span> <span class="nc">NothingNode</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A node that matches nothing.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">as_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qn</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">EmptyResultSet</span>
+
+    <span class="k">def</span> <span class="nf">relabel_aliases</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">change_map</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">return</span>
+
+<span class="k">class</span> <span class="nc">ExtraWhere</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sqls</span><span class="p">,</span> <span class="n">params</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sqls</span> <span class="o">=</span> <span class="n">sqls</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">params</span>
+
+    <span class="k">def</span> <span class="nf">as_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qn</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">connection</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">sqls</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;(</span><span class="si">%s</span><span class="s">)&quot;</span> <span class="o">%</span> <span class="n">sql</span> <span class="k">for</span> <span class="n">sql</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">sqls</span><span class="p">]</span>
+        <span class="k">return</span> <span class="s">&quot; AND &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sqls</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="ow">or</span> <span class="p">())</span>
+
+<span class="k">class</span> <span class="nc">Constraint</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An object that can be passed to WhereNode.add() and knows how to</span>
+<span class="sd">    pre-process itself prior to including in the WhereNode.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alias</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span> <span class="o">=</span> <span class="n">alias</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">field</span>
+
+    <span class="k">def</span> <span class="nf">__getstate__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Save the state of the Constraint for pickling.</span>
+
+<span class="sd">        Fields aren&#39;t necessarily pickleable, because they can have</span>
+<span class="sd">        callable default values. So, instead of pickling the field</span>
+<span class="sd">        store a reference so we can restore it manually</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">obj_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">:</span>
+            <span class="n">obj_dict</span><span class="p">[</span><span class="s">&#39;model&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">model</span>
+            <span class="n">obj_dict</span><span class="p">[</span><span class="s">&#39;field_name&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">del</span> <span class="n">obj_dict</span><span class="p">[</span><span class="s">&#39;field&#39;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">obj_dict</span>
+
+    <span class="k">def</span> <span class="nf">__setstate__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Restore the constraint &quot;&quot;&quot;</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;model&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">field_name</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;field_name&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__dict__</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">field</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_field</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">field</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">get_prep_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">process</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a tuple of data suitable for inclusion in a WhereNode</span>
+<span class="sd">        instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Because of circular imports, we need to import this here.</p></td><td class="code"><div class="highlight"><pre>        <span class="kn">from</span> <span class="nn">django.db.models.base</span> <span class="kn">import</span> <span class="n">ObjectDoesNotExist</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">:</span>
+                <span class="n">params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span>
+                    <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">,</span> <span class="n">prepared</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+                <span class="n">db_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">db_type</span><span class="p">(</span><span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>This branch is used at times when we add a comparison to NULL
+(we don't really want to waste time looking up the associated
+field object at the calling location).</p></td><td class="code"><div class="highlight"><pre>                <span class="n">params</span> <span class="o">=</span> <span class="n">Field</span><span class="p">()</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span>
+                    <span class="n">connection</span><span class="o">=</span><span class="n">connection</span><span class="p">,</span> <span class="n">prepared</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+                <span class="n">db_type</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">except</span> <span class="n">ObjectDoesNotExist</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">EmptyShortCircuit</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">col</span><span class="p">,</span> <span class="n">db_type</span><span class="p">),</span> <span class="n">params</span>
+
+    <span class="k">def</span> <span class="nf">relabel_aliases</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">change_map</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="ow">in</span> <span class="n">change_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="n">change_map</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">]</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

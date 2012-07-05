@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › admin_validation › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span> <span class="nn">django.contrib</span> <span class="kn">import</span> <span class="n">admin</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.validation</span> <span class="kn">import</span> <span class="n">validate</span><span class="p">,</span> <span class="n">validate_inline</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Song</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Album</span><span class="p">,</span> <span class="n">TwoAlbumFKAndAnE</span><span class="p">,</span> <span class="n">State</span><span class="p">,</span> <span class="n">City</span>
+
+
+<span class="k">class</span> <span class="nc">SongForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">ValidFields</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">SongForm</span>
+    <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">]</span>
+
+<span class="k">class</span> <span class="nc">InvalidFields</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">SongForm</span>
+    <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;spam&#39;</span><span class="p">]</span>
+
+<span class="k">class</span> <span class="nc">ValidationTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_and_editable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;original_release&quot;</span><span class="p">]</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&quot;fields&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s">&quot;title&quot;</span><span class="p">,</span> <span class="s">&quot;original_release&quot;</span><span class="p">],</span>
+                <span class="p">}),</span>
+            <span class="p">]</span>
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_modelforms_with_fields_fieldsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">#DIVIDER</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidFields</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;InvalidFields.fields&#39; refers to field &#39;spam&#39; that is missing from the form.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">InvalidFields</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_exclude_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests for basic validation of &#39;exclude&#39; option values (#12689)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">ExcludedFields1</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;foo&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ExcludedFields1.exclude&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ExcludedFields1</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_exclude_duplicate_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">ExcludedFields2</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;There are duplicate field(s) in ExcludedFields2.exclude&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ExcludedFields2</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_exclude_in_inline</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">ExcludedFieldsInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Song</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;foo&#39;</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ExcludedFieldsAlbumAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Album</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ExcludedFieldsInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ExcludedFieldsInline.exclude&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ExcludedFieldsAlbumAdmin</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_exclude_inline_model_admin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">#DIVIDER</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">SongInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Song</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;album&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">AlbumAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Album</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">SongInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;SongInline cannot exclude the field &#39;album&#39; - this is the foreign key to the parent model admin_validation.Album.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">AlbumAdmin</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_app_label_in_admin_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #15669 - Include app label in admin validation messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">RawIdNonexistingAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;nonexisting&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;RawIdNonexistingAdmin.raw_id_fields&#39; refers to field &#39;nonexisting&#39; that is missing from model &#39;admin_validation.Album&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">RawIdNonexistingAdmin</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fk_exclusion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #11709 - when testing for fk excluding (when exclude is</span>
+<span class="sd">        given) make sure fk_name is honored or things blow up when there is more</span>
+<span class="sd">        than one fk to the parent model.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">TwoAlbumFKAndAnEInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">TwoAlbumFKAndAnE</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;e&quot;</span><span class="p">,)</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&quot;album1&quot;</span>
+        <span class="n">validate_inline</span><span class="p">(</span><span class="n">TwoAlbumFKAndAnEInline</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inline_self_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">TwoAlbumFKAndAnEInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">TwoAlbumFKAndAnE</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="ne">Exception</span><span class="p">,</span>
+            <span class="s">&quot;&lt;class &#39;regressiontests.admin_validation.models.TwoAlbumFKAndAnE&#39;&gt; has more than 1 ForeignKey to &lt;class &#39;regressiontests.admin_validation.models.Album&#39;&gt;&quot;</span><span class="p">,</span>
+            <span class="n">validate_inline</span><span class="p">,</span>
+            <span class="n">TwoAlbumFKAndAnEInline</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inline_with_specified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">TwoAlbumFKAndAnEInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">TwoAlbumFKAndAnE</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&quot;album1&quot;</span>
+        <span class="n">validate_inline</span><span class="p">(</span><span class="n">TwoAlbumFKAndAnEInline</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="n">Album</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;title&quot;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_on_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">my_function</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="n">my_function</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_on_modeladmin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;readonly_method_on_modeladmin&quot;</span><span class="p">,)</span>
+
+            <span class="k">def</span> <span class="nf">readonly_method_on_modeladmin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+                <span class="k">pass</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_method_on_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;readonly_method_on_model&quot;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nonexistant_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;title&quot;</span><span class="p">,</span> <span class="s">&quot;nonexistant&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;SongAdmin.readonly_fields[1], &#39;nonexistant&#39; is not a callable or an attribute of &#39;SongAdmin&#39; or found in the model &#39;Song&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nonexistant_field_on_inline</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">CityInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">City</span>
+            <span class="n">readonly_fields</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;i_dont_exist&#39;</span><span class="p">]</span> <span class="c"># Missing attribute</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;CityInline.readonly_fields[0], &#39;i_dont_exist&#39; is not a callable or an attribute of &#39;CityInline&#39; or found in the model &#39;City&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate_inline</span><span class="p">,</span>
+            <span class="n">CityInline</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span> <span class="n">State</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_extra</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">awesome_song</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">instance</span><span class="o">.</span><span class="n">title</span> <span class="o">==</span> <span class="s">&quot;Born to Run&quot;</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s">&quot;Best Ever!&quot;</span>
+                <span class="k">return</span> <span class="s">&quot;Status unknown.&quot;</span>
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_readonly_lambda</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">SongAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">obj</span><span class="p">:</span> <span class="s">&quot;test&quot;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">SongAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_graceful_m2m_fail</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #12203/#12237 - Fail more gracefully when a M2M field that</span>
+<span class="sd">        specifies the &#39;through&#39; option is included in the &#39;fields&#39; or the &#39;fieldsets&#39;</span>
+<span class="sd">        ModelAdmin options.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">class</span> <span class="nc">BookAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;authors&#39;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;BookAdmin.fields&#39; can&#39;t include the ManyToManyField field &#39;authors&#39; because &#39;authors&#39; manually specifies a &#39;through&#39; model.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">BookAdmin</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_cannot_include_through</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">FieldsetBookAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="s">&#39;Header 1&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)}),</span>
+                <span class="p">(</span><span class="s">&#39;Header 2&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;authors&#39;</span><span class="p">,)}),</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span><span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;FieldsetBookAdmin.fieldsets[1][1][&#39;fields&#39;]&#39; can&#39;t include the ManyToManyField field &#39;authors&#39; because &#39;authors&#39; manually specifies a &#39;through&#39; model.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">FieldsetBookAdmin</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nested_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">NestedFieldsAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+           <span class="n">fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;price&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;subtitle&#39;</span><span class="p">))</span>
+        <span class="n">validate</span><span class="p">(</span><span class="n">NestedFieldsAdmin</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nested_fieldsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">NestedFieldsetAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+           <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+               <span class="p">(</span><span class="s">&#39;Main&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;price&#39;</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;subtitle&#39;</span><span class="p">))}),</span>
+           <span class="p">)</span>
+        <span class="n">validate</span><span class="p">(</span><span class="n">NestedFieldsetAdmin</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_explicit_through_override</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #12209 -- If the explicitly provided through model</span>
+<span class="sd">        is specified as a string, the admin should still be able use</span>
+<span class="sd">        Model.m2m_field.through</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">class</span> <span class="nc">AuthorsInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">authors</span><span class="o">.</span><span class="n">through</span>
+
+        <span class="k">class</span> <span class="nc">BookAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">AuthorsInline</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Regression test for #8027: custom ModelForms with fields/fieldsets</p></td><td class="code"><div class="highlight"><pre>        <span class="n">validate</span><span class="p">(</span><span class="n">BookAdmin</span><span class="p">,</span> <span class="n">Book</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_non_model_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for ensuring ModelAdmin.fields can contain non-model fields</span>
+<span class="sd">        that broke with r11737</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">SongForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="n">extra_data</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">()</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Song</span>
+
+        <span class="k">class</span> <span class="nc">FieldsOnFormOnlyAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">SongForm</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;extra_data&#39;</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">FieldsOnFormOnlyAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_non_model_first_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for ensuring ModelAdmin.field can handle first elem being a</span>
+<span class="sd">        non-model field (test fix for UnboundLocalError introduced with r16225).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">SongForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="n">extra_data</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">()</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Song</span>
+
+        <span class="k">class</span> <span class="nc">FieldsOnFormOnlyAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">SongForm</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;extra_data&#39;</span><span class="p">,</span> <span class="s">&#39;title&#39;</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">FieldsOnFormOnlyAdmin</span><span class="p">,</span> <span class="n">Song</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Regression test for #9932 - exclude in InlineModelAdmin
+should not contain the ForeignKey field used in ModelAdmin.model</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>If the through model is still a string (and hasn't been resolved to a model)
+the validation will fail.</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

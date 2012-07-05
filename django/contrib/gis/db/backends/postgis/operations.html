@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › backends › postgis › operations.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../../index.html"></a><h1>operations.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">decimal</span> <span class="kn">import</span> <span class="n">Decimal</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.base</span> <span class="kn">import</span> <span class="n">BaseSpatialOperations</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.util</span> <span class="kn">import</span> <span class="n">SpatialOperation</span><span class="p">,</span> <span class="n">SpatialFunction</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.postgis.adapter</span> <span class="kn">import</span> <span class="n">PostGISAdapter</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geometry.backend</span> <span class="kn">import</span> <span class="n">Geometry</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.measure</span> <span class="kn">import</span> <span class="n">Distance</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.db.backends.postgresql_psycopg2.base</span> <span class="kn">import</span> <span class="n">DatabaseOperations</span>
+<span class="kn">from</span> <span class="nn">django.db.utils</span> <span class="kn">import</span> <span class="n">DatabaseError</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><h3>Classes used in constructing PostGIS spatial SQL</h3></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PostGISOperator</span><span class="p">(</span><span class="n">SpatialOperation</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS operators (e.g. `&amp;&amp;`, `~`).&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operator</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISOperator</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">operator</span><span class="o">=</span><span class="n">operator</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostGISFunction</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS function calls (e.g., `ST_Contains(table, geom)`).&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">function</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISFunction</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">function</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostGISFunctionParam</span><span class="p">(</span><span class="n">PostGISFunction</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS functions that take another parameter (e.g. DWithin, Relate).&quot;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">, </span><span class="si">%%</span><span class="s">s)&#39;</span>
+
+<span class="k">class</span> <span class="nc">PostGISDistance</span><span class="p">(</span><span class="n">PostGISFunction</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS distance operations.&quot;</span>
+    <span class="n">dist_func</span> <span class="o">=</span> <span class="s">&#39;Distance&#39;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">) </span><span class="si">%(operator)s</span><span class="s"> </span><span class="si">%%</span><span class="s">s&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">operator</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISDistance</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dist_func</span><span class="p">,</span>
+                                              <span class="n">operator</span><span class="o">=</span><span class="n">operator</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostGISSpheroidDistance</span><span class="p">(</span><span class="n">PostGISFunction</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS spherical distance operations (using the spheroid).&quot;</span>
+    <span class="n">dist_func</span> <span class="o">=</span> <span class="s">&#39;distance_spheroid&#39;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">, </span><span class="si">%%</span><span class="s">s) </span><span class="si">%(operator)s</span><span class="s"> </span><span class="si">%%</span><span class="s">s&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">operator</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>An extra parameter in <code>end_subst</code> is needed for the spheroid string.</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISSpheroidDistance</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dist_func</span><span class="p">,</span>
+                                                      <span class="n">operator</span><span class="o">=</span><span class="n">operator</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">PostGISSphereDistance</span><span class="p">(</span><span class="n">PostGISDistance</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS spherical distance operations.&quot;</span>
+    <span class="n">dist_func</span> <span class="o">=</span> <span class="s">&#39;distance_sphere&#39;</span>
+
+<span class="k">class</span> <span class="nc">PostGISRelate</span><span class="p">(</span><span class="n">PostGISFunctionParam</span><span class="p">):</span>
+    <span class="s">&quot;For PostGIS Relate(&lt;geom&gt;, &lt;pattern&gt;) calls.&quot;</span>
+    <span class="n">pattern_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^[012TF\*]{9}$&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">pattern_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">pattern</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Invalid intersection matrix pattern &quot;</span><span class="si">%s</span><span class="s">&quot;.&#39;</span> <span class="o">%</span> <span class="n">pattern</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISRelate</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Relate&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PostGISOperations</span><span class="p">(</span><span class="n">DatabaseOperations</span><span class="p">,</span> <span class="n">BaseSpatialOperations</span><span class="p">):</span>
+    <span class="n">compiler_module</span> <span class="o">=</span> <span class="s">&#39;django.contrib.gis.db.models.sql.compiler&#39;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;postgis&#39;</span>
+    <span class="n">postgis</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">version_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^(?P&lt;major&gt;\d)\.(?P&lt;minor1&gt;\d)\.(?P&lt;minor2&gt;\d+)&#39;</span><span class="p">)</span>
+    <span class="n">valid_aggregates</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">k</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span>
+                             <span class="p">(</span><span class="s">&#39;Collect&#39;</span><span class="p">,</span> <span class="s">&#39;Extent&#39;</span><span class="p">,</span> <span class="s">&#39;Extent3D&#39;</span><span class="p">,</span> <span class="s">&#39;MakeLine&#39;</span><span class="p">,</span> <span class="s">&#39;Union&#39;</span><span class="p">)])</span>
+
+    <span class="n">Adapter</span> <span class="o">=</span> <span class="n">PostGISAdapter</span>
+    <span class="n">Adaptor</span> <span class="o">=</span> <span class="n">Adapter</span> <span class="c"># Backwards-compatibility alias.</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">PostGISOperations</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Trying to get the PostGIS version because the function
+signatures will depend on the version used.  The cost
+here is a database query to determine the version, which
+can be mitigated by setting <code>POSTGIS_VERSION</code> with a 3-tuple
+comprising user-supplied values for the major, minor, and
+subminor revision of PostGIS.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;POSTGIS_VERSION&#39;</span><span class="p">):</span>
+                <span class="n">vtup</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">POSTGIS_VERSION</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vtup</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>The user-supplied PostGIS version.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">version</span> <span class="o">=</span> <span class="n">vtup</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>This was the old documented way, but it's stupid to
+include the string.</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">version</span> <span class="o">=</span> <span class="n">vtup</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">vtup</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postgis_version_tuple</span><span class="p">()</span>
+                <span class="n">version</span> <span class="o">=</span> <span class="n">vtup</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Getting the prefix -- even though we don't officially support
+PostGIS 1.2 anymore, keeping it anyway in case a prefix change
+for something else is necessary.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="s">&#39;ST_&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">geom_func_prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">spatial_version</span> <span class="o">=</span> <span class="n">version</span>
+        <span class="k">except</span> <span class="n">DatabaseError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Cannot determine PostGIS version for database &quot;</span><span class="si">%s</span><span class="s">&quot;. &#39;</span>
+                                       <span class="s">&#39;GeoDjango requires at least PostGIS version 1.3. &#39;</span>
+                                       <span class="s">&#39;Was the database created from a spatial database &#39;</span>
+                                       <span class="s">&#39;template?&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">settings_dict</span><span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">]</span>
+                                       <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>TODO: Raise helpful exceptions as they become known.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>PostGIS-specific operators. The commented descriptions of these
+operators come from Section 7.6 of the PostGIS 1.4 documentation.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">geometry_operators</span> <span class="o">=</span> <span class="p">{</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>The "&amp;&lt;" operator returns true if A's bounding box overlaps or
+is to the left of B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;overlaps_left&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&amp;&lt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>The "&amp;>" operator returns true if A's bounding box overlaps or
+is to the right of B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;overlaps_right&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&amp;&gt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>The "&lt;&lt;" operator returns true if A's bounding box is strictly
+to the left of B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;left&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&lt;&lt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>The ">>" operator returns true if A's bounding box is strictly
+to the right of B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;right&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&gt;&gt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>The "&amp;&lt;|" operator returns true if A's bounding box overlaps or
+is below B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;overlaps_below&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&amp;&lt;|&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>The "|&amp;>" operator returns true if A's bounding box overlaps or
+is above B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;overlaps_above&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;|&amp;&gt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>The "&lt;&lt;|" operator returns true if A's bounding box is strictly
+below B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;strictly_below&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&lt;&lt;|&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>The "|>>" operator returns true if A's bounding box is strictly
+above B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;strictly_above&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;|&gt;&gt;&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>The "~=" operator is the "same as" operator. It tests actual
+geometric equality of two features. So if A and B are the same feature,
+vertex-by-vertex, the operator returns true.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;same_as&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;~=&#39;</span><span class="p">),</span>
+            <span class="s">&#39;exact&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;~=&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>The "@" operator returns true if A's bounding box is completely contained
+by B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;contained&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;@&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>The "~" operator returns true if A's bounding box completely contains
+ by B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;bbcontains&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;~&#39;</span><span class="p">),</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>The "&amp;&amp;" operator returns true if A's bounding box overlaps
+B's bounding box.</p></td><td class="code"><div class="highlight"><pre>            <span class="s">&#39;bboverlaps&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&amp;&amp;&#39;</span><span class="p">),</span>
+            <span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;equals&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Equals&#39;</span><span class="p">),</span>
+            <span class="s">&#39;disjoint&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Disjoint&#39;</span><span class="p">),</span>
+            <span class="s">&#39;touches&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Touches&#39;</span><span class="p">),</span>
+            <span class="s">&#39;crosses&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Crosses&#39;</span><span class="p">),</span>
+            <span class="s">&#39;within&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Within&#39;</span><span class="p">),</span>
+            <span class="s">&#39;overlaps&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Overlaps&#39;</span><span class="p">),</span>
+            <span class="s">&#39;contains&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Contains&#39;</span><span class="p">),</span>
+            <span class="s">&#39;intersects&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Intersects&#39;</span><span class="p">),</span>
+            <span class="s">&#39;relate&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">PostGISRelate</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">),</span>
+            <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Valid distance types and substitutions</p></td><td class="code"><div class="highlight"><pre>        <span class="n">dtypes</span> <span class="o">=</span> <span class="p">(</span><span class="n">Decimal</span><span class="p">,</span> <span class="n">Distance</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">get_dist_ops</span><span class="p">(</span><span class="n">operator</span><span class="p">):</span>
+            <span class="s">&quot;Returns operations for both regular and spherical distances.&quot;</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s">&#39;cartesian&#39;</span> <span class="p">:</span> <span class="n">PostGISDistance</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">operator</span><span class="p">),</span>
+                    <span class="s">&#39;sphere&#39;</span> <span class="p">:</span> <span class="n">PostGISSphereDistance</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">operator</span><span class="p">),</span>
+                    <span class="s">&#39;spheroid&#39;</span> <span class="p">:</span> <span class="n">PostGISSpheroidDistance</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">operator</span><span class="p">),</span>
+                    <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&#39;distance_gt&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">get_dist_ops</span><span class="p">(</span><span class="s">&#39;&gt;&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+            <span class="s">&#39;distance_gte&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">get_dist_ops</span><span class="p">(</span><span class="s">&#39;&gt;=&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+            <span class="s">&#39;distance_lt&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">get_dist_ops</span><span class="p">(</span><span class="s">&#39;&lt;&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+            <span class="s">&#39;distance_lte&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">get_dist_ops</span><span class="p">(</span><span class="s">&#39;&lt;=&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+            <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Versions 1.2.2+ have KML serialization support.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">version</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span>
+            <span class="n">ASKML</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ASKML</span> <span class="o">=</span> <span class="s">&#39;ST_AsKML&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                <span class="p">{</span><span class="s">&#39;coveredby&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;CoveredBy&#39;</span><span class="p">),</span>
+                 <span class="s">&#39;covers&#39;</span> <span class="p">:</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;Covers&#39;</span><span class="p">),</span>
+                 <span class="p">})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span><span class="p">[</span><span class="s">&#39;dwithin&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">PostGISFunctionParam</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;DWithin&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Adding the distance functions to the geometries lookup.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>The union aggregate and topology operation use the same signature
+in versions 1.3+.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">version</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">UNIONAGG</span> <span class="o">=</span> <span class="s">&#39;GeomUnion&#39;</span>
+            <span class="n">UNION</span> <span class="o">=</span> <span class="s">&#39;Union&#39;</span>
+            <span class="n">MAKELINE</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">UNIONAGG</span> <span class="o">=</span> <span class="s">&#39;ST_Union&#39;</span>
+            <span class="n">UNION</span> <span class="o">=</span> <span class="s">&#39;ST_Union&#39;</span>
+            <span class="n">MAKELINE</span> <span class="o">=</span> <span class="s">&#39;ST_MakeLine&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Only PostGIS versions 1.3.4+ have GeoJSON serialization support.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">version</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
+            <span class="n">GEOJSON</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">GEOJSON</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;AsGeoJson&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>ST<em>ContainsProperly ST</em>MakeLine, and ST_GeoHash added in 1.4.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">GEOHASH</span> <span class="o">=</span> <span class="s">&#39;ST_GeoHash&#39;</span>
+            <span class="n">BOUNDINGCIRCLE</span> <span class="o">=</span> <span class="s">&#39;ST_MinimumBoundingCircle&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">[</span><span class="s">&#39;contains_properly&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">PostGISFunction</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s">&#39;ContainsProperly&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">GEOHASH</span><span class="p">,</span> <span class="n">BOUNDINGCIRCLE</span> <span class="o">=</span> <span class="bp">False</span><span class="p">,</span> <span class="bp">False</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Geography type support added in 1.5.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">version</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">geography</span> <span class="o">=</span> <span class="bp">True</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Only a subset of the operators and functions are available
+for the geography type.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">geography_functions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">geography_functions</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+                    <span class="s">&#39;coveredby&#39;</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">[</span><span class="s">&#39;coveredby&#39;</span><span class="p">],</span>
+                    <span class="s">&#39;covers&#39;</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">[</span><span class="s">&#39;covers&#39;</span><span class="p">],</span>
+                    <span class="s">&#39;intersects&#39;</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">[</span><span class="s">&#39;intersects&#39;</span><span class="p">],</span>
+                    <span class="p">})</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">geography_operators</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;bboverlaps&#39;</span> <span class="p">:</span> <span class="n">PostGISOperator</span><span class="p">(</span><span class="s">&#39;&amp;&amp;&#39;</span><span class="p">),</span>
+                <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Creating a dictionary lookup of all GIS terms for PostGIS.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">gis_terms</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;isnull&#39;</span><span class="p">]</span>
+        <span class="n">gis_terms</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_operators</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="n">gis_terms</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gis_terms</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">term</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">gis_terms</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">area</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Area&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bounding_circle</span> <span class="o">=</span> <span class="n">BOUNDINGCIRCLE</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">centroid</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Centroid&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collect</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Collect&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">difference</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Difference&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Distance&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance_sphere</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;distance_sphere&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distance_spheroid</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;distance_spheroid&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">envelope</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Envelope&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extent</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Extent&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extent3d</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Extent3D&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">force_rhr</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;ForceRHR&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">geohash</span> <span class="o">=</span> <span class="n">GEOHASH</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">geojson</span> <span class="o">=</span> <span class="n">GEOJSON</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gml</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;AsGML&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">intersection</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Intersection&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kml</span> <span class="o">=</span> <span class="n">ASKML</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Length&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length3d</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Length3D&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">length_spheroid</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;length_spheroid&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">makeline</span> <span class="o">=</span> <span class="n">MAKELINE</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mem_size</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;mem_size&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_geom</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;NumGeometries&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_points</span> <span class="o">=</span><span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;npoints&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">perimeter</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Perimeter&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">perimeter3d</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Perimeter3D&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">point_on_surface</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;PointOnSurface&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">polygonize</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Polygonize&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reverse</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Reverse&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Scale&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">snap_to_grid</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;SnapToGrid&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">svg</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;AsSVG&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sym_difference</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;SymDifference&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transform</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Transform&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">translate</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="s">&#39;Translate&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">union</span> <span class="o">=</span> <span class="n">UNION</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unionagg</span> <span class="o">=</span> <span class="n">UNIONAGG</span>
+
+    <span class="k">def</span> <span class="nf">check_aggregate_support</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aggregate</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Checks if the given aggregate name is supported (that is, if it&#39;s</span>
+<span class="sd">        in `self.valid_aggregates`).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">agg_name</span> <span class="o">=</span> <span class="n">aggregate</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span>
+        <span class="k">return</span> <span class="n">agg_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">valid_aggregates</span>
+
+    <span class="k">def</span> <span class="nf">convert_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a 4-tuple extent for the `Extent` aggregate by converting</span>
+<span class="sd">        the bounding box text returned by PostGIS (`box` argument), for</span>
+<span class="sd">        example: &quot;BOX(-90.0 30.0, -85.0 40.0)&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ll</span><span class="p">,</span> <span class="n">ur</span> <span class="o">=</span> <span class="n">box</span><span class="p">[</span><span class="mi">4</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">ll</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">ur</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">convert_extent3d</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">box3d</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a 6-tuple extent for the `Extent3D` aggregate by converting</span>
+<span class="sd">        the 3d bounding-box text returnded by PostGIS (`box3d` argument), for</span>
+<span class="sd">        example: &quot;BOX3D(-90.0 30.0 1, -85.0 40.0 2)&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ll</span><span class="p">,</span> <span class="n">ur</span> <span class="o">=</span> <span class="n">box3d</span><span class="p">[</span><span class="mi">6</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">)</span>
+        <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">zmin</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">ll</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">,</span> <span class="n">zmax</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">ur</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">zmin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">,</span> <span class="n">zmax</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">convert_geom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">hex</span><span class="p">,</span> <span class="n">geo_field</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Converts the geometry returned from PostGIS aggretates.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">hex</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Geometry</span><span class="p">(</span><span class="nb">hex</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">geo_db_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the database field type for the given geometry field.</span>
+<span class="sd">        Typically this is `None` because geometry columns are added via</span>
+<span class="sd">        the `AddGeometryColumn` stored procedure, unless the field</span>
+<span class="sd">        has been specified to be of geography type instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;PostGIS 1.5 required for geography column support.&#39;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span> <span class="o">!=</span> <span class="mi">4326</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;PostGIS 1.5 supports geography columns &#39;</span>
+                                          <span class="s">&#39;only with an SRID of 4326.&#39;</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="s">&#39;geography(</span><span class="si">%s</span><span class="s">,</span><span class="si">%d</span><span class="s">)&#39;</span><span class="o">%</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">geom_type</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">get_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">dist_val</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Retrieve the distance parameters for the given geometry field,</span>
+<span class="sd">        distance lookup value, and the distance lookup type.</span>
+
+<span class="sd">        This is the most complex implementation of the spatial backends due to</span>
+<span class="sd">        what is supported on geodetic geometry columns vs. what&#39;s available on</span>
+<span class="sd">        projected geometry columns.  In addition, it has to take into account</span>
+<span class="sd">        the newly introduced geography column type introudced in PostGIS 1.5.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Getting the distance parameter and any options.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dist_val</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">value</span><span class="p">,</span> <span class="n">option</span> <span class="o">=</span> <span class="n">dist_val</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">value</span><span class="p">,</span> <span class="n">option</span> <span class="o">=</span> <span class="n">dist_val</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Shorthand boolean flags.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geodetic</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">geodetic</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)</span>
+        <span class="n">geography</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">geography</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">geography</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Distance</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">geography</span><span class="p">:</span>
+                <span class="n">dist_param</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">m</span>
+            <span class="k">elif</span> <span class="n">geodetic</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;dwithin&#39;</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Only numeric values of degree units are &#39;</span>
+                                     <span class="s">&#39;allowed on geographic DWithin queries.&#39;</span><span class="p">)</span>
+                <span class="n">dist_param</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">m</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">dist_param</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Distance</span><span class="o">.</span><span class="n">unit_attname</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">units_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Assuming the distance is in the units of the field.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">dist_param</span> <span class="o">=</span> <span class="n">value</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">geography</span> <span class="ow">and</span> <span class="n">geodetic</span> <span class="ow">and</span> <span class="n">lookup_type</span> <span class="o">!=</span> <span class="s">&#39;dwithin&#39;</span>
+            <span class="ow">and</span> <span class="n">option</span> <span class="o">==</span> <span class="s">&#39;spheroid&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>using distance_spheroid requires the spheroid of the field as
+a parameter.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">_spheroid</span><span class="p">,</span> <span class="n">dist_param</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">dist_param</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">get_geom_placeholder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Provides a proper substitution value for Geometries that are not in the</span>
+<span class="sd">        SRID of the field.  Specifically, this routine will substitute in the</span>
+<span class="sd">        ST_Transform() function call.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">or</span> <span class="n">value</span><span class="o">.</span><span class="n">srid</span> <span class="o">==</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">:</span>
+            <span class="n">placeholder</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Adding Transform() to the SQL placeholder.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">placeholder</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(</span><span class="si">%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;expression&#39;</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>If this is an F expression, then we don't really want
+a placeholder and instead substitute in the column
+of the expression.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">placeholder</span> <span class="o">=</span> <span class="n">placeholder</span> <span class="o">%</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">cols</span><span class="p">[</span><span class="n">value</span><span class="o">.</span><span class="n">expression</span><span class="p">]))</span>
+
+        <span class="k">return</span> <span class="n">placeholder</span>
+
+    <span class="k">def</span> <span class="nf">_get_postgis_func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper routine for calling PostGIS functions and returning their result.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">_cursor</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&#39;SELECT </span><span class="si">%s</span><span class="s">()&#39;</span> <span class="o">%</span> <span class="n">func</span><span class="p">)</span>
+                <span class="n">row</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+            <span class="k">except</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Responsibility of callers to perform error handling.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">raise</span>
+        <span class="k">finally</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Close out the connection.  See #9437.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">postgis_geos_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the version of the GEOS library used with PostGIS.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_postgis_func</span><span class="p">(</span><span class="s">&#39;postgis_geos_version&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">postgis_lib_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the version number of the PostGIS library used with PostgreSQL.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_postgis_func</span><span class="p">(</span><span class="s">&#39;postgis_lib_version&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">postgis_proj_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the version of the PROJ.4 library used with PostGIS.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_postgis_func</span><span class="p">(</span><span class="s">&#39;postgis_proj_version&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">postgis_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns PostGIS version number and compile-time options.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_postgis_func</span><span class="p">(</span><span class="s">&#39;postgis_version&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">postgis_full_version</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns PostGIS version number and compile-time options.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_postgis_func</span><span class="p">(</span><span class="s">&#39;postgis_full_version&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">postgis_version_tuple</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the PostGIS version as a tuple (version string, major,</span>
+<span class="sd">        minor, subminor).</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Getting the PostGIS version</p></td><td class="code"><div class="highlight"><pre>        <span class="n">version</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postgis_lib_version</span><span class="p">()</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">version_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">version</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="n">major</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s">&#39;major&#39;</span><span class="p">))</span>
+            <span class="n">minor1</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s">&#39;minor1&#39;</span><span class="p">))</span>
+            <span class="n">minor2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s">&#39;minor2&#39;</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Could not parse PostGIS version string: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">version</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">version</span><span class="p">,</span> <span class="n">major</span><span class="p">,</span> <span class="n">minor1</span><span class="p">,</span> <span class="n">minor2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">proj_version_tuple</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Return the version of PROJ.4 used by PostGIS as a tuple of the</span>
+<span class="sd">        major, minor, and subminor release numbers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">proj_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;(\d+)\.(\d+)\.(\d+)&#39;</span><span class="p">)</span>
+        <span class="n">proj_ver_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">postgis_proj_version</span><span class="p">()</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">proj_regex</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">proj_ver_str</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">3</span><span class="p">)]))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Could not determine PROJ.4 version from PostGIS.&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">num_params</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">num_param</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Helper routine that returns a boolean indicating whether the number of</span>
+<span class="sd">        parameters is correct for the lookup type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">exactly_two</span><span class="p">(</span><span class="n">np</span><span class="p">):</span> <span class="k">return</span> <span class="n">np</span> <span class="o">==</span> <span class="mi">2</span>
+        <span class="k">def</span> <span class="nf">two_to_three</span><span class="p">(</span><span class="n">np</span><span class="p">):</span> <span class="k">return</span> <span class="n">np</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">np</span> <span class="o">&lt;=</span><span class="mi">3</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span> <span class="ow">and</span>
+            <span class="n">lookup_type</span> <span class="o">!=</span> <span class="s">&#39;dwithin&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">two_to_three</span><span class="p">(</span><span class="n">num_param</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">exactly_two</span><span class="p">(</span><span class="n">num_param</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">spatial_lookup_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lvalue</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">qn</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Constructs spatial SQL from the given lookup value tuple a</span>
+<span class="sd">        (alias, col, db_type), the lookup type string, lookup value, and</span>
+<span class="sd">        the geometry field.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">alias</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">db_type</span> <span class="o">=</span> <span class="n">lvalue</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Getting the quoted geometry column.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geo_col</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">qn</span><span class="p">(</span><span class="n">alias</span><span class="p">),</span> <span class="n">qn</span><span class="p">(</span><span class="n">col</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_operators</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">geography</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">geography_operators</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;PostGIS geography does not support the &#39;</span>
+                                 <span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; lookup.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>Handling a PostGIS operator.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">op</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_operators</span><span class="p">[</span><span class="n">lookup_type</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_placeholder</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">geography</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">geography_functions</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;PostGIS geography type does not support the &#39;</span>
+                                 <span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; lookup.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>See if a PostGIS geometry function matches the lookup type.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">tmp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="p">[</span><span class="n">lookup_type</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>Lookup types that are tuples take tuple arguments, e.g., 'relate' and
+distance lookups.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tmp</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>First element of tuple is the PostGISOperation instance, and the
+second element is either the type or a tuple of acceptable types
+that may passed in as further parameters for the lookup type.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">op</span><span class="p">,</span> <span class="n">arg_type</span> <span class="o">=</span> <span class="n">tmp</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>Ensuring that a tuple <em>value</em> was passed in from the user</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">)):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Tuple required for `</span><span class="si">%s</span><span class="s">` lookup type.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Geometry is first element of lookup tuple.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">geom</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>Number of valid tuple parameters depends on the lookup type.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">nparams</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_params</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="n">nparams</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Incorrect number of parameters given for `</span><span class="si">%s</span><span class="s">` lookup type.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>Ensuring the argument type matches what we expect.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">arg_type</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Argument type should be </span><span class="si">%s</span><span class="s">, got </span><span class="si">%s</span><span class="s"> instead.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">arg_type</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">])))</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>For lookup type <code>relate</code>, the op instance is not yet created (has
+to be instantiated here to check the pattern parameter).</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;relate&#39;</span><span class="p">:</span>
+                    <span class="n">op</span> <span class="o">=</span> <span class="n">op</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">geom_func_prefix</span><span class="p">,</span> <span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="k">elif</span> <span class="n">lookup_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">distance_functions</span> <span class="ow">and</span> <span class="n">lookup_type</span> <span class="o">!=</span> <span class="s">&#39;dwithin&#39;</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">field</span><span class="o">.</span><span class="n">geography</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">geodetic</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>Geodetic distances are only available from Points to
+PointFields on PostGIS 1.4 and below.</p></td><td class="code"><div class="highlight"><pre>                        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+                            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">geom_type</span> <span class="o">!=</span> <span class="s">&#39;POINT&#39;</span><span class="p">:</span>
+                                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;PostGIS spherical operations are only valid on PointFields.&#39;</span><span class="p">)</span>
+
+                            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">geom</span><span class="o">.</span><span class="n">geom_type</span><span class="p">)</span> <span class="o">!=</span> <span class="s">&#39;Point&#39;</span><span class="p">:</span>
+                                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;PostGIS geometry distance parameter is required to be of type Point.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>Setting up the geodetic operation appropriately.</p></td><td class="code"><div class="highlight"><pre>                        <span class="k">if</span> <span class="n">nparams</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">value</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;spheroid&#39;</span><span class="p">:</span>
+                            <span class="n">op</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="s">&#39;spheroid&#39;</span><span class="p">]</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">op</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="s">&#39;sphere&#39;</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">op</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="s">&#39;cartesian&#39;</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">op</span> <span class="o">=</span> <span class="n">tmp</span>
+                <span class="n">geom</span> <span class="o">=</span> <span class="n">value</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>Calling the <code>as_sql</code> function on the operation instance.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_placeholder</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">geom</span><span class="p">))</span>
+
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;isnull&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>Handling 'isnull' lookup type</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s"> IS </span><span class="si">%s</span><span class="s">NULL&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="p">(</span><span class="ow">not</span> <span class="n">value</span> <span class="ow">and</span> <span class="s">&#39;NOT &#39;</span> <span class="ow">or</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;Got invalid lookup_type: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="nb">repr</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">spatial_aggregate_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agg</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the spatial aggregate SQL template and function for the</span>
+<span class="sd">        given Aggregate instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">agg_name</span> <span class="o">=</span> <span class="n">agg</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">check_aggregate_support</span><span class="p">(</span><span class="n">agg</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> spatial aggregate is not implmented for this backend.&#39;</span> <span class="o">%</span> <span class="n">agg_name</span><span class="p">)</span>
+        <span class="n">agg_name</span> <span class="o">=</span> <span class="n">agg_name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">agg_name</span> <span class="o">==</span> <span class="s">&#39;union&#39;</span><span class="p">:</span> <span class="n">agg_name</span> <span class="o">+=</span> <span class="s">&#39;agg&#39;</span>
+        <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(field)s</span><span class="s">)&#39;</span>
+        <span class="n">sql_function</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agg_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">sql_template</span><span class="p">,</span> <span class="n">sql_function</span></pre></div></td></tr>
+
+
+<tr id="section-54"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-54">&#182;</a></div><p>Routines for getting the OGC-compliant models.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">geometry_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.postgis.models</span> <span class="kn">import</span> <span class="n">GeometryColumns</span>
+        <span class="k">return</span> <span class="n">GeometryColumns</span>
+
+    <span class="k">def</span> <span class="nf">spatial_ref_sys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.postgis.models</span> <span class="kn">import</span> <span class="n">SpatialRefSys</span>
+        <span class="k">return</span> <span class="n">SpatialRefSys</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:6}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../../javascript/docco.min.js"></script>
+</html>

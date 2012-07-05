@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › distapp › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">Q</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">GEOSGeometry</span><span class="p">,</span> <span class="n">LineString</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.measure</span> <span class="kn">import</span> <span class="n">D</span> <span class="c"># alias for Distance</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.tests.utils</span> <span class="kn">import</span> <span class="n">oracle</span><span class="p">,</span> <span class="n">postgis</span><span class="p">,</span> <span class="n">spatialite</span><span class="p">,</span> <span class="n">no_oracle</span><span class="p">,</span> <span class="n">no_spatialite</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">AustraliaCity</span><span class="p">,</span> <span class="n">Interstate</span><span class="p">,</span> <span class="n">SouthTexasInterstate</span><span class="p">,</span>
+    <span class="n">SouthTexasCity</span><span class="p">,</span> <span class="n">SouthTexasCityFt</span><span class="p">,</span> <span class="n">CensusZipcode</span><span class="p">,</span> <span class="n">SouthTexasZipcode</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">DistanceTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>A point we are testing distances with -- using a WGS84
+coordinate that'll be implicitly transormed to that to
+the coordinate system of the field, EPSG:32140 (Texas South Central
+w/units in meters)</p></td><td class="code"><div class="highlight"><pre>    <span class="n">stx_pnt</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="s">&#39;POINT (-95.370401017314293 29.704867409475465)&#39;</span><span class="p">,</span> <span class="mi">4326</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Another one for Australia</p></td><td class="code"><div class="highlight"><pre>    <span class="n">au_pnt</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="s">&#39;POINT (150.791 -34.4919)&#39;</span><span class="p">,</span> <span class="mi">4326</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_names</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qs</span><span class="p">):</span>
+        <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">]</span>
+        <span class="n">cities</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">cities</span>
+
+    <span class="k">def</span> <span class="nf">test01_init</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test initialization of distance models.&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="n">SouthTexasCityFt</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">CensusZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">SouthTexasInterstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test02_dwithin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `dwithin` lookup type.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Distances -- all should be equal (except for the
+degree/meter pair in au_cities, that's somewhat
+approximate).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tx_dists</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">7000</span><span class="p">,</span> <span class="mf">22965.83</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">7</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="n">mi</span><span class="o">=</span><span class="mf">4.349</span><span class="p">)]</span>
+        <span class="n">au_dists</span> <span class="o">=</span> <span class="p">[(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">32000</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">32</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="n">mi</span><span class="o">=</span><span class="mf">19.884</span><span class="p">)]</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Expected cities for Australia and Texas.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tx_cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Downtown Houston&#39;</span><span class="p">,</span> <span class="s">&#39;Southside Place&#39;</span><span class="p">]</span>
+        <span class="n">au_cities</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;Mittagong&#39;</span><span class="p">,</span> <span class="s">&#39;Shellharbour&#39;</span><span class="p">,</span> <span class="s">&#39;Thirroul&#39;</span><span class="p">,</span> <span class="s">&#39;Wollongong&#39;</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Performing distance queries on two projected coordinate systems one
+with units in meters and the other in units of U.S. survey feet.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">dist</span> <span class="ow">in</span> <span class="n">tx_dists</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span> <span class="n">dist1</span><span class="p">,</span> <span class="n">dist2</span> <span class="o">=</span> <span class="n">dist</span>
+            <span class="k">else</span><span class="p">:</span> <span class="n">dist1</span> <span class="o">=</span> <span class="n">dist2</span> <span class="o">=</span> <span class="n">dist</span>
+            <span class="n">qs1</span> <span class="o">=</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__dwithin</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">dist1</span><span class="p">))</span>
+            <span class="n">qs2</span> <span class="o">=</span> <span class="n">SouthTexasCityFt</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__dwithin</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">dist2</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">qs</span> <span class="ow">in</span> <span class="n">qs1</span><span class="p">,</span> <span class="n">qs2</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">tx_cities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Now performing the <code>dwithin</code> queries on a geodetic coordinate system.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">dist</span> <span class="ow">in</span> <span class="n">au_dists</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">type_error</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="k">else</span><span class="p">:</span> <span class="n">type_error</span> <span class="o">=</span> <span class="bp">False</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">dist</span> <span class="o">=</span> <span class="n">dist</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span> <span class="n">dist</span> <span class="o">=</span> <span class="n">dist</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Creating the query set.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">qs</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">type_error</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>A ValueError should be raised on PostGIS when trying to pass
+Distance objects into a DWithin query using a geodetic field.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__dwithin</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">au_pnt</span><span class="p">,</span> <span class="n">dist</span><span class="p">))</span><span class="o">.</span><span class="n">count</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">au_cities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__dwithin</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">au_pnt</span><span class="p">,</span> <span class="n">dist</span><span class="p">))))</span>
+
+    <span class="k">def</span> <span class="nf">test03a_distance_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `distance` GeoQuerySet method on projected coordinate systems.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>The point for La Grange, TX</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lagrange</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="s">&#39;POINT(-96.876369 29.905320)&#39;</span><span class="p">,</span> <span class="mi">4326</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Reference distances in feet and in meters. Got these values from
+using the provided raw SQL statements.
+ SELECT ST<em>Distance(point, ST</em>Transform(ST<em>GeomFromText('POINT(-96.876369 29.905320)', 4326), 32140)) FROM distapp</em>southtexascity;</p></td><td class="code"><div class="highlight"><pre>        <span class="n">m_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">147075.069813</span><span class="p">,</span> <span class="mf">139630.198056</span><span class="p">,</span> <span class="mf">140888.552826</span><span class="p">,</span>
+                       <span class="mf">138809.684197</span><span class="p">,</span> <span class="mf">158309.246259</span><span class="p">,</span> <span class="mf">212183.594374</span><span class="p">,</span>
+                       <span class="mf">70870.188967</span><span class="p">,</span> <span class="mf">165337.758878</span><span class="p">,</span> <span class="mf">139196.085105</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>SELECT ST<em>Distance(point, ST</em>Transform(ST<em>GeomFromText('POINT(-96.876369 29.905320)', 4326), 2278)) FROM distapp</em>southtexascityft;
+Oracle 11 thinks this is not a projected coordinate system, so it's s
+not tested.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ft_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">482528.79154625</span><span class="p">,</span> <span class="mf">458103.408123001</span><span class="p">,</span> <span class="mf">462231.860397575</span><span class="p">,</span>
+                        <span class="mf">455411.438904354</span><span class="p">,</span> <span class="mf">519386.252102563</span><span class="p">,</span> <span class="mf">696139.009211594</span><span class="p">,</span>
+                        <span class="mf">232513.278304279</span><span class="p">,</span> <span class="mf">542445.630586414</span><span class="p">,</span> <span class="mf">456679.155883207</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Testing using different variations of parameters and using models
+with different projected coordinate systems.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">dist1</span> <span class="o">=</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">lagrange</span><span class="p">,</span> <span class="n">field_name</span><span class="o">=</span><span class="s">&#39;point&#39;</span><span class="p">)</span>
+        <span class="n">dist2</span> <span class="o">=</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">lagrange</span><span class="p">)</span>  <span class="c"># Using GEOSGeometry parameter</span>
+        <span class="k">if</span> <span class="n">spatialite</span> <span class="ow">or</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">dist_qs</span> <span class="o">=</span> <span class="p">[</span><span class="n">dist1</span><span class="p">,</span> <span class="n">dist2</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dist3</span> <span class="o">=</span> <span class="n">SouthTexasCityFt</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">lagrange</span><span class="o">.</span><span class="n">ewkt</span><span class="p">)</span> <span class="c"># Using EWKT string parameter.</span>
+            <span class="n">dist4</span> <span class="o">=</span> <span class="n">SouthTexasCityFt</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">lagrange</span><span class="p">)</span>
+            <span class="n">dist_qs</span> <span class="o">=</span> <span class="p">[</span><span class="n">dist1</span><span class="p">,</span> <span class="n">dist2</span><span class="p">,</span> <span class="n">dist3</span><span class="p">,</span> <span class="n">dist4</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Original query done on PostGIS, have to adjust AlmostEqual tolerance
+for Oracle.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">5</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Ensuring expected distances are returned for each distance queryset.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">qs</span> <span class="ow">in</span> <span class="n">dist_qs</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">qs</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">m_distances</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">c</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ft_distances</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">c</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">survey_ft</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test03b_distance_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `distance` GeoQuerySet method on geodetic coordnate systems.&quot;</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">5</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Testing geodetic distance calculation with a non-point geometry
+(a LineString of Wollongong and Shellharbour coords).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ls</span> <span class="o">=</span> <span class="n">LineString</span><span class="p">(</span> <span class="p">(</span> <span class="p">(</span><span class="mf">150.902</span><span class="p">,</span> <span class="o">-</span><span class="mf">34.4245</span><span class="p">),</span> <span class="p">(</span><span class="mf">150.87</span><span class="p">,</span> <span class="o">-</span><span class="mf">34.5789</span><span class="p">)</span> <span class="p">)</span> <span class="p">)</span>
+        <span class="k">if</span> <span class="n">oracle</span> <span class="ow">or</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Reference query:
+ SELECT ST<em>distance</em>sphere(point, ST<em>GeomFromText('LINESTRING(150.9020 -34.4245,150.8700 -34.5789)', 4326)) FROM distapp</em>australiacity ORDER BY name;</p></td><td class="code"><div class="highlight"><pre>            <span class="n">distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1120954.92533513</span><span class="p">,</span> <span class="mf">140575.720018241</span><span class="p">,</span> <span class="mf">640396.662906304</span><span class="p">,</span>
+                         <span class="mf">60580.9693849269</span><span class="p">,</span> <span class="mf">972807.955955075</span><span class="p">,</span> <span class="mf">568451.8357838</span><span class="p">,</span>
+                         <span class="mf">40435.4335201384</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">68272.3896586844</span><span class="p">,</span> <span class="mf">12375.0643697706</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">ls</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">city</span><span class="p">,</span> <span class="n">distance</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">qs</span><span class="p">,</span> <span class="n">distances</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Testing equivalence to within a meter.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">distance</span><span class="p">,</span> <span class="n">city</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>PostGIS 1.4 and below is limited to disance queries only
+to/from point geometries, check for raising of ValueError.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">,</span> <span class="n">ls</span><span class="o">.</span><span class="n">wkt</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Got the reference distances using the raw SQL statements:
+ SELECT ST<em>distance</em>spheroid(point, ST<em>GeomFromText('POINT(151.231341 -33.952685)', 4326), 'SPHEROID["WGS 84",6378137.0,298.257223563]') FROM distapp</em>australiacity WHERE (NOT (id = 11));
+ SELECT ST<em>distance</em>sphere(point, ST<em>GeomFromText('POINT(151.231341 -33.952685)', 4326)) FROM distapp</em>australiacity WHERE (NOT (id = 11));  st<em>distance</em>sphere</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">postgis</span> <span class="ow">and</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">proj_version_tuple</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>PROJ.4 versions 4.7+ have updated datums, and thus different
+distance values.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">spheroid_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">60504.0628957201</span><span class="p">,</span> <span class="mf">77023.9489850262</span><span class="p">,</span> <span class="mf">49154.8867574404</span><span class="p">,</span>
+                                  <span class="mf">90847.4358768573</span><span class="p">,</span> <span class="mf">217402.811919332</span><span class="p">,</span> <span class="mf">709599.234564757</span><span class="p">,</span>
+                                  <span class="mf">640011.483550888</span><span class="p">,</span> <span class="mf">7772.00667991925</span><span class="p">,</span> <span class="mf">1047861.78619339</span><span class="p">,</span>
+                                  <span class="mf">1165126.55236034</span><span class="p">]</span>
+            <span class="n">sphere_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">60580.9693849267</span><span class="p">,</span> <span class="mf">77144.0435286473</span><span class="p">,</span> <span class="mf">49199.4415344719</span><span class="p">,</span>
+                                <span class="mf">90804.7533823494</span><span class="p">,</span> <span class="mf">217713.384600405</span><span class="p">,</span> <span class="mf">709134.127242793</span><span class="p">,</span>
+                                <span class="mf">639828.157159169</span><span class="p">,</span> <span class="mf">7786.82949717788</span><span class="p">,</span> <span class="mf">1049204.06569028</span><span class="p">,</span>
+                                <span class="mf">1162623.7238134</span><span class="p">]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">spheroid_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">60504.0628825298</span><span class="p">,</span> <span class="mf">77023.948962654</span><span class="p">,</span> <span class="mf">49154.8867507115</span><span class="p">,</span>
+                                  <span class="mf">90847.435881812</span><span class="p">,</span> <span class="mf">217402.811862568</span><span class="p">,</span> <span class="mf">709599.234619957</span><span class="p">,</span>
+                                  <span class="mf">640011.483583758</span><span class="p">,</span> <span class="mf">7772.00667666425</span><span class="p">,</span> <span class="mf">1047861.7859506</span><span class="p">,</span>
+                                  <span class="mf">1165126.55237647</span><span class="p">]</span>
+            <span class="n">sphere_distances</span> <span class="o">=</span> <span class="p">[</span><span class="mf">60580.7612632291</span><span class="p">,</span> <span class="mf">77143.7785056615</span><span class="p">,</span> <span class="mf">49199.2725132184</span><span class="p">,</span>
+                                <span class="mf">90804.4414289463</span><span class="p">,</span> <span class="mf">217712.63666124</span><span class="p">,</span> <span class="mf">709131.691061906</span><span class="p">,</span>
+                                <span class="mf">639825.959074112</span><span class="p">,</span> <span class="mf">7786.80274606706</span><span class="p">,</span> <span class="mf">1049200.46122281</span><span class="p">,</span>
+                                <span class="mf">1162619.7297006</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Testing with spheroid distances first.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">hillsdale</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Hillsdale&#39;</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">hillsdale</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">hillsdale</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">spheroid</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">qs</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">spheroid_distances</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">c</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">postgis</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>PostGIS uses sphere-only distances by default, testing these as well.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">qs</span> <span class="o">=</span>  <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">hillsdale</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">hillsdale</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">qs</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">sphere_distances</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">c</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+
+    <span class="nd">@no_oracle</span> <span class="c"># Oracle already handles geographic distance calculation.</span>
+    <span class="k">def</span> <span class="nf">test03c_distance_method</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `distance` GeoQuerySet method used with `transform` on a geographic field.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Normally you can't compute distances from a geometry field
+that is not a PointField (on PostGIS 1.4 and below).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">CensusZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>We'll be using a Polygon (created by buffering the centroid
+of 77005 to 100m) -- which aren't allowed in geographic distance
+queries normally, however our field has been transformed to
+a non-geographic system.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">z</span> <span class="o">=</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;77005&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Reference query:
+SELECT ST<em>Distance(ST</em>Transform("distapp<em>censuszipcode"."poly", 32140), ST</em>GeomFromText('<buffer_wkt>', 32140)) FROM "distapp_censuszipcode";</p></td><td class="code"><div class="highlight"><pre>        <span class="n">dists_m</span> <span class="o">=</span> <span class="p">[</span><span class="mf">3553.30384972258</span><span class="p">,</span> <span class="mf">1243.18391525602</span><span class="p">,</span> <span class="mf">2186.15439472242</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>Having our buffer in the SRID of the transformation and of the field
+-- should get the same results. The first buffer has no need for
+transformation SQL because it is the same SRID as what was given
+to <code>transform()</code>.  The second buffer will need to be transformed,
+however.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">buf1</span> <span class="o">=</span> <span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="o">.</span><span class="n">centroid</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+        <span class="n">buf2</span> <span class="o">=</span> <span class="n">buf1</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="mi">4269</span><span class="p">,</span> <span class="n">clone</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">ref_zips</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;77002&#39;</span><span class="p">,</span> <span class="s">&#39;77025&#39;</span><span class="p">,</span> <span class="s">&#39;77401&#39;</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">buf</span> <span class="ow">in</span> <span class="p">[</span><span class="n">buf1</span><span class="p">,</span> <span class="n">buf2</span><span class="p">]:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">CensusZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;77005&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="mi">32140</span><span class="p">)</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ref_zips</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">z</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">qs</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">distance</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">dists_m</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="mi">5</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test04_distance_lookups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `distance_lt`, `distance_gt`, `distance_lte`, and `distance_gte` lookup types.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Retrieving the cities within a 20km 'donut' w/a 7km radius 'hole'
+(thus, Houston and Southside place will be excluded as tested in
+the <code>test02_dwithin</code> above).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs1</span> <span class="o">=</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_gte</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">7</span><span class="p">)))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">20</span><span class="p">)))</span></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Can't determine the units on SpatiaLite from PROJ.4 string, and
+Oracle 11 incorrectly thinks it is not projected.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">spatialite</span> <span class="ow">or</span> <span class="n">oracle</span><span class="p">:</span>
+            <span class="n">dist_qs</span> <span class="o">=</span> <span class="p">(</span><span class="n">qs1</span><span class="p">,)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">qs2</span> <span class="o">=</span> <span class="n">SouthTexasCityFt</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_gte</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">7</span><span class="p">)))</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stx_pnt</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">20</span><span class="p">)))</span>
+            <span class="n">dist_qs</span> <span class="o">=</span> <span class="p">(</span><span class="n">qs1</span><span class="p">,</span> <span class="n">qs2</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">qs</span> <span class="ow">in</span> <span class="n">dist_qs</span><span class="p">:</span>
+            <span class="n">cities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cities</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bellaire&#39;</span><span class="p">,</span> <span class="s">&#39;Pearland&#39;</span><span class="p">,</span> <span class="s">&#39;West University Place&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>Doing a distance query using Polygons instead of a Point.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">z</span> <span class="o">=</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;77005&#39;</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;77005&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">m</span><span class="o">=</span><span class="mi">275</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="s">&#39;77025&#39;</span><span class="p">,</span> <span class="s">&#39;77401&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>If we add a little more distance 77002 should be included.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">qs</span> <span class="o">=</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;77005&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">z</span><span class="o">.</span><span class="n">poly</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">m</span><span class="o">=</span><span class="mi">300</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="s">&#39;77002&#39;</span><span class="p">,</span> <span class="s">&#39;77025&#39;</span><span class="p">,</span> <span class="s">&#39;77401&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test05_geodetic_distance_lookups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing distance lookups on geodetic coordinate systems.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Line is from Canberra to Sydney.  Query is for all other cities within
+a 100km of that line (which should exclude only Hobart &amp; Adelaide).</p></td><td class="code"><div class="highlight"><pre>        <span class="n">line</span> <span class="o">=</span> <span class="n">GEOSGeometry</span><span class="p">(</span><span class="s">&#39;LINESTRING(144.9630 -37.8143,151.2607 -33.8870)&#39;</span><span class="p">,</span> <span class="mi">4326</span><span class="p">)</span>
+        <span class="n">dist_qs</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">100</span><span class="p">)))</span>
+
+        <span class="k">if</span> <span class="n">oracle</span> <span class="ow">or</span> <span class="n">connection</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">geography</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>Oracle and PostGIS 1.5 can do distance lookups on arbitrary geometries.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="n">dist_qs</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">([</span><span class="s">&#39;Batemans Bay&#39;</span><span class="p">,</span> <span class="s">&#39;Canberra&#39;</span><span class="p">,</span> <span class="s">&#39;Hillsdale&#39;</span><span class="p">,</span>
+                              <span class="s">&#39;Melbourne&#39;</span><span class="p">,</span> <span class="s">&#39;Mittagong&#39;</span><span class="p">,</span> <span class="s">&#39;Shellharbour&#39;</span><span class="p">,</span>
+                              <span class="s">&#39;Sydney&#39;</span><span class="p">,</span> <span class="s">&#39;Thirroul&#39;</span><span class="p">,</span> <span class="s">&#39;Wollongong&#39;</span><span class="p">],</span>
+                             <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">dist_qs</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>PostGIS 1.4 and below only allows geodetic distance queries (utilizing
+ST<em>Distance</em>Sphere/ST<em>Distance</em>Spheroid) from Points to PointFields
+on geometry columns.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">dist_qs</span><span class="o">.</span><span class="n">count</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Ensured that a ValueError was raised, none of the rest of the test is
+support on this backend, so bail now.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">spatialite</span><span class="p">:</span> <span class="k">return</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>Too many params (4 in this case) should raise a ValueError.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="nb">len</span><span class="p">,</span>
+                          <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;POINT(5 23)&#39;</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">km</span><span class="o">=</span><span class="mi">100</span><span class="p">),</span> <span class="s">&#39;spheroid&#39;</span><span class="p">,</span> <span class="s">&#39;4&#39;</span><span class="p">)))</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Not enough params should raise a ValueError.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="nb">len</span><span class="p">,</span>
+                          <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;POINT(5 23)&#39;</span><span class="p">,)))</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Getting all cities w/in 550 miles of Hobart.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">hobart</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Hobart&#39;</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Hobart&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">hobart</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">D</span><span class="p">(</span><span class="n">mi</span><span class="o">=</span><span class="mi">550</span><span class="p">)))</span>
+        <span class="n">cities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cities</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Batemans Bay&#39;</span><span class="p">,</span> <span class="s">&#39;Canberra&#39;</span><span class="p">,</span> <span class="s">&#39;Melbourne&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Cities that are either really close or really far from Wollongong --
+and using different units of distance.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">wollongong</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Wollongong&#39;</span><span class="p">)</span>
+        <span class="n">d1</span><span class="p">,</span> <span class="n">d2</span> <span class="o">=</span> <span class="n">D</span><span class="p">(</span><span class="n">yd</span><span class="o">=</span><span class="mi">19500</span><span class="p">),</span> <span class="n">D</span><span class="p">(</span><span class="n">nm</span><span class="o">=</span><span class="mi">400</span><span class="p">)</span> <span class="c"># Yards (~17km) &amp; Nautical miles.</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>Normal geodetic distance lookup (uses <code>distance_sphere</code> on PostGIS.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">gq1</span> <span class="o">=</span> <span class="n">Q</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">wollongong</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">d1</span><span class="p">))</span>
+        <span class="n">gq2</span> <span class="o">=</span> <span class="n">Q</span><span class="p">(</span><span class="n">point__distance_gte</span><span class="o">=</span><span class="p">(</span><span class="n">wollongong</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">d2</span><span class="p">))</span>
+        <span class="n">qs1</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Wollongong&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">gq1</span> <span class="o">|</span> <span class="n">gq2</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>Geodetic distance lookup but telling GeoDjango to use <code>distance_spheroid</code>
+instead (we should get the same results b/c accuracy variance won't matter
+in this test case).</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">postgis</span><span class="p">:</span>
+            <span class="n">gq3</span> <span class="o">=</span> <span class="n">Q</span><span class="p">(</span><span class="n">point__distance_lte</span><span class="o">=</span><span class="p">(</span><span class="n">wollongong</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">d1</span><span class="p">,</span> <span class="s">&#39;spheroid&#39;</span><span class="p">))</span>
+            <span class="n">gq4</span> <span class="o">=</span> <span class="n">Q</span><span class="p">(</span><span class="n">point__distance_gte</span><span class="o">=</span><span class="p">(</span><span class="n">wollongong</span><span class="o">.</span><span class="n">point</span><span class="p">,</span> <span class="n">d2</span><span class="p">,</span> <span class="s">&#39;spheroid&#39;</span><span class="p">))</span>
+            <span class="n">qs2</span> <span class="o">=</span> <span class="n">AustraliaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Wollongong&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">gq3</span> <span class="o">|</span> <span class="n">gq4</span><span class="p">)</span>
+            <span class="n">querysets</span> <span class="o">=</span> <span class="p">[</span><span class="n">qs1</span><span class="p">,</span> <span class="n">qs2</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">querysets</span> <span class="o">=</span> <span class="p">[</span><span class="n">qs1</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">qs</span> <span class="ow">in</span> <span class="n">querysets</span><span class="p">:</span>
+            <span class="n">cities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_names</span><span class="p">(</span><span class="n">qs</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cities</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Adelaide&#39;</span><span class="p">,</span> <span class="s">&#39;Hobart&#39;</span><span class="p">,</span> <span class="s">&#39;Shellharbour&#39;</span><span class="p">,</span> <span class="s">&#39;Thirroul&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test06_area</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `area` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>Reference queries:
+SELECT ST<em>Area(poly) FROM distapp</em>southtexaszipcode;</p></td><td class="code"><div class="highlight"><pre>        <span class="n">area_sq_m</span> <span class="o">=</span> <span class="p">[</span><span class="mf">5437908.90234375</span><span class="p">,</span> <span class="mf">10183031.4389648</span><span class="p">,</span> <span class="mf">11254471.0073242</span><span class="p">,</span> <span class="mf">9881708.91772461</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>Tolerance has to be lower for Oracle and differences
+with GEOS 3.0.0RC4</p></td><td class="code"><div class="highlight"><pre>        <span class="n">tol</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">z</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">area</span><span class="p">()):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">area_sq_m</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">z</span><span class="o">.</span><span class="n">area</span><span class="o">.</span><span class="n">sq_m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test07_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `length` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>Reference query (should use <code>length_spheroid</code>).
+SELECT ST<em>length</em>spheroid(ST_GeomFromText('<wkt>', 4326) 'SPHEROID["WGS 84",6378137,298.257223563, AUTHORITY["EPSG","7030"]]');</p></td><td class="code"><div class="highlight"><pre>        <span class="n">len_m1</span> <span class="o">=</span> <span class="mf">473504.769553813</span>
+        <span class="n">len_m2</span> <span class="o">=</span> <span class="mf">4617.668</span>
+
+        <span class="k">if</span> <span class="n">spatialite</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>Does not support geodetic coordinate systems.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">Interstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">2</span>
+            <span class="k">else</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">5</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">len_m1</span><span class="p">,</span> <span class="n">qs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>Now doing length on a projected coordinate system.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">i10</span> <span class="o">=</span> <span class="n">SouthTexasInterstate</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">length</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;I-10&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">len_m2</span><span class="p">,</span> <span class="n">i10</span><span class="o">.</span><span class="n">length</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="nd">@no_spatialite</span>
+    <span class="k">def</span> <span class="nf">test08_perimeter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the `perimeter` GeoQuerySet method.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>Reference query:
+SELECT ST<em>Perimeter(distapp</em>southtexaszipcode.poly) FROM distapp_southtexaszipcode;</p></td><td class="code"><div class="highlight"><pre>        <span class="n">perim_m</span> <span class="o">=</span> <span class="p">[</span><span class="mf">18404.3550889361</span><span class="p">,</span> <span class="mf">15627.2108551001</span><span class="p">,</span> <span class="mf">20632.5588368978</span><span class="p">,</span> <span class="mf">17094.5996143697</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">oracle</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">tol</span> <span class="o">=</span> <span class="mi">7</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">z</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">perimeter</span><span class="p">()):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">perim_m</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">z</span><span class="o">.</span><span class="n">perimeter</span><span class="o">.</span><span class="n">m</span><span class="p">,</span> <span class="n">tol</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>Running on points; should return 0.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">perimeter</span><span class="p">(</span><span class="n">model_att</span><span class="o">=</span><span class="s">&#39;perim&#39;</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">perim</span><span class="o">.</span><span class="n">m</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test09_measurement_null_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing the measurement GeoQuerySet methods on fields with NULL values.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>Creating SouthTexasZipcode w/NULL value.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;78212&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>Performing distance/area queries against the NULL PolygonField,
+and ensuring the result of the operations is None.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">htown</span> <span class="o">=</span> <span class="n">SouthTexasCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Downtown Houston&#39;</span><span class="p">)</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">SouthTexasZipcode</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">distance</span><span class="p">(</span><span class="n">htown</span><span class="o">.</span><span class="n">point</span><span class="p">)</span><span class="o">.</span><span class="n">area</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;78212&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">distance</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">area</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

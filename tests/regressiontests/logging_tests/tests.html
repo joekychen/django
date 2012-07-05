@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › logging_tests › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">compat_patch_logging_config</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">mail</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">RequestFactory</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+<span class="kn">from</span> <span class="nn">django.utils.log</span> <span class="kn">import</span> <span class="n">CallbackFilter</span><span class="p">,</span> <span class="n">RequireDebugFalse</span><span class="p">,</span> <span class="n">getLogger</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>logging config prior to using filter with mail_admins</p></td><td class="code"><div class="highlight"><pre><span class="n">OLD_LOGGING</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;version&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="s">&#39;disable_existing_loggers&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">,</span>
+    <span class="s">&#39;handlers&#39;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s">&#39;mail_admins&#39;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s">&#39;level&#39;</span><span class="p">:</span> <span class="s">&#39;ERROR&#39;</span><span class="p">,</span>
+            <span class="s">&#39;class&#39;</span><span class="p">:</span> <span class="s">&#39;django.utils.log.AdminEmailHandler&#39;</span>
+        <span class="p">}</span>
+    <span class="p">},</span>
+    <span class="s">&#39;loggers&#39;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s">&#39;django.request&#39;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s">&#39;handlers&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;mail_admins&#39;</span><span class="p">],</span>
+            <span class="s">&#39;level&#39;</span><span class="p">:</span> <span class="s">&#39;ERROR&#39;</span><span class="p">,</span>
+            <span class="s">&#39;propagate&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+
+<span class="k">class</span> <span class="nc">PatchLoggingConfigTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests for backward-compat shim for #16288. These tests should be removed in</span>
+<span class="sd">    Django 1.6 when that shim and DeprecationWarning are removed.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">test_filter_added</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that debug-false filter is added to mail_admins handler if it has</span>
+<span class="sd">        no filters.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">OLD_LOGGING</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">(</span><span class="n">record</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">w</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s">&quot;always&quot;</span><span class="p">)</span>
+            <span class="n">compat_patch_logging_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">config</span><span class="p">[</span><span class="s">&quot;handlers&quot;</span><span class="p">][</span><span class="s">&quot;mail_admins&quot;</span><span class="p">][</span><span class="s">&quot;filters&quot;</span><span class="p">],</span>
+            <span class="p">[</span><span class="s">&#39;require_debug_false&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_filter_configuration</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the auto-added require_debug_false filter is an instance of</span>
+<span class="sd">        `RequireDebugFalse` filter class.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">OLD_LOGGING</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">(</span><span class="n">record</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="n">compat_patch_logging_config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+        <span class="n">flt</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s">&quot;filters&quot;</span><span class="p">][</span><span class="s">&quot;require_debug_false&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">flt</span><span class="p">[</span><span class="s">&quot;()&quot;</span><span class="p">],</span> <span class="s">&quot;django.utils.log.RequireDebugFalse&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_require_debug_false_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test the RequireDebugFalse filter class.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">filter_</span> <span class="o">=</span> <span class="n">RequireDebugFalse</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">filter_</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="s">&quot;record is not used&quot;</span><span class="p">),</span> <span class="bp">False</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">filter_</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="s">&quot;record is not used&quot;</span><span class="p">),</span> <span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_patch_if_filters_key_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the logging configuration is not modified if the mail_admins</span>
+<span class="sd">        handler already has a &quot;filters&quot; key.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">OLD_LOGGING</span><span class="p">)</span>
+        <span class="n">config</span><span class="p">[</span><span class="s">&quot;handlers&quot;</span><span class="p">][</span><span class="s">&quot;mail_admins&quot;</span><span class="p">][</span><span class="s">&quot;filters&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">new_config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">compat_patch_logging_config</span><span class="p">(</span><span class="n">new_config</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">new_config</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_patch_if_no_mail_admins_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that the logging configuration is not modified if the mail_admins</span>
+<span class="sd">        handler is not present.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">OLD_LOGGING</span><span class="p">)</span>
+        <span class="n">config</span><span class="p">[</span><span class="s">&quot;handlers&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&quot;mail_admins&quot;</span><span class="p">)</span>
+        <span class="n">new_config</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">compat_patch_logging_config</span><span class="p">(</span><span class="n">new_config</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">new_config</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CallbackFilterTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_sense</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">f_false</span> <span class="o">=</span> <span class="n">CallbackFilter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="n">f_true</span> <span class="o">=</span> <span class="n">CallbackFilter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="bp">True</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f_false</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="s">&quot;record&quot;</span><span class="p">),</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f_true</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="s">&quot;record&quot;</span><span class="p">),</span> <span class="bp">True</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_passes_on_record</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">collector</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">def</span> <span class="nf">_callback</span><span class="p">(</span><span class="n">record</span><span class="p">):</span>
+            <span class="n">collector</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+            <span class="k">return</span> <span class="bp">True</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">CallbackFilter</span><span class="p">(</span><span class="n">_callback</span><span class="p">)</span>
+
+        <span class="n">f</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="s">&quot;a record&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">collector</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;a record&quot;</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">AdminEmailHandlerTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">get_admin_email_handler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">logger</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Inspired from regressiontests/views/views.py: send_log()
+ensuring the AdminEmailHandler does not get filtered out
+even with DEBUG=True.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">admin_email_handler</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">logger</span><span class="o">.</span><span class="n">handlers</span>
+            <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;AdminEmailHandler&quot;</span>
+            <span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">admin_email_handler</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span>
+            <span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;whatever admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@example.com&#39;</span><span class="p">),),</span>
+            <span class="n">EMAIL_SUBJECT_PREFIX</span><span class="o">=</span><span class="s">&#39;-SuperAwesomeSubject-&#39;</span>
+        <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_accepts_args</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that user-supplied arguments and the EMAIL_SUBJECT_PREFIX</span>
+<span class="sd">        setting are used to compose the email subject.</span>
+<span class="sd">        Refs #16736.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="s">&quot;Custom message that says &#39;</span><span class="si">%s</span><span class="s">&#39; and &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span>
+        <span class="n">token1</span> <span class="o">=</span> <span class="s">&#39;ping&#39;</span>
+        <span class="n">token2</span> <span class="o">=</span> <span class="s">&#39;pong&#39;</span>
+
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;django.request&#39;</span><span class="p">)</span>
+        <span class="n">admin_email_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_admin_email_handler</span><span class="p">(</span><span class="n">logger</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Backup then override original filters</p></td><td class="code"><div class="highlight"><pre>        <span class="n">orig_filters</span> <span class="o">=</span> <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">token1</span><span class="p">,</span> <span class="n">token2</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;admin@example.com&#39;</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span>
+                             <span class="s">&quot;-SuperAwesomeSubject-ERROR: Custom message that says &#39;ping&#39; and &#39;pong&#39;&quot;</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Restore original filters</p></td><td class="code"><div class="highlight"><pre>            <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="n">orig_filters</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span>
+            <span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;whatever admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@example.com&#39;</span><span class="p">),),</span>
+            <span class="n">EMAIL_SUBJECT_PREFIX</span><span class="o">=</span><span class="s">&#39;-SuperAwesomeSubject-&#39;</span><span class="p">,</span>
+            <span class="n">INTERNAL_IPS</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;127.0.0.1&#39;</span><span class="p">,),</span>
+        <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_accepts_args_and_request</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the subject is also handled if being</span>
+<span class="sd">        passed a request object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="s">&quot;Custom message that says &#39;</span><span class="si">%s</span><span class="s">&#39; and &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span>
+        <span class="n">token1</span> <span class="o">=</span> <span class="s">&#39;ping&#39;</span>
+        <span class="n">token2</span> <span class="o">=</span> <span class="s">&#39;pong&#39;</span>
+
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;django.request&#39;</span><span class="p">)</span>
+        <span class="n">admin_email_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_admin_email_handler</span><span class="p">(</span><span class="n">logger</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Backup then override original filters</p></td><td class="code"><div class="highlight"><pre>        <span class="n">orig_filters</span> <span class="o">=</span> <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">rf</span> <span class="o">=</span> <span class="n">RequestFactory</span><span class="p">()</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">rf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;/&#39;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">token1</span><span class="p">,</span> <span class="n">token2</span><span class="p">,</span>
+                <span class="n">extra</span><span class="o">=</span><span class="p">{</span>
+                    <span class="s">&#39;status_code&#39;</span><span class="p">:</span> <span class="mi">403</span><span class="p">,</span>
+                    <span class="s">&#39;request&#39;</span><span class="p">:</span> <span class="n">request</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;admin@example.com&#39;</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span>
+                             <span class="s">&quot;-SuperAwesomeSubject-ERROR (internal IP): Custom message that says &#39;ping&#39; and &#39;pong&#39;&quot;</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Restore original filters</p></td><td class="code"><div class="highlight"><pre>            <span class="n">admin_email_handler</span><span class="o">.</span><span class="n">filters</span> <span class="o">=</span> <span class="n">orig_filters</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span>
+            <span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@example.com&#39;</span><span class="p">),),</span>
+            <span class="n">EMAIL_SUBJECT_PREFIX</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_subject_accepts_newlines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that newlines in email reports&#39; subjects are escaped to avoid</span>
+<span class="sd">        AdminErrorHandler to fail.</span>
+<span class="sd">        Refs #17281.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="s">&#39;Message </span><span class="se">\r\n</span><span class="s"> with newlines&#39;</span>
+        <span class="n">expected_subject</span> <span class="o">=</span> <span class="s">&#39;ERROR: Message </span><span class="se">\\</span><span class="s">r</span><span class="se">\\</span><span class="s">n with newlines&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;django.request&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">&#39;</span> <span class="ow">in</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\r</span><span class="s">&#39;</span> <span class="ow">in</span> <span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span> <span class="n">expected_subject</span><span class="p">)</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span>
+            <span class="n">ADMINS</span><span class="o">=</span><span class="p">((</span><span class="s">&#39;admin&#39;</span><span class="p">,</span> <span class="s">&#39;admin@example.com&#39;</span><span class="p">),),</span>
+            <span class="n">EMAIL_SUBJECT_PREFIX</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="n">DEBUG</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_truncate_subject</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        RFC 2822&#39;s hard limit is 998 characters per line.</span>
+<span class="sd">        So, minus &quot;Subject: &quot;, the actual subject must be no longer than 989</span>
+<span class="sd">        characters.</span>
+<span class="sd">        Refs #17281.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="mi">1000</span>
+        <span class="n">expected_subject</span> <span class="o">=</span> <span class="s">&#39;ERROR: aa&#39;</span> <span class="o">+</span> <span class="s">&#39;a&#39;</span> <span class="o">*</span> <span class="mi">980</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">getLogger</span><span class="p">(</span><span class="s">&#39;django.request&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mail</span><span class="o">.</span><span class="n">outbox</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">subject</span><span class="p">,</span> <span class="n">expected_subject</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

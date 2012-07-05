@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › modeltests › serializers › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span> <span class="nn">xml.dom</span> <span class="kn">import</span> <span class="n">minidom</span>
+<span class="kn">from</span> <span class="nn">StringIO</span> <span class="kn">import</span> <span class="n">StringIO</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">serializers</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">connection</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span><span class="p">,</span> <span class="n">TransactionTestCase</span><span class="p">,</span> <span class="n">Approximate</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Category</span><span class="p">,</span> <span class="n">Author</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">AuthorProfile</span><span class="p">,</span> <span class="n">Actor</span><span class="p">,</span> <span class="n">Movie</span><span class="p">,</span>
+    <span class="n">Score</span><span class="p">,</span> <span class="n">Player</span><span class="p">,</span> <span class="n">Team</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SerializerRegistrationTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_SERIALIZATION_MODULES</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;SERIALIZATION_MODULES&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_serializers</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">_serializers</span>
+
+        <span class="n">serializers</span><span class="o">.</span><span class="n">_serializers</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">SERIALIZATION_MODULES</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s">&quot;json2&quot;</span> <span class="p">:</span> <span class="s">&quot;django.core.serializers.json&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">serializers</span><span class="o">.</span><span class="n">_serializers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_serializers</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_SERIALIZATION_MODULES</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">SERIALIZATION_MODULES</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_SERIALIZATION_MODULES</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">delattr</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="s">&#39;SERIALIZATION_MODULES&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_register</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Registering a new serializer populates the full registry. Refs #14823&quot;</span>
+        <span class="n">serializers</span><span class="o">.</span><span class="n">register_serializer</span><span class="p">(</span><span class="s">&#39;json3&#39;</span><span class="p">,</span> <span class="s">&#39;django.core.serializers.json&#39;</span><span class="p">)</span>
+
+        <span class="n">public_formats</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">get_public_serializer_formats</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;json3&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;json2&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;xml&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_unregister</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Unregistering a serializer doesn&#39;t cause the registry to be repopulated. Refs #14823&quot;</span>
+        <span class="n">serializers</span><span class="o">.</span><span class="n">unregister_serializer</span><span class="p">(</span><span class="s">&#39;xml&#39;</span><span class="p">)</span>
+        <span class="n">serializers</span><span class="o">.</span><span class="n">register_serializer</span><span class="p">(</span><span class="s">&#39;json3&#39;</span><span class="p">,</span> <span class="s">&#39;django.core.serializers.json&#39;</span><span class="p">)</span>
+
+        <span class="n">public_formats</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">get_public_serializer_formats</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;xml&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;json3&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_builtin_serializers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Requesting a list of serializer formats popuates the registry&quot;</span>
+        <span class="n">all_formats</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">get_serializer_formats</span><span class="p">())</span>
+        <span class="n">public_formats</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">get_public_serializer_formats</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;xml&#39;</span><span class="p">,</span> <span class="n">all_formats</span><span class="p">),</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;xml&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;json2&#39;</span><span class="p">,</span> <span class="n">all_formats</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;json2&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIn</span><span class="p">(</span><span class="s">&#39;python&#39;</span><span class="p">,</span> <span class="n">all_formats</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotIn</span><span class="p">(</span><span class="s">&#39;python&#39;</span><span class="p">,</span> <span class="n">public_formats</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SerializersTestBase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_comparison_value</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sports</span> <span class="o">=</span> <span class="n">Category</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Sports&quot;</span><span class="p">)</span>
+        <span class="n">music</span> <span class="o">=</span> <span class="n">Category</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Music&quot;</span><span class="p">)</span>
+        <span class="n">op_ed</span> <span class="o">=</span> <span class="n">Category</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Op-Ed&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">joe</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Joe&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">jane</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Jane&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">a1</span> <span class="o">=</span> <span class="n">Article</span><span class="p">(</span>
+            <span class="n">author</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">jane</span><span class="p">,</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&quot;Poker has no place on ESPN&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2006</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mo">00</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a1</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a1</span><span class="o">.</span><span class="n">categories</span> <span class="o">=</span> <span class="p">[</span><span class="n">sports</span><span class="p">,</span> <span class="n">op_ed</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">a2</span> <span class="o">=</span> <span class="n">Article</span><span class="p">(</span>
+            <span class="n">author</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joe</span><span class="p">,</span>
+            <span class="n">headline</span><span class="o">=</span><span class="s">&quot;Time to reform copyright&quot;</span><span class="p">,</span>
+            <span class="n">pub_date</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2006</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">13</span><span class="p">,</span> <span class="mo">00</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">345</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a2</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">a2</span><span class="o">.</span><span class="n">categories</span> <span class="o">=</span> <span class="p">[</span><span class="n">music</span><span class="p">,</span> <span class="n">op_ed</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">test_serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that basic serialization works.&quot;&quot;&quot;</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                           <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_validate_output</span><span class="p">(</span><span class="n">serial_str</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_serializer_roundtrip</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that serialized content can be deserialized.&quot;&quot;&quot;</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                           <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="n">serial_str</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_altering_serialized_output</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests the ability to create new objects by</span>
+<span class="sd">        modifying serialized content.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">old_headline</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;Poker has no place on ESPN&quot;</span>
+        <span class="n">new_headline</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;Poker has no place on television&quot;</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                           <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serial_str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">old_headline</span><span class="p">,</span> <span class="n">new_headline</span><span class="p">)</span>
+        <span class="n">models</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="n">serial_str</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Prior to saving, old headline is in place</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="n">old_headline</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="n">new_headline</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">model</span> <span class="ow">in</span> <span class="n">models</span><span class="p">:</span>
+            <span class="n">model</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>After saving, new headline is in place</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="n">new_headline</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">headline</span><span class="o">=</span><span class="n">old_headline</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_one_to_one_as_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that if you use your own primary key field</span>
+<span class="sd">        (such as a OneToOneField), it doesn&#39;t appear in the</span>
+<span class="sd">        serialized field list - it replaces the pk identifier.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">profile</span> <span class="o">=</span> <span class="n">AuthorProfile</span><span class="p">(</span><span class="n">author</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">joe</span><span class="p">,</span>
+                                <span class="n">date_of_birth</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">1970</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">profile</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                           <span class="n">AuthorProfile</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="s">&#39;author&#39;</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="n">serial_str</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_comparison_value</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">joe</span><span class="o">.</span><span class="n">pk</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_serialize_field_subset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that output can be restricted to a subset of fields&quot;&quot;&quot;</span>
+        <span class="n">valid_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;headline&#39;</span><span class="p">,</span><span class="s">&#39;pub_date&#39;</span><span class="p">)</span>
+        <span class="n">invalid_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;author&quot;</span><span class="p">,</span> <span class="s">&quot;categories&quot;</span><span class="p">)</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                    <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span>
+                                    <span class="n">fields</span><span class="o">=</span><span class="n">valid_fields</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">invalid_fields</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="n">field_name</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">valid_fields</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="n">field_name</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_serialize_unicode</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that unicode makes the roundtrip intact&quot;&quot;&quot;</span>
+        <span class="n">actor_name</span> <span class="o">=</span> <span class="s">&quot;Za</span><span class="se">\u017c\u00f3\u0142\u0107</span><span class="s">&quot;</span>
+        <span class="n">movie_title</span> <span class="o">=</span> <span class="s">&#39;G</span><span class="se">\u0119\u015b</span><span class="s">l</span><span class="se">\u0105</span><span class="s"> ja</span><span class="se">\u017a\u0144</span><span class="s">&#39;</span>
+        <span class="n">ac</span> <span class="o">=</span> <span class="n">Actor</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">actor_name</span><span class="p">)</span>
+        <span class="n">mv</span> <span class="o">=</span> <span class="n">Movie</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="n">movie_title</span><span class="p">,</span> <span class="n">actor</span><span class="o">=</span><span class="n">ac</span><span class="p">)</span>
+        <span class="n">ac</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">mv</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="p">[</span><span class="n">mv</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="s">&quot;title&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">movie_title</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="s">&quot;actor&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span> <span class="n">actor_name</span><span class="p">)</span>
+
+        <span class="n">obj_list</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="n">serial_str</span><span class="p">))</span>
+        <span class="n">mv_obj</span> <span class="o">=</span> <span class="n">obj_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">object</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mv_obj</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="n">movie_title</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_serialize_superfluous_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Ensure no superfluous queries are made when serializing ForeignKeys</span>
+
+
+<span class="sd">#DIVIDER</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">ac</span> <span class="o">=</span> <span class="n">Actor</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Actor name&#39;</span><span class="p">)</span>
+        <span class="n">ac</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">mv</span> <span class="o">=</span> <span class="n">Movie</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&#39;Movie title&#39;</span><span class="p">,</span> <span class="n">actor_id</span><span class="o">=</span><span class="n">ac</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="n">mv</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">0</span><span class="p">):</span>
+            <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="p">[</span><span class="n">mv</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_serialize_with_null_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that serialized data with no primary key results</span>
+<span class="sd">        in a model instance with no id</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">category</span> <span class="o">=</span> <span class="n">Category</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Reference&quot;</span><span class="p">)</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="p">[</span><span class="n">category</span><span class="p">])</span>
+        <span class="n">pk_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_pk_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">pk_value</span><span class="p">)</span>
+
+        <span class="n">cat_obj</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                               <span class="n">serial_str</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">object</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cat_obj</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_float_serialization</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that float values serialize and deserialize intact&quot;&quot;&quot;</span>
+        <span class="n">sc</span> <span class="o">=</span> <span class="n">Score</span><span class="p">(</span><span class="n">score</span><span class="o">=</span><span class="mf">3.4</span><span class="p">)</span>
+        <span class="n">sc</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="p">[</span><span class="n">sc</span><span class="p">])</span>
+        <span class="n">deserial_objs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                                <span class="n">serial_str</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">deserial_objs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">score</span><span class="p">,</span> <span class="n">Approximate</span><span class="p">(</span><span class="mf">3.4</span><span class="p">,</span> <span class="n">places</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_field_serialization</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that custom fields serialize and deserialize intact&quot;&quot;&quot;</span>
+        <span class="n">team_str</span> <span class="o">=</span> <span class="s">&quot;Spartak Moskva&quot;</span>
+        <span class="n">player</span> <span class="o">=</span> <span class="n">Player</span><span class="p">()</span>
+        <span class="n">player</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;Soslan Djanaev&quot;</span>
+        <span class="n">player</span><span class="o">.</span><span class="n">rank</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">player</span><span class="o">.</span><span class="n">team</span> <span class="o">=</span> <span class="n">Team</span><span class="p">(</span><span class="n">team_str</span><span class="p">)</span>
+        <span class="n">player</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                           <span class="n">Player</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="n">team</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="s">&quot;team&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">team</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">team</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">team_str</span><span class="p">)</span>
+
+        <span class="n">deserial_objs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="n">serial_str</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">deserial_objs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">team</span><span class="o">.</span><span class="n">to_string</span><span class="p">(),</span>
+                         <span class="n">player</span><span class="o">.</span><span class="n">team</span><span class="o">.</span><span class="n">to_string</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_pre_1000ad_date</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Tests that year values before 1000AD are properly formatted&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>17602</p></td><td class="code"><div class="highlight"><pre>        <span class="n">a</span> <span class="o">=</span> <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+        <span class="n">author</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">jane</span><span class="p">,</span>
+        <span class="n">headline</span> <span class="o">=</span> <span class="s">&quot;Nobody remembers the early years&quot;</span><span class="p">,</span>
+        <span class="n">pub_date</span> <span class="o">=</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+        <span class="n">serial_str</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">])</span>
+        <span class="n">date_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="s">&quot;pub_date&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">date_values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;T&#39;</span><span class="p">,</span> <span class="s">&#39; &#39;</span><span class="p">),</span> <span class="s">&quot;0001-02-03 04:05:06&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_pkless_serialized_strings</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that serialized strings without PKs</span>
+<span class="sd">        can be turned into models</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">deserial_objs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span>
+                                                     <span class="bp">self</span><span class="o">.</span><span class="n">pkless_str</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">deserial_objs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">object</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Category</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">4</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SerializersTransactionTestBase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_forward_refs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Tests that objects ids can be referenced before they are</span>
+<span class="sd">        defined in the serialization data.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Regression for #12524 -- dates before 1000AD get prefixed
+0's on the year</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">objs</span> <span class="o">=</span> <span class="n">serializers</span><span class="o">.</span><span class="n">deserialize</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">serializer_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fwd_ref_str</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">connection</span><span class="o">.</span><span class="n">constraint_checks_disabled</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objs</span><span class="p">:</span>
+                <span class="n">obj</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">model_cls</span> <span class="ow">in</span> <span class="p">(</span><span class="n">Category</span><span class="p">,</span> <span class="n">Author</span><span class="p">,</span> <span class="n">Article</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">model_cls</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">art_obj</span> <span class="o">=</span> <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">art_obj</span><span class="o">.</span><span class="n">categories</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">art_obj</span><span class="o">.</span><span class="n">author</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&quot;Agnes&quot;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">XmlSerializerTestCase</span><span class="p">(</span><span class="n">SerializersTestBase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;xml&quot;</span>
+    <span class="n">pkless_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;</span>
+<span class="s">&lt;django-objects version=&quot;1.0&quot;&gt;</span>
+<span class="s">    &lt;object model=&quot;serializers.category&quot;&gt;</span>
+<span class="s">        &lt;field type=&quot;CharField&quot; name=&quot;name&quot;&gt;Reference&lt;/field&gt;</span>
+<span class="s">    &lt;/object&gt;</span>
+<span class="s">&lt;/django-objects&gt;&quot;&quot;&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_comparison_value</span><span class="p">(</span><span class="n">value</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>The deserialization process needs to be contained
+within a transaction in order to test forward reference
+handling.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_validate_output</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_get_pk_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+        <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">dom</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="n">fields</span> <span class="o">=</span> <span class="n">dom</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&quot;object&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&quot;pk&quot;</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">ret_list</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">dom</span> <span class="o">=</span> <span class="n">minidom</span><span class="o">.</span><span class="n">parseString</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="n">fields</span> <span class="o">=</span> <span class="n">dom</span><span class="o">.</span><span class="n">getElementsByTagName</span><span class="p">(</span><span class="s">&quot;field&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">field</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">field_name</span><span class="p">:</span>
+                <span class="n">temp</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">field</span><span class="o">.</span><span class="n">childNodes</span><span class="p">:</span>
+                    <span class="n">temp</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">nodeValue</span><span class="p">)</span>
+                <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">ret_list</span>
+
+<span class="k">class</span> <span class="nc">XmlSerializerTransactionTestCase</span><span class="p">(</span><span class="n">SerializersTransactionTestBase</span><span class="p">,</span> <span class="n">TransactionTestCase</span><span class="p">):</span>
+    <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;xml&quot;</span>
+    <span class="n">fwd_ref_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;</span>
+<span class="s">&lt;django-objects version=&quot;1.0&quot;&gt;</span>
+<span class="s">    &lt;object pk=&quot;1&quot; model=&quot;serializers.article&quot;&gt;</span>
+<span class="s">        &lt;field to=&quot;serializers.author&quot; name=&quot;author&quot; rel=&quot;ManyToOneRel&quot;&gt;1&lt;/field&gt;</span>
+<span class="s">        &lt;field type=&quot;CharField&quot; name=&quot;headline&quot;&gt;Forward references pose no problem&lt;/field&gt;</span>
+<span class="s">        &lt;field type=&quot;DateTimeField&quot; name=&quot;pub_date&quot;&gt;2006-06-16T15:00:00&lt;/field&gt;</span>
+<span class="s">        &lt;field to=&quot;serializers.category&quot; name=&quot;categories&quot; rel=&quot;ManyToManyRel&quot;&gt;</span>
+<span class="s">            &lt;object pk=&quot;1&quot;&gt;&lt;/object&gt;</span>
+<span class="s">        &lt;/field&gt;</span>
+<span class="s">    &lt;/object&gt;</span>
+<span class="s">    &lt;object pk=&quot;1&quot; model=&quot;serializers.author&quot;&gt;</span>
+<span class="s">        &lt;field type=&quot;CharField&quot; name=&quot;name&quot;&gt;Agnes&lt;/field&gt;</span>
+<span class="s">    &lt;/object&gt;</span>
+<span class="s">    &lt;object pk=&quot;1&quot; model=&quot;serializers.category&quot;&gt;</span>
+<span class="s">        &lt;field type=&quot;CharField&quot; name=&quot;name&quot;&gt;Reference&lt;/field&gt;&lt;/object&gt;</span>
+<span class="s">&lt;/django-objects&gt;&quot;&quot;&quot;</span>
+
+
+<span class="k">class</span> <span class="nc">JsonSerializerTestCase</span><span class="p">(</span><span class="n">SerializersTestBase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+    <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;json&quot;</span>
+    <span class="n">pkless_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;[{&quot;pk&quot;: null, &quot;model&quot;: &quot;serializers.category&quot;, &quot;fields&quot;: {&quot;name&quot;: &quot;Reference&quot;}}]&quot;&quot;&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_validate_output</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">True</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_get_pk_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+        <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">serial_list</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">obj_dict</span> <span class="ow">in</span> <span class="n">serial_list</span><span class="p">:</span>
+            <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;pk&quot;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">ret_list</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+        <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">serial_list</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">obj_dict</span> <span class="ow">in</span> <span class="n">serial_list</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;fields&quot;</span><span class="p">]:</span>
+                <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;fields&quot;</span><span class="p">][</span><span class="n">field_name</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">ret_list</span>
+
+<span class="k">class</span> <span class="nc">JsonSerializerTransactionTestCase</span><span class="p">(</span><span class="n">SerializersTransactionTestBase</span><span class="p">,</span> <span class="n">TransactionTestCase</span><span class="p">):</span>
+    <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;json&quot;</span>
+    <span class="n">fwd_ref_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;[</span>
+<span class="s">    {</span>
+<span class="s">        &quot;pk&quot;: 1,</span>
+<span class="s">        &quot;model&quot;: &quot;serializers.article&quot;,</span>
+<span class="s">        &quot;fields&quot;: {</span>
+<span class="s">            &quot;headline&quot;: &quot;Forward references pose no problem&quot;,</span>
+<span class="s">            &quot;pub_date&quot;: &quot;2006-06-16T15:00:00&quot;,</span>
+<span class="s">            &quot;categories&quot;: [1],</span>
+<span class="s">            &quot;author&quot;: 1</span>
+<span class="s">        }</span>
+<span class="s">    },</span>
+<span class="s">    {</span>
+<span class="s">        &quot;pk&quot;: 1,</span>
+<span class="s">        &quot;model&quot;: &quot;serializers.category&quot;,</span>
+<span class="s">        &quot;fields&quot;: {</span>
+<span class="s">            &quot;name&quot;: &quot;Reference&quot;</span>
+<span class="s">        }</span>
+<span class="s">    },</span>
+<span class="s">    {</span>
+<span class="s">        &quot;pk&quot;: 1,</span>
+<span class="s">        &quot;model&quot;: &quot;serializers.author&quot;,</span>
+<span class="s">        &quot;fields&quot;: {</span>
+<span class="s">            &quot;name&quot;: &quot;Agnes&quot;</span>
+<span class="s">        }</span>
+<span class="s">    }]&quot;&quot;&quot;</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">yaml</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="k">pass</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="k">class</span> <span class="nc">YamlSerializerTestCase</span><span class="p">(</span><span class="n">SerializersTestBase</span><span class="p">,</span> <span class="n">TestCase</span><span class="p">):</span>
+        <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;yaml&quot;</span>
+        <span class="n">fwd_ref_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;- fields:</span>
+<span class="s">    headline: Forward references pose no problem</span>
+<span class="s">    pub_date: 2006-06-16 15:00:00</span>
+<span class="s">    categories: [1]</span>
+<span class="s">    author: 1</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.article</span>
+<span class="s">- fields:</span>
+<span class="s">    name: Reference</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.category</span>
+<span class="s">- fields:</span>
+<span class="s">    name: Agnes</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.author&quot;&quot;&quot;</span>
+
+        <span class="n">pkless_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;- fields:</span>
+<span class="s">    name: Reference</span>
+<span class="s">  pk: null</span>
+<span class="s">  model: serializers.category&quot;&quot;&quot;</span>
+
+        <span class="nd">@staticmethod</span>
+        <span class="k">def</span> <span class="nf">_validate_output</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">StringIO</span><span class="p">(</span><span class="n">serial_str</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">True</span>
+
+        <span class="nd">@staticmethod</span>
+        <span class="k">def</span> <span class="nf">_get_pk_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">):</span>
+            <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">stream</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">obj_dict</span> <span class="ow">in</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">stream</span><span class="p">):</span>
+                <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;pk&quot;</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">ret_list</span>
+
+        <span class="nd">@staticmethod</span>
+        <span class="k">def</span> <span class="nf">_get_field_values</span><span class="p">(</span><span class="n">serial_str</span><span class="p">,</span> <span class="n">field_name</span><span class="p">):</span>
+            <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">stream</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">(</span><span class="n">serial_str</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">obj_dict</span> <span class="ow">in</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">stream</span><span class="p">):</span>
+                <span class="k">if</span> <span class="s">&quot;fields&quot;</span> <span class="ow">in</span> <span class="n">obj_dict</span> <span class="ow">and</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;fields&quot;</span><span class="p">]:</span>
+                    <span class="n">field_value</span> <span class="o">=</span> <span class="n">obj_dict</span><span class="p">[</span><span class="s">&quot;fields&quot;</span><span class="p">][</span><span class="n">field_name</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>The XML serializer handles everything as strings, so comparisons
+need to be performed on the stringified value</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field_value</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+                        <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field_value</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">ret_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">field_value</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">ret_list</span>
+
+    <span class="k">class</span> <span class="nc">YamlSerializerTransactionTestCase</span><span class="p">(</span><span class="n">SerializersTransactionTestBase</span><span class="p">,</span> <span class="n">TransactionTestCase</span><span class="p">):</span>
+        <span class="n">serializer_name</span> <span class="o">=</span> <span class="s">&quot;yaml&quot;</span>
+        <span class="n">fwd_ref_str</span> <span class="o">=</span> <span class="n">b</span><span class="s">&quot;&quot;&quot;- fields:</span>
+<span class="s">    headline: Forward references pose no problem</span>
+<span class="s">    pub_date: 2006-06-16 15:00:00</span>
+<span class="s">    categories: [1]</span>
+<span class="s">    author: 1</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.article</span>
+<span class="s">- fields:</span>
+<span class="s">    name: Reference</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.category</span>
+<span class="s">- fields:</span>
+<span class="s">    name: Agnes</span>
+<span class="s">  pk: 1</span>
+<span class="s">  model: serializers.author&quot;&quot;&quot;</span>
+
+</pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>yaml.safe_load will return non-string objects for some
+of the fields we are interested in, this ensures that
+everything comes back as a string</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

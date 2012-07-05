@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › gdal › srs.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>srs.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  The Spatial Reference class, represensents OGR Spatial Reference objects.</span>
+
+<span class="sd">  Example:</span>
+<span class="sd">  &gt;&gt;&gt; from django.contrib.gis.gdal import SpatialReference</span>
+<span class="sd">  &gt;&gt;&gt; srs = SpatialReference(&#39;WGS84&#39;)</span>
+<span class="sd">  &gt;&gt;&gt; print(srs)</span>
+<span class="sd">  GEOGCS[&quot;WGS 84&quot;,</span>
+<span class="sd">      DATUM[&quot;WGS_1984&quot;,</span>
+<span class="sd">          SPHEROID[&quot;WGS 84&quot;,6378137,298.257223563,</span>
+<span class="sd">              AUTHORITY[&quot;EPSG&quot;,&quot;7030&quot;]],</span>
+<span class="sd">          TOWGS84[0,0,0,0,0,0,0],</span>
+<span class="sd">          AUTHORITY[&quot;EPSG&quot;,&quot;6326&quot;]],</span>
+<span class="sd">      PRIMEM[&quot;Greenwich&quot;,0,</span>
+<span class="sd">          AUTHORITY[&quot;EPSG&quot;,&quot;8901&quot;]],</span>
+<span class="sd">      UNIT[&quot;degree&quot;,0.01745329251994328,</span>
+<span class="sd">          AUTHORITY[&quot;EPSG&quot;,&quot;9122&quot;]],</span>
+<span class="sd">      AUTHORITY[&quot;EPSG&quot;,&quot;4326&quot;]]</span>
+<span class="sd">  &gt;&gt;&gt; print(srs.proj)</span>
+<span class="sd">  +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs</span>
+<span class="sd">  &gt;&gt;&gt; print(srs.ellipsoid)</span>
+<span class="sd">  (6378137.0, 6356752.3142451793, 298.25722356300003)</span>
+<span class="sd">  &gt;&gt;&gt; print(srs.projected, srs.geographic)</span>
+<span class="sd">  False True</span>
+<span class="sd">  &gt;&gt;&gt; srs.import_epsg(32140)</span>
+<span class="sd">  &gt;&gt;&gt; print(srs.name)</span>
+<span class="sd">  NAD83 / Texas South Central</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">byref</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">,</span> <span class="n">c_int</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Getting the error checking routine and exceptions</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.base</span> <span class="kn">import</span> <span class="n">GDALBase</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.error</span> <span class="kn">import</span> <span class="n">SRSException</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.gdal.prototypes</span> <span class="kn">import</span> <span class="n">srs</span> <span class="k">as</span> <span class="n">capi</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h3>Spatial Reference class.</h3></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">SpatialReference</span><span class="p">(</span><span class="n">GDALBase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A wrapper for the OGRSpatialReference object.  According to the GDAL Web site,</span>
+<span class="sd">    the SpatialReference object &quot;provide[s] services to represent coordinate </span>
+<span class="sd">    systems (projections and datums) and to transform between them.&quot;</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><h3>Python 'magic' routines</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">srs_input</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a GDAL OSR Spatial Reference object from the given input.</span>
+<span class="sd">        The input may be string of OGC Well Known Text (WKT), an integer </span>
+<span class="sd">        EPSG code, a PROJ.4 string, and/or a projection &quot;well known&quot; shorthand </span>
+<span class="sd">        string (one of &#39;WGS84&#39;, &#39;WGS72&#39;, &#39;NAD27&#39;, &#39;NAD83&#39;).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">c_char_p</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="n">srs_type</span> <span class="o">=</span> <span class="s">&#39;user&#39;</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">srs_input</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Encoding to ASCII if unicode passed in.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">srs_input</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">):</span>
+                <span class="n">srs_input</span> <span class="o">=</span> <span class="n">srs_input</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>If SRID is a string, e.g., '4326', then make acceptable
+as user input.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">srid</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">srs_input</span><span class="p">)</span>
+                <span class="n">srs_input</span> <span class="o">=</span> <span class="s">&#39;EPSG:</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">srid</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">srs_input</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)):</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>EPSG integer code was input.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">srs_type</span> <span class="o">=</span> <span class="s">&#39;epsg&#39;</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">srs_input</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ptr_type</span><span class="p">):</span>
+            <span class="n">srs</span> <span class="o">=</span> <span class="n">srs_input</span>
+            <span class="n">srs_type</span> <span class="o">=</span> <span class="s">&#39;ogr&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Invalid SRS type &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="n">srs_type</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">srs_type</span> <span class="o">==</span> <span class="s">&#39;ogr&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Input is already an SRS pointer.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">srs</span> <span class="o">=</span> <span class="n">srs_input</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Creating a new SRS pointer, using the string buffer.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">srs</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">new_srs</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>If the pointer is NULL, throw an exception.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">srs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">SRSException</span><span class="p">(</span><span class="s">&#39;Could not create spatial reference from: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">srs_input</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">srs</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Importing from either the user input string or an integer SRID.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">srs_type</span> <span class="o">==</span> <span class="s">&#39;user&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">import_user_input</span><span class="p">(</span><span class="n">srs_input</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">srs_type</span> <span class="o">==</span> <span class="s">&#39;epsg&#39;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">import_epsg</span><span class="p">(</span><span class="n">srs_input</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Destroys this spatial reference.&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">:</span> <span class="n">capi</span><span class="o">.</span><span class="n">release_srs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the value of the given string attribute node, None if the node </span>
+<span class="sd">        doesn&#39;t exist.  Can also take a tuple as a parameter, (target, child), </span>
+<span class="sd">        where child is the index of the attribute in the WKT.  For example:</span>
+
+<span class="sd">        &gt;&gt;&gt; wkt = &#39;GEOGCS[&quot;WGS 84&quot;, DATUM[&quot;WGS_1984, ... AUTHORITY[&quot;EPSG&quot;,&quot;4326&quot;]]&#39;)</span>
+<span class="sd">        &gt;&gt;&gt; srs = SpatialReference(wkt) # could also use &#39;WGS84&#39;, or 4326</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;GEOGCS&#39;])</span>
+<span class="sd">        WGS 84</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;DATUM&#39;])</span>
+<span class="sd">        WGS_1984</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;AUTHORITY&#39;])</span>
+<span class="sd">        EPSG</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;AUTHORITY&#39;, 1]) # The authority value</span>
+<span class="sd">        4326</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;TOWGS84&#39;, 4]) # the fourth value in this wkt</span>
+<span class="sd">        0</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;UNIT|AUTHORITY&#39;]) # For the units authority, have to use the pipe symbole.</span>
+<span class="sd">        EPSG</span>
+<span class="sd">        &gt;&gt;&gt; print(srs[&#39;UNIT|AUTHORITY&#39;, 1]) # The authority value for the untis</span>
+<span class="sd">        9122</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="o">*</span><span class="n">target</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;The string representation uses &#39;pretty&#39; WKT.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pretty_wkt</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><h3>SpatialReference Methods</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">attr_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The attribute value for the given target node (e.g. &#39;PROJCS&#39;). The index</span>
+<span class="sd">        keyword specifies an index of the child node to return.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_attr_value</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">auth_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="s">&quot;Returns the authority name for the given string target node.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_auth_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    
+    <span class="k">def</span> <span class="nf">auth_code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="s">&quot;Returns the authority code for the given string target node.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">get_auth_code</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">clone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns a clone of this SpatialReference object.&quot;</span>
+        <span class="k">return</span> <span class="n">SpatialReference</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">clone_srs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">from_esri</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Morphs this SpatialReference from ESRI&#39;s format to EPSG.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">morph_from_esri</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">identify_epsg</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This method inspects the WKT of this SpatialReference, and will</span>
+<span class="sd">        add EPSG authority nodes where an EPSG identifier is applicable.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">identify_epsg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_esri</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Morphs this SpatialReference to ESRI&#39;s format.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">morph_to_esri</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Checks to see if the given spatial reference is valid.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">srs_validate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">)</span>
+    </pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><h3>Name &amp; SRID properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the name of this Spatial Reference.&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">projected</span><span class="p">:</span> <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="s">&#39;PROJCS&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">geographic</span><span class="p">:</span> <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="s">&#39;GEOGCS&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">local</span><span class="p">:</span> <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="s">&#39;LOCAL_CS&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span> <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">srid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the SRID of top-level authority, or None if undefined.&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">attr_value</span><span class="p">(</span><span class="s">&#39;AUTHORITY&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        </pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><h3>Unit Properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">linear_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the name of the linear units.&quot;</span>
+        <span class="n">units</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">linear_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="n">name</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">linear_units</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the value of the linear units.&quot;</span>
+        <span class="n">units</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">linear_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="n">units</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">angular_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the name of the angular units.&quot;</span>
+        <span class="n">units</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">angular_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="n">name</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">angular_units</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the value of the angular units.&quot;</span>
+        <span class="n">units</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">angular_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="n">units</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">units</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a 2-tuple of the units value and the units name, </span>
+<span class="sd">        and will automatically determines whether to return the linear</span>
+<span class="sd">        or angular units.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">projected</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">local</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">linear_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">geographic</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">angular_units</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><h3>Spheroid/Ellipsoid Properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">ellipsoid</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a tuple of the ellipsoid parameters:</span>
+<span class="sd">         (semimajor axis, semiminor axis, and inverse flattening)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">semi_major</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">semi_minor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">inverse_flattening</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">semi_major</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the Semi Major Axis for this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">semi_major</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_int</span><span class="p">()))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">semi_minor</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the Semi Minor Axis for this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">semi_minor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_int</span><span class="p">()))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">inverse_flattening</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the Inverse Flattening for this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">invflattening</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_int</span><span class="p">()))</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><h3>Boolean Properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">geographic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns True if this SpatialReference is geographic </span>
+<span class="sd">         (root node is GEOGCS).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">isgeographic</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">local</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns True if this SpatialReference is local (root node is LOCAL_CS).&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">islocal</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">projected</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns True if this SpatialReference is a projected coordinate system </span>
+<span class="sd">         (root node is PROJCS).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">capi</span><span class="o">.</span><span class="n">isprojected</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><h3>Import Routines</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">import_epsg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">epsg</span><span class="p">):</span>
+        <span class="s">&quot;Imports the Spatial Reference from the EPSG code (an integer).&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">from_epsg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">epsg</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">import_proj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">proj</span><span class="p">):</span>
+        <span class="s">&quot;Imports the Spatial Reference from a PROJ.4 string.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">from_proj</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">proj</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">import_user_input</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_input</span><span class="p">):</span>
+        <span class="s">&quot;Imports the Spatial Reference from the given user input string.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">from_user_input</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">user_input</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">import_wkt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wkt</span><span class="p">):</span>
+        <span class="s">&quot;Imports the Spatial Reference from OGC WKT (string)&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">from_wkt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">(</span><span class="n">wkt</span><span class="p">)))</span>
+
+    <span class="k">def</span> <span class="nf">import_xml</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">xml</span><span class="p">):</span>
+        <span class="s">&quot;Imports the Spatial Reference from an XML string.&quot;</span>
+        <span class="n">capi</span><span class="o">.</span><span class="n">from_xml</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">xml</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><h3>Export Properties</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">wkt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the WKT representation of this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">to_wkt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">pretty_wkt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">simplify</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="s">&quot;Returns the &#39;pretty&#39; representation of the WKT.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">to_pretty_wkt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()),</span> <span class="n">simplify</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">proj</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns the PROJ.4 representation for this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">to_proj</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">proj4</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Alias for proj().&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">xml</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dialect</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="s">&quot;Returns the XML representation of this Spatial Reference.&quot;</span>
+        <span class="k">return</span> <span class="n">capi</span><span class="o">.</span><span class="n">to_xml</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ptr</span><span class="p">,</span> <span class="n">byref</span><span class="p">(</span><span class="n">c_char_p</span><span class="p">()),</span> <span class="n">dialect</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">CoordTransform</span><span class="p">(</span><span class="n">GDALBase</span><span class="p">):</span>
+    <span class="s">&quot;The coordinate system transformation object.&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source</span><span class="p">,</span> <span class="n">target</span><span class="p">):</span>
+        <span class="s">&quot;Initializes on a source and target SpatialReference objects.&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">SpatialReference</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">SpatialReference</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;source and target must be of type SpatialReference&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">capi</span><span class="o">.</span><span class="n">new_ct</span><span class="p">(</span><span class="n">source</span><span class="o">.</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_srs1_name</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_srs2_name</span> <span class="o">=</span> <span class="n">target</span><span class="o">.</span><span class="n">name</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Deletes this Coordinate Transformation object.&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">:</span> <span class="n">capi</span><span class="o">.</span><span class="n">destroy_ct</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ptr</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;Transform from &quot;</span><span class="si">%s</span><span class="s">&quot; to &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_srs1_name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_srs2_name</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

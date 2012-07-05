@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › modeladmin › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.options</span> <span class="kn">import</span> <span class="p">(</span><span class="n">ModelAdmin</span><span class="p">,</span> <span class="n">TabularInline</span><span class="p">,</span>
+     <span class="n">InlineModelAdmin</span><span class="p">,</span> <span class="n">HORIZONTAL</span><span class="p">,</span> <span class="n">VERTICAL</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.sites</span> <span class="kn">import</span> <span class="n">AdminSite</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.validation</span> <span class="kn">import</span> <span class="n">validate</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.widgets</span> <span class="kn">import</span> <span class="n">AdminDateWidget</span><span class="p">,</span> <span class="n">AdminRadioSelect</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin</span> <span class="kn">import</span> <span class="p">(</span><span class="n">SimpleListFilter</span><span class="p">,</span>
+     <span class="n">BooleanFieldListFilter</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.forms.models</span> <span class="kn">import</span> <span class="n">BaseModelFormSet</span>
+<span class="kn">from</span> <span class="nn">django.forms.widgets</span> <span class="kn">import</span> <span class="n">Select</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span><span class="p">,</span> <span class="n">str_prefix</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Band</span><span class="p">,</span> <span class="n">Concert</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">,</span> <span class="n">ValidationTestInlineModel</span>
+
+
+<span class="k">class</span> <span class="nc">MockRequest</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">MockSuperUser</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">has_perm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">perm</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+<span class="n">request</span> <span class="o">=</span> <span class="n">MockRequest</span><span class="p">()</span>
+<span class="n">request</span><span class="o">.</span><span class="n">user</span> <span class="o">=</span> <span class="n">MockSuperUser</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">ModelAdminTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">band</span> <span class="o">=</span> <span class="n">Band</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;The Doors&#39;</span><span class="p">,</span>
+            <span class="n">bio</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="n">sign_date</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">1965</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">site</span> <span class="o">=</span> <span class="n">AdminSite</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>form/fields/fieldsets interaction ##############################</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_default_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">ModelAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_default_fieldsets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>fieldsets<em>add and fieldsets</em>change should return a special data structure that
+is used in the templates. They should generate the "right thing" whether we
+have specified a custom form, the fields argument, or nothing at all.</p>
+
+<p>Here's the default case. There are no custom form<em>add/form</em>change methods,
+no fields argument, and no fieldsets argument.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ma</span> <span class="o">=</span> <span class="n">ModelAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">),</span>
+            <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">]})])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">),</span>
+            <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">]})])</span>
+
+    <span class="k">def</span> <span class="nf">test_field_arguments</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>If we specify the fields argument, fieldsets<em>add and fielsets</em>change should
+just stick the fields into a formsets structure and return it.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+             <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span> <span class="n">ma</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">),</span>
+            <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]})])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">),</span>
+            <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]})])</span>
+
+    <span class="k">def</span> <span class="nf">test_field_arguments_restricted_on_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>If we specify fields or fieldsets, it should exclude fields on the Form class
+to the fields specified. This may cause errors to be raised in the db layer if
+required model fields arent in fields/fieldsets, but that's preferable to
+ghost errors where you have a field in your Form class that isn't being
+displayed because you forgot to add it to fields/fieldsets</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Using <code>fields</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Using <code>fieldsets</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]})]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Using <code>exclude</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>You can also pass a tuple to <code>exclude</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;bio&#39;</span><span class="p">,)</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Using <code>fields</code> and <code>exclude</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">]</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_form_meta_exclude_with_readonly</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the custom ModelForm&#39;s `Meta.exclude` is respected when</span>
+<span class="sd">        used in conjunction with `ModelAdmin.readonly_fields` and when no</span>
+<span class="sd">        `ModelAdmin.exclude` is defined.</span>
+<span class="sd">        Refs #14496.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>First, with <code>ModelAdmin</code> -----------------------</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;sign_date&#39;</span><span class="p">,])</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Then, with <code>InlineModelAdmin</code>  -----------------</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">ConcertInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&#39;main_band&#39;</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">ConcertInline</span>
+            <span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_formsets</span><span class="p">(</span><span class="n">request</span><span class="p">))[</span><span class="mi">0</span><span class="p">]()</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">,</span> <span class="s">&#39;opening_band&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">,])</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_form_meta_exclude</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the custom ModelForm&#39;s `Meta.exclude` is overridden if</span>
+<span class="sd">        `ModelAdmin.exclude` or `InlineModelAdmin.exclude` are defined.</span>
+<span class="sd">        Refs #14496.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>First, with <code>ModelAdmin</code> -----------------------</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">,])</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Then, with <code>InlineModelAdmin</code>  -----------------</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">ConcertInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&#39;main_band&#39;</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">ConcertInline</span>
+            <span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_formsets</span><span class="p">(</span><span class="n">request</span><span class="p">))[</span><span class="mi">0</span><span class="p">]()</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">,</span> <span class="s">&#39;opening_band&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">,])</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_form_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>If we specify a form, it should use it allowing custom validation to work
+properly. This won't, however, break any of the admin widgets or media.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="n">delete</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">()</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">,</span> <span class="s">&#39;delete&#39;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">type</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;sign_date&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">AdminDateWidget</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_form_exclude_kwarg_override</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the `exclude` kwarg passed to `ModelAdmin.get_form()`</span>
+<span class="sd">        overrides all other declarations. Refs #8999.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;sign_date&#39;</span><span class="p">,]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+            <span class="k">def</span> <span class="nf">get_form</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;exclude&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;bio&#39;</span><span class="p">]</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BandAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">,])</span>
+
+
+    <span class="k">def</span> <span class="nf">test_formset_exclude_kwarg_override</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that the `exclude` kwarg passed to `InlineModelAdmin.get_formset()`</span>
+<span class="sd">        overrides all other declarations. Refs #8999.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">ConcertInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&#39;main_band&#39;</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+
+            <span class="k">def</span> <span class="nf">get_formset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;exclude&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ConcertInline</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_formset</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">ConcertInline</span>
+            <span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_formsets</span><span class="p">(</span><span class="n">request</span><span class="p">))[</span><span class="mi">0</span><span class="p">]()</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">,</span> <span class="s">&#39;transport&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">,])</span>
+
+    <span class="k">def</span> <span class="nf">test_queryset_override</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>If we need to override the queryset of a ModelChoiceField in our custom form
+make sure that RelatedFieldWidgetWrapper doesn't mess that up.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">band2</span> <span class="o">=</span> <span class="n">Band</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;The Beatles&#39;</span><span class="p">,</span> <span class="n">bio</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">sign_date</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">1962</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">band2</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="k">class</span> <span class="nc">ConcertAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="k">pass</span>
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">ConcertAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">[</span><span class="s">&quot;main_band&quot;</span><span class="p">]),</span>
+            <span class="s">&#39;&lt;select name=&quot;main_band&quot; id=&quot;id_main_band&quot;&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;option value=&quot;&quot; selected=&quot;selected&quot;&gt;---------&lt;/option&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot;&gt;The Beatles&lt;/option&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot;&gt;The Doors&lt;/option&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;/select&gt;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">band2</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">))</span>
+
+        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+
+            <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="nb">super</span><span class="p">(</span><span class="n">AdminConcertForm</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s">&quot;main_band&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">queryset</span> <span class="o">=</span> <span class="n">Band</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;The Doors&#39;</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ConcertAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">ConcertAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">form</span><span class="p">[</span><span class="s">&quot;main_band&quot;</span><span class="p">]),</span>
+            <span class="s">&#39;&lt;select name=&quot;main_band&quot; id=&quot;id_main_band&quot;&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;option value=&quot;&quot; selected=&quot;selected&quot;&gt;---------&lt;/option&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot;&gt;The Doors&lt;/option&gt;</span><span class="se">\n</span><span class="s">&#39;</span>
+            <span class="s">&#39;&lt;/select&gt;&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_regression_for_ticket_15820</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure that `obj` is passed from `InlineModelAdmin.get_fieldsets()` to</span>
+<span class="sd">        `InlineModelAdmin.get_formset()`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">class</span> <span class="nc">CustomConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">ConcertInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&#39;main_band&#39;</span>
+
+            <span class="k">def</span> <span class="nf">get_formset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">obj</span><span class="p">:</span>
+                    <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;form&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">CustomConcertForm</span>
+                <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ConcertInline</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_formset</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">ConcertInline</span>
+            <span class="p">]</span>
+
+        <span class="n">concert</span> <span class="o">=</span> <span class="n">Concert</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">main_band</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">,</span> <span class="n">opening_band</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="p">,</span> <span class="n">day</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="n">inline_instances</span> <span class="o">=</span> <span class="n">ma</span><span class="o">.</span><span class="n">get_inline_instances</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="n">fieldsets</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">inline_instances</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">fieldsets</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">][</span><span class="s">&#39;fields&#39;</span><span class="p">],</span> <span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">,</span> <span class="s">&#39;opening_band&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">,</span> <span class="s">&#39;transport&#39;</span><span class="p">])</span>
+        <span class="n">fieldsets</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">inline_instances</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get_fieldsets</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">inline_instances</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">model</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">fieldsets</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">][</span><span class="s">&#39;fields&#39;</span><span class="p">],</span> <span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>radio_fields behavior ###########################################</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">test_default_foreign_key_widget</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>First, without any radio_fields specified, the widgets for ForeignKey
+and fields with choices specified ought to be a basic Select widget.
+ForeignKey widgets in the admin are wrapped with RelatedFieldWidgetWrapper so
+they need to be handled properly when type checking. For Select fields, all of
+the choices lists have a first entry of dashes.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">cma</span> <span class="o">=</span> <span class="n">ModelAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="n">cmafa</span> <span class="o">=</span> <span class="n">cma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">Select</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;---------&#39;</span><span class="p">),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s">&#39;The Doors&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span> <span class="n">Select</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;---------&#39;</span><span class="p">),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s">&#39;The Doors&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span> <span class="n">Select</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;---------&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&#39;Fri&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s">&#39;Sat&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">Select</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;---------&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&#39;Plane&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s">&#39;Train&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s">&#39;Bus&#39;</span><span class="p">)])</span>
+
+    <span class="k">def</span> <span class="nf">test_foreign_key_as_radio_field</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Now specify all the fields as radio_fields.  Widgets should now be
+RadioSelect, and the choices list should have a first entry of 'None' if
+blank=True for the model field.  Finally, the widget should have the
+'radiolist' attr, and 'inline' as well if the field is specified HORIZONTAL.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">ConcertAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;main_band&#39;</span><span class="p">:</span> <span class="n">HORIZONTAL</span><span class="p">,</span>
+                <span class="s">&#39;opening_band&#39;</span><span class="p">:</span> <span class="n">VERTICAL</span><span class="p">,</span>
+                <span class="s">&#39;day&#39;</span><span class="p">:</span> <span class="n">VERTICAL</span><span class="p">,</span>
+                <span class="s">&#39;transport&#39;</span><span class="p">:</span> <span class="n">HORIZONTAL</span><span class="p">,</span>
+            <span class="p">}</span>
+
+        <span class="n">cma</span> <span class="o">=</span> <span class="n">ConcertAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="n">cmafa</span> <span class="o">=</span> <span class="n">cma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">AdminRadioSelect</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">attrs</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;class&#39;</span><span class="p">:</span> <span class="s">&#39;radiolist inline&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s">&#39;The Doors&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">AdminRadioSelect</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">attrs</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;class&#39;</span><span class="p">:</span> <span class="s">&#39;radiolist&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;opening_band&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;None&#39;</span><span class="p">),</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">band</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="s">&#39;The Doors&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">AdminRadioSelect</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">attrs</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;class&#39;</span><span class="p">:</span> <span class="s">&#39;radiolist&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;day&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&#39;Fri&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s">&#39;Sat&#39;</span><span class="p">)])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="p">),</span>
+            <span class="n">AdminRadioSelect</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">attrs</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;class&#39;</span><span class="p">:</span> <span class="s">&#39;radiolist inline&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmafa</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;transport&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span>
+            <span class="p">[(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;None&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s">&#39;Plane&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s">&#39;Train&#39;</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="s">&#39;Bus&#39;</span><span class="p">)])</span>
+
+        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">exclude</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;transport&#39;</span><span class="p">,)</span>
+
+        <span class="k">class</span> <span class="nc">ConcertAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">ConcertAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;main_band&#39;</span><span class="p">,</span> <span class="s">&#39;opening_band&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">])</span>
+
+        <span class="k">class</span> <span class="nc">AdminConcertForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="n">extra</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">()</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;extra&#39;</span><span class="p">,</span> <span class="s">&#39;transport&#39;</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">ConcertAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">ConcertAdmin</span><span class="p">(</span><span class="n">Concert</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_form</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">base_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;extra&#39;</span><span class="p">,</span> <span class="s">&#39;transport&#39;</span><span class="p">])</span>
+
+        <span class="k">class</span> <span class="nc">ConcertInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminConcertForm</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Concert</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&#39;main_band&#39;</span>
+            <span class="n">can_delete</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">ConcertInline</span>
+            <span class="p">]</span>
+
+        <span class="n">ma</span> <span class="o">=</span> <span class="n">BandAdmin</span><span class="p">(</span><span class="n">Band</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">site</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ma</span><span class="o">.</span><span class="n">get_formsets</span><span class="p">(</span><span class="n">request</span><span class="p">))[</span><span class="mi">0</span><span class="p">]()</span><span class="o">.</span><span class="n">forms</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span>
+            <span class="p">[</span><span class="s">&#39;extra&#39;</span><span class="p">,</span> <span class="s">&#39;transport&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;DELETE&#39;</span><span class="p">,</span> <span class="s">&#39;main_band&#39;</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">ValidationTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_validation_only_runs_in_debug</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Ensure validation only runs when DEBUG = True</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">True</span>
+
+            <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+                <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="mi">10</span>
+
+            <span class="n">site</span> <span class="o">=</span> <span class="n">AdminSite</span><span class="p">()</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+                <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+                <span class="s">&quot;&#39;ValidationTestModelAdmin.raw_id_fields&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+                <span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">,</span>
+                <span class="n">ValidationTestModel</span><span class="p">,</span>
+                <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">settings</span><span class="o">.</span><span class="n">DEBUG</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="n">site</span> <span class="o">=</span> <span class="n">AdminSite</span><span class="p">()</span>
+        <span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">ValidationTestModel</span><span class="p">,</span> <span class="n">ValidationTestModelAdmin</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_raw_id_fields_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.raw_id_fields&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.raw_id_fields&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.raw_id_fields\[0\]&#39;, &#39;name&#39; must be either a ForeignKey or ManyToManyField.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;users&#39;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fieldsets_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.fieldsets&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">({},)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.fieldsets\[0\]&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.fieldsets\[0\]&#39; does not have exactly two elements.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((</span><span class="s">&quot;General&quot;</span><span class="p">,</span> <span class="p">()),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.fieldsets\[0\]\[1\]&#39; must be a dictionary.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((</span><span class="s">&quot;General&quot;</span><span class="p">,</span> <span class="p">{}),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;fields&#39; key is required in ValidationTestModelAdmin.fieldsets\[0\]\[1\] field options dict.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((</span><span class="s">&quot;General&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;fields&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">,)}),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.fieldsets\[0\]\[1\]\[&#39;fields&#39;\]&#39; refers to field &#39;non_existent_field&#39; that is missing from the form.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((</span><span class="s">&quot;General&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;fields&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)}),)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">((</span><span class="s">&quot;General&quot;</span><span class="p">,</span> <span class="p">{</span><span class="s">&quot;fields&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)}),)</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;name&quot;</span><span class="p">,]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;Both fieldsets and fields are specified in ValidationTestModelAdmin.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">[(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">]})]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;There are duplicate field\(s\) in ValidationTestModelAdmin.fieldsets&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;name&quot;</span><span class="p">,</span> <span class="s">&quot;name&quot;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;There are duplicate field\(s\) in ValidationTestModelAdmin.fields&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_form_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">FakeForm</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">FakeForm</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;ValidationTestModelAdmin.form does not inherit from BaseModelForm.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fieldsets_with_custom_form_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="s">&#39;Band&#39;</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+                <span class="p">}),</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;BandAdmin.fieldsets\[0\]\[1\]\[&#39;fields&#39;\]&#39; refers to field &#39;non_existent_field&#39; that is missing from the form.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">BandAdmin</span><span class="p">,</span>
+            <span class="n">Band</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="s">&#39;Band&#39;</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+                <span class="p">}),</span>
+            <span class="p">)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">BandAdmin</span><span class="p">,</span> <span class="n">Band</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="s">&#39;Band&#39;</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+                <span class="p">}),</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;BandAdmin.fieldsets\[0]\[1\]\[&#39;fields&#39;\]&#39; refers to field &#39;non_existent_field&#39; that is missing from the form.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">BandAdmin</span><span class="p">,</span>
+            <span class="n">Band</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">AdminBandForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="n">delete</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">()</span>
+
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Band</span>
+
+        <span class="k">class</span> <span class="nc">BandAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">form</span> <span class="o">=</span> <span class="n">AdminBandForm</span>
+
+            <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="s">&#39;Band&#39;</span><span class="p">,</span> <span class="p">{</span>
+                    <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;bio&#39;</span><span class="p">,</span> <span class="s">&#39;sign_date&#39;</span><span class="p">,</span> <span class="s">&#39;delete&#39;</span><span class="p">)</span>
+                <span class="p">}),</span>
+            <span class="p">)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">BandAdmin</span><span class="p">,</span> <span class="n">Band</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_filter_vertical_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_vertical</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_vertical&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_vertical</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_vertical&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_vertical</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_vertical\[0\]&#39; must be a ManyToManyField.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_vertical</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;users&quot;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_filter_horizontal_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_horizontal</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_horizontal&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_horizontal</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_horizontal&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_horizontal</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.filter_horizontal\[0\]&#39; must be a ManyToManyField.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">filter_horizontal</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;users&quot;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_radio_fields_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.radio_fields&#39; must be a dictionary.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">:</span> <span class="bp">None</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.radio_fields&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;name&quot;</span><span class="p">:</span> <span class="bp">None</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.radio_fields\[&#39;name&#39;\]&#39; is neither an instance of ForeignKey nor does have choices set.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;state&quot;</span><span class="p">:</span> <span class="bp">None</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.radio_fields\[&#39;state&#39;\]&#39; is neither admin.HORIZONTAL nor admin.VERTICAL.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">radio_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;state&quot;</span><span class="p">:</span> <span class="n">VERTICAL</span><span class="p">}</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_prepopulated_fields_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.prepopulated_fields&#39; must be a dictionary.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">:</span> <span class="bp">None</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.prepopulated_fields&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;slug&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">,)}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.prepopulated_fields\[&#39;slug&#39;\]\[0\]&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;users&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.prepopulated_fields\[&#39;users&#39;\]&#39; is either a DateTimeField, ForeignKey or ManyToManyField. This isn&#39;t allowed.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&quot;slug&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,)}</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_list_display_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_display&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="n">str_prefix</span><span class="p">(</span><span class="s">&quot;ValidationTestModelAdmin.list_display\[0\], </span><span class="si">%(_)s</span><span class="s">&#39;non_existent_field&#39; is not a callable or an attribute of &#39;ValidationTestModelAdmin&#39; or found in the model &#39;ValidationTestModel&#39;.&quot;</span><span class="p">),</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;users&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_display\[0\]&#39;, &#39;users&#39; is a ManyToManyField which is not supported.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">a_callable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">a_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+                <span class="k">pass</span>
+            <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;decade_published_in&#39;</span><span class="p">,</span> <span class="s">&#39;a_method&#39;</span><span class="p">,</span> <span class="n">a_callable</span><span class="p">)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_list_display_links_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display_links</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_display_links&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display_links</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_display_links\[0\]&#39; refers to &#39;non_existent_field&#39; which is not defined in &#39;list_display&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_display_links</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_display_links\[0\]&#39; refers to &#39;name&#39; which is not defined in &#39;list_display&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">a_callable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">a_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+                <span class="k">pass</span>
+            <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;decade_published_in&#39;</span><span class="p">,</span> <span class="s">&#39;a_method&#39;</span><span class="p">,</span> <span class="n">a_callable</span><span class="p">)</span>
+            <span class="n">list_display_links</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;decade_published_in&#39;</span><span class="p">,</span> <span class="s">&#39;a_method&#39;</span><span class="p">,</span> <span class="n">a_callable</span><span class="p">)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_list_filter_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter\[0\]&#39; refers to &#39;non_existent_field&#39; which does not refer to a Field.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">RandomClass</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="n">RandomClass</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter\[0\]&#39; is &#39;RandomClass&#39; which is not a descendant of ListFilter.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">((</span><span class="s">&#39;is_active&#39;</span><span class="p">,</span> <span class="n">RandomClass</span><span class="p">),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter\[0\]\[1\]&#39; is &#39;RandomClass&#39; which is not of type FieldListFilter.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">AwesomeFilter</span><span class="p">(</span><span class="n">SimpleListFilter</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">get_title</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s">&#39;awesomeness&#39;</span>
+            <span class="k">def</span> <span class="nf">get_choices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+                <span class="k">return</span> <span class="p">((</span><span class="s">&#39;bit&#39;</span><span class="p">,</span> <span class="s">&#39;A bit awesome&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;very&#39;</span><span class="p">,</span> <span class="s">&#39;Very awesome&#39;</span><span class="p">),</span> <span class="p">)</span>
+            <span class="k">def</span> <span class="nf">get_query_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cl</span><span class="p">,</span> <span class="n">qs</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">qs</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">((</span><span class="s">&#39;is_active&#39;</span><span class="p">,</span> <span class="n">AwesomeFilter</span><span class="p">),)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter\[0\]\[1\]&#39; is &#39;AwesomeFilter&#39; which is not of type FieldListFilter.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="n">BooleanFieldListFilter</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_filter\[0\]&#39; is &#39;BooleanFieldListFilter&#39; which is of type FieldListFilter but is not associated with a field name.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Valid declarations below -----------</p></td><td class="code"><div class="highlight"><pre>        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;is_active&#39;</span><span class="p">,</span> <span class="n">AwesomeFilter</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;is_active&#39;</span><span class="p">,</span> <span class="n">BooleanFieldListFilter</span><span class="p">),</span> <span class="s">&#39;no&#39;</span><span class="p">)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_list_per_page_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_per_page</span> <span class="o">=</span> <span class="s">&#39;hello&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_per_page&#39; should be a integer.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_per_page</span> <span class="o">=</span> <span class="mi">100</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_max_show_all_allowed_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_max_show_all</span> <span class="o">=</span> <span class="s">&#39;hello&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_max_show_all&#39; should be an integer.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_max_show_all</span> <span class="o">=</span> <span class="mi">200</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_search_fields_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">search_fields</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.search_fields&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_date_hierarchy_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">date_hierarchy</span> <span class="o">=</span> <span class="s">&#39;non_existent_field&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.date_hierarchy&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">date_hierarchy</span> <span class="o">=</span> <span class="s">&#39;name&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.date_hierarchy is neither an instance of DateField nor DateTimeField.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">date_hierarchy</span> <span class="o">=</span> <span class="s">&#39;pub_date&#39;</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_ordering_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.ordering&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;non_existent_field&#39;</span><span class="p">,)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.ordering\[0\]&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;?&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.ordering&#39; has the random ordering marker &#39;\?&#39;, but contains other fields as well. Please either remove &#39;\?&#39; or the other fields.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;?&#39;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;band__name&#39;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_list_select_related_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_select_related</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.list_select_related&#39; should be a boolean.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">list_select_related</span> <span class="o">=</span> <span class="bp">False</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_save_as_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">save_as</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.save_as&#39; should be a boolean.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">save_as</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_save_on_top_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">save_on_top</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.save_on_top&#39; should be a boolean.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">save_on_top</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inlines_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.inlines&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.inlines\[0\]&#39; does not inherit from BaseModelAdmin.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;model&#39; is a required attribute of &#39;ValidationTestModelAdmin.inlines\[0\]&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">SomethingBad</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">SomethingBad</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestModelAdmin.inlines\[0\].model&#39; does not inherit from models.Model.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fields_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="mi">10</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.fields&#39; must be a list or tuple.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;non_existent_field&quot;</span><span class="p">,)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.fields&#39; refers to field &#39;non_existent_field&#39; that is missing from the form.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_fk_name_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&quot;non_existent_field&quot;</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.fk_name&#39; refers to field &#39;non_existent_field&#39; that is missing from model &#39;modeladmin.ValidationTestInlineModel&#39;.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">fk_name</span> <span class="o">=</span> <span class="s">&quot;parent&quot;</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_extra_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">extra</span> <span class="o">=</span> <span class="s">&quot;hello&quot;</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.extra&#39; should be a integer.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">extra</span> <span class="o">=</span> <span class="mi">2</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_max_num_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">max_num</span> <span class="o">=</span> <span class="s">&quot;hello&quot;</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.max_num&#39; should be an integer or None \(default\).&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">max_num</span> <span class="o">=</span> <span class="mi">2</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_formset_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">class</span> <span class="nc">FakeFormSet</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">formset</span> <span class="o">=</span> <span class="n">FakeFormSet</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span>
+            <span class="n">ImproperlyConfigured</span><span class="p">,</span>
+            <span class="s">&quot;&#39;ValidationTestInline.formset&#39; does not inherit from BaseModelFormSet.&quot;</span><span class="p">,</span>
+            <span class="n">validate</span><span class="p">,</span>
+            <span class="n">ValidationTestModelAdmin</span><span class="p">,</span>
+            <span class="n">ValidationTestModel</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">class</span> <span class="nc">RealModelFormSet</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">):</span>
+            <span class="k">pass</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestInline</span><span class="p">(</span><span class="n">TabularInline</span><span class="p">):</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">ValidationTestInlineModel</span>
+            <span class="n">formset</span> <span class="o">=</span> <span class="n">RealModelFormSet</span>
+
+        <span class="k">class</span> <span class="nc">ValidationTestModelAdmin</span><span class="p">(</span><span class="n">ModelAdmin</span><span class="p">):</span>
+            <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ValidationTestInline</span><span class="p">]</span>
+
+        <span class="n">validate</span><span class="p">(</span><span class="n">ValidationTestModelAdmin</span><span class="p">,</span> <span class="n">ValidationTestModel</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › admin_views › admin.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>admin.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">tempfile</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span> <span class="nn">django.contrib</span> <span class="kn">import</span> <span class="n">admin</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin.views.main</span> <span class="kn">import</span> <span class="n">ChangeList</span>
+<span class="kn">from</span> <span class="nn">django.core.files.storage</span> <span class="kn">import</span> <span class="n">FileSystemStorage</span>
+<span class="kn">from</span> <span class="nn">django.core.mail</span> <span class="kn">import</span> <span class="n">EmailMessage</span>
+<span class="kn">from</span> <span class="nn">django.conf.urls</span> <span class="kn">import</span> <span class="n">patterns</span><span class="p">,</span> <span class="n">url</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+<span class="kn">from</span> <span class="nn">django.forms.models</span> <span class="kn">import</span> <span class="n">BaseModelFormSet</span>
+<span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpResponse</span>
+<span class="kn">from</span> <span class="nn">django.contrib.admin</span> <span class="kn">import</span> <span class="n">BooleanFieldListFilter</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Article</span><span class="p">,</span> <span class="n">Chapter</span><span class="p">,</span> <span class="n">Account</span><span class="p">,</span> <span class="n">Media</span><span class="p">,</span> <span class="n">Child</span><span class="p">,</span> <span class="n">Parent</span><span class="p">,</span> <span class="n">Picture</span><span class="p">,</span>
+    <span class="n">Widget</span><span class="p">,</span> <span class="n">DooHickey</span><span class="p">,</span> <span class="n">Grommet</span><span class="p">,</span> <span class="n">Whatsit</span><span class="p">,</span> <span class="n">FancyDoodad</span><span class="p">,</span> <span class="n">Category</span><span class="p">,</span> <span class="n">Link</span><span class="p">,</span>
+    <span class="n">PrePopulatedPost</span><span class="p">,</span> <span class="n">PrePopulatedSubPost</span><span class="p">,</span> <span class="n">CustomArticle</span><span class="p">,</span> <span class="n">Section</span><span class="p">,</span>
+    <span class="n">ModelWithStringPrimaryKey</span><span class="p">,</span> <span class="n">Color</span><span class="p">,</span> <span class="n">Thing</span><span class="p">,</span> <span class="n">Actor</span><span class="p">,</span> <span class="n">Inquisition</span><span class="p">,</span> <span class="n">Sketch</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span>
+    <span class="n">Persona</span><span class="p">,</span> <span class="n">Subscriber</span><span class="p">,</span> <span class="n">ExternalSubscriber</span><span class="p">,</span> <span class="n">OldSubscriber</span><span class="p">,</span> <span class="n">Vodcast</span><span class="p">,</span> <span class="n">EmptyModel</span><span class="p">,</span>
+    <span class="n">Fabric</span><span class="p">,</span> <span class="n">Gallery</span><span class="p">,</span> <span class="n">Language</span><span class="p">,</span> <span class="n">Recommendation</span><span class="p">,</span> <span class="n">Recommender</span><span class="p">,</span> <span class="n">Collector</span><span class="p">,</span> <span class="n">Post</span><span class="p">,</span>
+    <span class="n">Gadget</span><span class="p">,</span> <span class="n">Villain</span><span class="p">,</span> <span class="n">SuperVillain</span><span class="p">,</span> <span class="n">Plot</span><span class="p">,</span> <span class="n">PlotDetails</span><span class="p">,</span> <span class="n">CyclicOne</span><span class="p">,</span> <span class="n">CyclicTwo</span><span class="p">,</span>
+    <span class="n">WorkHour</span><span class="p">,</span> <span class="n">Reservation</span><span class="p">,</span> <span class="n">FoodDelivery</span><span class="p">,</span> <span class="n">RowLevelChangePermissionModel</span><span class="p">,</span> <span class="n">Paper</span><span class="p">,</span>
+    <span class="n">CoverLetter</span><span class="p">,</span> <span class="n">Story</span><span class="p">,</span> <span class="n">OtherStory</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Promo</span><span class="p">,</span> <span class="n">ChapterXtra1</span><span class="p">,</span> <span class="n">Pizza</span><span class="p">,</span> <span class="n">Topping</span><span class="p">,</span>
+    <span class="n">Album</span><span class="p">,</span> <span class="n">Question</span><span class="p">,</span> <span class="n">Answer</span><span class="p">,</span> <span class="n">ComplexSortedPerson</span><span class="p">,</span> <span class="n">PrePopulatedPostLargeSlug</span><span class="p">,</span>
+    <span class="n">AdminOrderedField</span><span class="p">,</span> <span class="n">AdminOrderedModelMethod</span><span class="p">,</span> <span class="n">AdminOrderedAdminMethod</span><span class="p">,</span>
+    <span class="n">AdminOrderedCallable</span><span class="p">,</span> <span class="n">Report</span><span class="p">,</span> <span class="n">Color2</span><span class="p">,</span> <span class="n">UnorderedObject</span><span class="p">,</span> <span class="n">MainPrepopulated</span><span class="p">,</span>
+    <span class="n">RelatedPrepopulated</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">callable_year</span><span class="p">(</span><span class="n">dt_value</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">dt_value</span><span class="o">.</span><span class="n">year</span>
+<span class="n">callable_year</span><span class="o">.</span><span class="n">admin_order_field</span> <span class="o">=</span> <span class="s">&#39;date&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">ArticleInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Article</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;title&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="s">&#39;content&#39;</span><span class="p">,)</span>
+    <span class="p">}</span>
+    <span class="n">fieldsets</span><span class="o">=</span><span class="p">(</span>
+        <span class="p">(</span><span class="s">&#39;Some fields&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;classes&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;collapse&#39;</span><span class="p">,),</span>
+            <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;content&#39;</span><span class="p">)</span>
+        <span class="p">}),</span>
+        <span class="p">(</span><span class="s">&#39;Some other fields&#39;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;classes&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;wide&#39;</span><span class="p">,),</span>
+            <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">(</span><span class="s">&#39;date&#39;</span><span class="p">,</span> <span class="s">&#39;section&#39;</span><span class="p">)</span>
+        <span class="p">})</span>
+    <span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ChapterInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Chapter</span>
+
+
+<span class="k">class</span> <span class="nc">ChapterXtra1Admin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;chap&#39;</span><span class="p">,</span>
+                   <span class="s">&#39;chap__title&#39;</span><span class="p">,</span>
+                   <span class="s">&#39;chap__book&#39;</span><span class="p">,</span>
+                   <span class="s">&#39;chap__book__name&#39;</span><span class="p">,</span>
+                   <span class="s">&#39;chap__book__promo&#39;</span><span class="p">,</span>
+                   <span class="s">&#39;chap__book__promo__name&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">ArticleAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;content&#39;</span><span class="p">,</span> <span class="s">&#39;date&#39;</span><span class="p">,</span> <span class="n">callable_year</span><span class="p">,</span> <span class="s">&#39;model_year&#39;</span><span class="p">,</span> <span class="s">&#39;modeladmin_year&#39;</span><span class="p">)</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;date&#39;</span><span class="p">,</span> <span class="s">&#39;section&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">changelist_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="s">&quot;Test that extra_context works&quot;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ArticleAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">changelist_view</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">,</span> <span class="n">extra_context</span><span class="o">=</span><span class="p">{</span>
+                <span class="s">&#39;extra_var&#39;</span><span class="p">:</span> <span class="s">&#39;Hello!&#39;</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">modeladmin_year</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">date</span><span class="o">.</span><span class="n">year</span>
+    <span class="n">modeladmin_year</span><span class="o">.</span><span class="n">admin_order_field</span> <span class="o">=</span> <span class="s">&#39;date&#39;</span>
+    <span class="n">modeladmin_year</span><span class="o">.</span><span class="n">short_description</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">delete_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="n">EmailMessage</span><span class="p">(</span>
+            <span class="s">&#39;Greetings from a deleted object&#39;</span><span class="p">,</span>
+            <span class="s">&#39;I hereby inform you that some user deleted me&#39;</span><span class="p">,</span>
+            <span class="s">&#39;from@example.com&#39;</span><span class="p">,</span>
+            <span class="p">[</span><span class="s">&#39;to@example.com&#39;</span><span class="p">]</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">send</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ArticleAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">delete_model</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save_model</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">change</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="n">EmailMessage</span><span class="p">(</span>
+            <span class="s">&#39;Greetings from a created object&#39;</span><span class="p">,</span>
+            <span class="s">&#39;I hereby inform you that some user created me&#39;</span><span class="p">,</span>
+            <span class="s">&#39;from@example.com&#39;</span><span class="p">,</span>
+            <span class="p">[</span><span class="s">&#39;to@example.com&#39;</span><span class="p">]</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">send</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ArticleAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">save_model</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">change</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">RowLevelChangePermissionModelAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">has_change_permission</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Only allow changing objects with even id number &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">is_staff</span> <span class="ow">and</span> <span class="p">(</span><span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">id</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CustomArticleAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests various hooks for using custom templates and contexts.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">change_list_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/change_list.html&#39;</span>
+    <span class="n">change_form_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/change_form.html&#39;</span>
+    <span class="n">add_form_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/add_form.html&#39;</span>
+    <span class="n">object_history_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/object_history.html&#39;</span>
+    <span class="n">delete_confirmation_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/delete_confirmation.html&#39;</span>
+    <span class="n">delete_selected_confirmation_template</span> <span class="o">=</span> <span class="s">&#39;custom_admin/delete_selected_confirmation.html&#39;</span>
+
+    <span class="k">def</span> <span class="nf">changelist_view</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="s">&quot;Test that extra_context works&quot;</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">CustomArticleAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">changelist_view</span><span class="p">(</span>
+            <span class="n">request</span><span class="p">,</span> <span class="n">extra_context</span><span class="o">=</span><span class="p">{</span>
+                <span class="s">&#39;extra_var&#39;</span><span class="p">:</span> <span class="s">&#39;Hello!&#39;</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ThingAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;color__warm&#39;</span><span class="p">,</span> <span class="s">&#39;color__value&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">InquisitionAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;leader&#39;</span><span class="p">,</span> <span class="s">&#39;country&#39;</span><span class="p">,</span> <span class="s">&#39;expected&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SketchAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">raw_id_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;inquisition&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">FabricAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;surface&#39;</span><span class="p">,)</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;surface&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">BasePersonModelFormSet</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">person_dict</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">:</span>
+            <span class="n">person</span> <span class="o">=</span> <span class="n">person_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">)</span>
+            <span class="n">alive</span> <span class="o">=</span> <span class="n">person_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;alive&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">person</span> <span class="ow">and</span> <span class="n">alive</span> <span class="ow">and</span> <span class="n">person</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&quot;Grace Hopper&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">forms</span><span class="o">.</span><span class="n">ValidationError</span><span class="p">(</span><span class="s">&quot;Grace is not a Zombie&quot;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PersonAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;gender&#39;</span><span class="p">,</span> <span class="s">&#39;alive&#39;</span><span class="p">)</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;gender&#39;</span><span class="p">,</span> <span class="s">&#39;alive&#39;</span><span class="p">)</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;gender&#39;</span><span class="p">,)</span>
+    <span class="n">search_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;^name&#39;</span><span class="p">,)</span>
+    <span class="n">save_as</span> <span class="o">=</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">get_changelist_formset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">PersonAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_changelist_formset</span><span class="p">(</span><span class="n">request</span><span class="p">,</span>
+            <span class="n">formset</span><span class="o">=</span><span class="n">BasePersonModelFormSet</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Order by a field that isn't in list display, to be able to test
+whether ordering is preserved.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">PersonAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;age&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">FooAccount</span><span class="p">(</span><span class="n">Account</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A service-specific account of type Foo.&quot;&quot;&quot;</span>
+    <span class="n">servicename</span> <span class="o">=</span> <span class="s">&#39;foo&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">BarAccount</span><span class="p">(</span><span class="n">Account</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A service-specific account of type Bar.&quot;&quot;&quot;</span>
+    <span class="n">servicename</span> <span class="o">=</span> <span class="s">&#39;bar&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">FooAccountAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">FooAccount</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<span class="k">class</span> <span class="nc">BarAccountAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">BarAccount</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<span class="k">class</span> <span class="nc">PersonaAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">FooAccountAdmin</span><span class="p">,</span>
+        <span class="n">BarAccountAdmin</span>
+    <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SubscriberAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">actions</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;mail_admin&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">mail_admin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">selected</span><span class="p">):</span>
+        <span class="n">EmailMessage</span><span class="p">(</span>
+            <span class="s">&#39;Greetings from a ModelAdmin action&#39;</span><span class="p">,</span>
+            <span class="s">&#39;This is the test email from a admin action&#39;</span><span class="p">,</span>
+            <span class="s">&#39;from@example.com&#39;</span><span class="p">,</span>
+            <span class="p">[</span><span class="s">&#39;to@example.com&#39;</span><span class="p">]</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">send</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">external_mail</span><span class="p">(</span><span class="n">modeladmin</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">selected</span><span class="p">):</span>
+    <span class="n">EmailMessage</span><span class="p">(</span>
+        <span class="s">&#39;Greetings from a function action&#39;</span><span class="p">,</span>
+        <span class="s">&#39;This is the test email from a function action&#39;</span><span class="p">,</span>
+        <span class="s">&#39;from@example.com&#39;</span><span class="p">,</span>
+        <span class="p">[</span><span class="s">&#39;to@example.com&#39;</span><span class="p">]</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">send</span><span class="p">()</span>
+<span class="n">external_mail</span><span class="o">.</span><span class="n">short_description</span> <span class="o">=</span> <span class="s">&#39;External mail (Another awesome action)&#39;</span>
+
+
+<span class="k">def</span> <span class="nf">redirect_to</span><span class="p">(</span><span class="n">modeladmin</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">selected</span><span class="p">):</span>
+    <span class="kn">from</span> <span class="nn">django.http</span> <span class="kn">import</span> <span class="n">HttpResponseRedirect</span>
+    <span class="k">return</span> <span class="n">HttpResponseRedirect</span><span class="p">(</span><span class="s">&#39;/some-where-else/&#39;</span><span class="p">)</span>
+<span class="n">redirect_to</span><span class="o">.</span><span class="n">short_description</span> <span class="o">=</span> <span class="s">&#39;Redirect to (Awesome action)&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">ExternalSubscriberAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">actions</span> <span class="o">=</span> <span class="p">[</span><span class="n">redirect_to</span><span class="p">,</span> <span class="n">external_mail</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">Podcast</span><span class="p">(</span><span class="n">Media</span><span class="p">):</span>
+    <span class="n">release_date</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateField</span><span class="p">()</span>
+
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;release_date&#39;</span><span class="p">,)</span> <span class="c"># overridden in PodcastAdmin</span>
+
+
+<span class="k">class</span> <span class="nc">PodcastAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;release_date&#39;</span><span class="p">)</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;release_date&#39;</span><span class="p">,)</span>
+    <span class="n">date_hierarchy</span> <span class="o">=</span> <span class="s">&#39;release_date&#39;</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">VodcastAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;released&#39;</span><span class="p">)</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;released&#39;</span><span class="p">,)</span>
+
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">ChildInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Child</span>
+
+
+<span class="k">class</span> <span class="nc">ParentAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Parent</span>
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ChildInline</span><span class="p">]</span>
+
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="nf">save_related</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">formsets</span><span class="p">,</span> <span class="n">change</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ParentAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">save_related</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">formsets</span><span class="p">,</span> <span class="n">change</span><span class="p">)</span>
+        <span class="n">first_name</span><span class="p">,</span> <span class="n">last_name</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">child_set</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">child</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="s">&#39; &#39;</span> <span class="o">+</span> <span class="n">last_name</span>
+                <span class="n">child</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+
+<span class="k">class</span> <span class="nc">EmptyModelAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">EmptyModelAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk__gt</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">OldSubscriberAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">actions</span> <span class="o">=</span> <span class="bp">None</span>
+
+
+<span class="n">temp_storage</span> <span class="o">=</span> <span class="n">FileSystemStorage</span><span class="p">(</span><span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="nb">dir</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s">&#39;DJANGO_TEST_TEMP_DIR&#39;</span><span class="p">]))</span>
+<span class="n">UPLOAD_TO</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_storage</span><span class="o">.</span><span class="n">location</span><span class="p">,</span> <span class="s">&#39;test_upload&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PictureInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Picture</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<span class="k">class</span> <span class="nc">GalleryAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">PictureInline</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">PictureAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">LanguageAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;iso&#39;</span><span class="p">,</span> <span class="s">&#39;shortlist&#39;</span><span class="p">,</span> <span class="s">&#39;english_name&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">]</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;shortlist&#39;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">RecommendationAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">search_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;=titletranslation__text&#39;</span><span class="p">,</span> <span class="s">&#39;=recommender__titletranslation__text&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">WidgetInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Widget</span>
+
+
+<span class="k">class</span> <span class="nc">DooHickeyInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">DooHickey</span>
+
+
+<span class="k">class</span> <span class="nc">GrommetInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Grommet</span>
+
+
+<span class="k">class</span> <span class="nc">WhatsitInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Whatsit</span>
+
+
+<span class="k">class</span> <span class="nc">FancyDoodadInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">FancyDoodad</span>
+
+
+<span class="k">class</span> <span class="nc">CategoryAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;collector&#39;</span><span class="p">,</span> <span class="s">&#39;order&#39;</span><span class="p">)</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;order&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">CategoryInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Category</span>
+
+
+<span class="k">class</span> <span class="nc">CollectorAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">WidgetInline</span><span class="p">,</span> <span class="n">DooHickeyInline</span><span class="p">,</span> <span class="n">GrommetInline</span><span class="p">,</span> <span class="n">WhatsitInline</span><span class="p">,</span>
+        <span class="n">FancyDoodadInline</span><span class="p">,</span> <span class="n">CategoryInline</span>
+    <span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">LinkInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">Link</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;posted&quot;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">SubPostInline</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">PrePopulatedSubPost</span>
+
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;subslug&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="s">&#39;subtitle&#39;</span><span class="p">,)</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">get_readonly_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">published</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="s">&#39;subslug&#39;</span><span class="p">,)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">readonly_fields</span>
+
+    <span class="k">def</span> <span class="nf">get_prepopulated_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">published</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">prepopulated_fields</span>
+
+
+<span class="k">class</span> <span class="nc">PrePopulatedPostAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;slug&#39;</span><span class="p">]</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;slug&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,)</span>
+    <span class="p">}</span>
+
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">SubPostInline</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">get_readonly_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">published</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="s">&#39;slug&#39;</span><span class="p">,)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">readonly_fields</span>
+
+    <span class="k">def</span> <span class="nf">get_prepopulated_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">obj</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">obj</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">published</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">prepopulated_fields</span>
+
+
+<span class="k">class</span> <span class="nc">PostAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;public&#39;</span><span class="p">]</span>
+    <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;posted&#39;</span><span class="p">,</span> <span class="s">&#39;awesomeness_level&#39;</span><span class="p">,</span> <span class="s">&#39;coolness&#39;</span><span class="p">,</span> <span class="s">&#39;value&#39;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">obj</span><span class="p">:</span> <span class="s">&quot;foo&quot;</span><span class="p">)</span>
+
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">LinkInline</span>
+    <span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">coolness</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">instance</span><span class="o">.</span><span class="n">pk</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;</span><span class="si">%d</span><span class="s"> amount of cool.&quot;</span> <span class="o">%</span> <span class="n">instance</span><span class="o">.</span><span class="n">pk</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&quot;Unkown coolness.&quot;</span>
+
+    <span class="k">def</span> <span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mi">1000</span>
+    <span class="n">value</span><span class="o">.</span><span class="n">short_description</span> <span class="o">=</span> <span class="s">&#39;Value in $US&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">CustomChangeList</span><span class="p">(</span><span class="n">ChangeList</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_query_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">root_query_set</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">9999</span><span class="p">)</span> <span class="c"># Does not exist</span>
+
+
+<span class="k">class</span> <span class="nc">GadgetAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_changelist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">CustomChangeList</span>
+
+
+<span class="k">class</span> <span class="nc">PizzaAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">readonly_fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;toppings&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">WorkHourAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;datum&#39;</span><span class="p">,</span> <span class="s">&#39;employee&#39;</span><span class="p">)</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;employee&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">FoodDeliveryAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;reference&#39;</span><span class="p">,</span> <span class="s">&#39;driver&#39;</span><span class="p">,</span> <span class="s">&#39;restaurant&#39;</span><span class="p">)</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;driver&#39;</span><span class="p">,</span> <span class="s">&#39;restaurant&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">PaperAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A ModelAdmin with a custom queryset() method that uses only(), to test</span>
+<span class="sd">    verbose_name display in messages shown after adding Paper instances.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">PaperAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CoverLetterAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A ModelAdmin with a custom queryset() method that uses only(), to test</span>
+<span class="sd">    verbose_name display in messages shown after adding CoverLetter instances.</span>
+<span class="sd">    Note that the CoverLetter model defines a __unicode__ method.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">CoverLetterAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">(</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">defer</span><span class="p">(</span><span class="s">&#39;date_written&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">StoryForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">widgets</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="n">forms</span><span class="o">.</span><span class="n">HiddenInput</span><span class="p">}</span>
+
+
+<span class="k">class</span> <span class="nc">StoryAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;content&#39;</span><span class="p">)</span>
+    <span class="n">list_display_links</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,)</span> <span class="c"># &#39;id&#39; not in list_display_links</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;content&#39;</span><span class="p">,</span> <span class="p">)</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">StoryForm</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;-pk&quot;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">OtherStoryAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;content&#39;</span><span class="p">)</span>
+    <span class="n">list_display_links</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,</span> <span class="s">&#39;id&#39;</span><span class="p">)</span> <span class="c"># &#39;id&#39; in list_display_links</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;content&#39;</span><span class="p">,</span> <span class="p">)</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;-pk&quot;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">ComplexSortedPersonAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;age&#39;</span><span class="p">,</span> <span class="s">&#39;is_employee&#39;</span><span class="p">,</span> <span class="s">&#39;colored_name&#39;</span><span class="p">)</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,)</span>
+
+    <span class="k">def</span> <span class="nf">colored_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s">&#39;&lt;span style=&quot;color: #</span><span class="si">%s</span><span class="s">;&quot;&gt;</span><span class="si">%s</span><span class="s">&lt;/span&gt;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="s">&#39;ff00ff&#39;</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">colored_name</span><span class="o">.</span><span class="n">allow_tags</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">colored_name</span><span class="o">.</span><span class="n">admin_order_field</span> <span class="o">=</span> <span class="s">&#39;name&#39;</span>
+
+
+<span class="k">class</span> <span class="nc">AlbumAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">WorkHourAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;datum&#39;</span><span class="p">,</span> <span class="s">&#39;employee&#39;</span><span class="p">)</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;employee&#39;</span><span class="p">,)</span>
+
+
+<span class="k">class</span> <span class="nc">PrePopulatedPostLargeSlugAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;slug&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="s">&#39;title&#39;</span><span class="p">,)</span>
+    <span class="p">}</span>
+
+
+<span class="k">class</span> <span class="nc">AdminOrderedFieldAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;order&#39;</span><span class="p">,)</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;stuff&#39;</span><span class="p">,</span> <span class="s">&#39;order&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">AdminOrderedModelMethodAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;order&#39;</span><span class="p">,)</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;stuff&#39;</span><span class="p">,</span> <span class="s">&#39;some_order&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">AdminOrderedAdminMethodAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">some_admin_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">order</span>
+    <span class="n">some_admin_order</span><span class="o">.</span><span class="n">admin_order_field</span> <span class="o">=</span> <span class="s">&#39;order&#39;</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;order&#39;</span><span class="p">,)</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;stuff&#39;</span><span class="p">,</span> <span class="s">&#39;some_admin_order&#39;</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">admin_ordered_callable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">order</span>
+<span class="n">admin_ordered_callable</span><span class="o">.</span><span class="n">admin_order_field</span> <span class="o">=</span> <span class="s">&#39;order&#39;</span>
+<span class="k">class</span> <span class="nc">AdminOrderedCallableAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">ordering</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;order&#39;</span><span class="p">,)</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;stuff&#39;</span><span class="p">,</span> <span class="n">admin_ordered_callable</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ReportAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">extra</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">HttpResponse</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">get_urls</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Corner case: Don't call parent implementation</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">patterns</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+            <span class="n">url</span><span class="p">(</span><span class="s">r&#39;^extra/$&#39;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">extra</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="s">&#39;cable_extra&#39;</span><span class="p">),</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CustomTemplateBooleanFieldListFilter</span><span class="p">(</span><span class="n">BooleanFieldListFilter</span><span class="p">):</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="s">&#39;custom_filter_template.html&#39;</span>
+
+<span class="k">class</span> <span class="nc">CustomTemplateFilterColorAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_filter</span> <span class="o">=</span> <span class="p">((</span><span class="s">&#39;warm&#39;</span><span class="p">,</span> <span class="n">CustomTemplateBooleanFieldListFilter</span><span class="p">),)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>For Selenium Prepopulated tests -------------------------------------</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">RelatedPrepopulatedInline1</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">StackedInline</span><span class="p">):</span>
+    <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s">&#39;pubdate&#39;</span><span class="p">,</span> <span class="s">&#39;status&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;slug1&#39;</span><span class="p">,</span> <span class="s">&#39;slug2&#39;</span><span class="p">,),)</span>
+        <span class="p">}),</span>
+    <span class="p">)</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">RelatedPrepopulated</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;slug1&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;pubdate&#39;</span><span class="p">],</span>
+                           <span class="s">&#39;slug2&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;status&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">]}</span>
+
+<span class="k">class</span> <span class="nc">RelatedPrepopulatedInline2</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">TabularInline</span><span class="p">):</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">RelatedPrepopulated</span>
+    <span class="n">extra</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;slug1&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;pubdate&#39;</span><span class="p">],</span>
+                           <span class="s">&#39;slug2&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;status&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">]}</span>
+
+<span class="k">class</span> <span class="nc">MainPrepopulatedAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">inlines</span> <span class="o">=</span> <span class="p">[</span><span class="n">RelatedPrepopulatedInline1</span><span class="p">,</span> <span class="n">RelatedPrepopulatedInline2</span><span class="p">]</span>
+    <span class="n">fieldsets</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="p">{</span>
+            <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="p">((</span><span class="s">&#39;pubdate&#39;</span><span class="p">,</span> <span class="s">&#39;status&#39;</span><span class="p">),</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;slug1&#39;</span><span class="p">,</span> <span class="s">&#39;slug2&#39;</span><span class="p">,),)</span>
+        <span class="p">}),</span>
+    <span class="p">)</span>
+    <span class="n">prepopulated_fields</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;slug1&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;pubdate&#39;</span><span class="p">],</span>
+                           <span class="s">&#39;slug2&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;status&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">]}</span>
+
+
+<span class="k">class</span> <span class="nc">UnorderedObjectAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+    <span class="n">list_editable</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span>
+    <span class="n">list_per_page</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+
+<span class="n">site</span> <span class="o">=</span> <span class="n">admin</span><span class="o">.</span><span class="n">AdminSite</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;admin&quot;</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Article</span><span class="p">,</span> <span class="n">ArticleAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">CustomArticle</span><span class="p">,</span> <span class="n">CustomArticleAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Section</span><span class="p">,</span> <span class="n">save_as</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">inlines</span><span class="o">=</span><span class="p">[</span><span class="n">ArticleInline</span><span class="p">])</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">ModelWithStringPrimaryKey</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Color</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Thing</span><span class="p">,</span> <span class="n">ThingAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Actor</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Inquisition</span><span class="p">,</span> <span class="n">InquisitionAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Sketch</span><span class="p">,</span> <span class="n">SketchAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">PersonAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Persona</span><span class="p">,</span> <span class="n">PersonaAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Subscriber</span><span class="p">,</span> <span class="n">SubscriberAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">ExternalSubscriber</span><span class="p">,</span> <span class="n">ExternalSubscriberAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">OldSubscriber</span><span class="p">,</span> <span class="n">OldSubscriberAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Podcast</span><span class="p">,</span> <span class="n">PodcastAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Vodcast</span><span class="p">,</span> <span class="n">VodcastAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Parent</span><span class="p">,</span> <span class="n">ParentAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">EmptyModel</span><span class="p">,</span> <span class="n">EmptyModelAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Fabric</span><span class="p">,</span> <span class="n">FabricAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Gallery</span><span class="p">,</span> <span class="n">GalleryAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Picture</span><span class="p">,</span> <span class="n">PictureAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Language</span><span class="p">,</span> <span class="n">LanguageAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Recommendation</span><span class="p">,</span> <span class="n">RecommendationAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Recommender</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Collector</span><span class="p">,</span> <span class="n">CollectorAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Category</span><span class="p">,</span> <span class="n">CategoryAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Post</span><span class="p">,</span> <span class="n">PostAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Gadget</span><span class="p">,</span> <span class="n">GadgetAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Villain</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">SuperVillain</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Plot</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">PlotDetails</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">CyclicOne</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">CyclicTwo</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">WorkHour</span><span class="p">,</span> <span class="n">WorkHourAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Reservation</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">FoodDelivery</span><span class="p">,</span> <span class="n">FoodDeliveryAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">RowLevelChangePermissionModel</span><span class="p">,</span> <span class="n">RowLevelChangePermissionModelAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Paper</span><span class="p">,</span> <span class="n">PaperAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">CoverLetter</span><span class="p">,</span> <span class="n">CoverLetterAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Story</span><span class="p">,</span> <span class="n">StoryAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">OtherStory</span><span class="p">,</span> <span class="n">OtherStoryAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Report</span><span class="p">,</span> <span class="n">ReportAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">MainPrepopulated</span><span class="p">,</span> <span class="n">MainPrepopulatedAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">UnorderedObject</span><span class="p">,</span> <span class="n">UnorderedObjectAdmin</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>We intentionally register Promo and ChapterXtra1 but not Chapter nor ChapterXtra2.
+That way we cover all four cases:
+    related ForeignKey object registered in admin
+    related ForeignKey object not registered in admin
+    related OneToOne object registered in admin
+    related OneToOne object not registered in admin
+when deleting Book so as exercise all four troublesome (w.r.t escaping
+and calling force<em>unicode to avoid problems on Python 2.3) paths through
+contrib.admin.util's get</em>deleted_objects function.</p></td><td class="code"><div class="highlight"><pre><span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Book</span><span class="p">,</span> <span class="n">inlines</span><span class="o">=</span><span class="p">[</span><span class="n">ChapterInline</span><span class="p">])</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Promo</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">ChapterXtra1</span><span class="p">,</span> <span class="n">ChapterXtra1Admin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Pizza</span><span class="p">,</span> <span class="n">PizzaAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Topping</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Album</span><span class="p">,</span> <span class="n">AlbumAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Question</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Answer</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">PrePopulatedPost</span><span class="p">,</span> <span class="n">PrePopulatedPostAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">ComplexSortedPerson</span><span class="p">,</span> <span class="n">ComplexSortedPersonAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">PrePopulatedPostLargeSlug</span><span class="p">,</span> <span class="n">PrePopulatedPostLargeSlugAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">AdminOrderedField</span><span class="p">,</span> <span class="n">AdminOrderedFieldAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">AdminOrderedModelMethod</span><span class="p">,</span> <span class="n">AdminOrderedModelMethodAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">AdminOrderedAdminMethod</span><span class="p">,</span> <span class="n">AdminOrderedAdminMethodAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">AdminOrderedCallable</span><span class="p">,</span> <span class="n">AdminOrderedCallableAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Color2</span><span class="p">,</span> <span class="n">CustomTemplateFilterColorAdmin</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Register core models we need in our tests</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">Group</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.admin</span> <span class="kn">import</span> <span class="n">UserAdmin</span><span class="p">,</span> <span class="n">GroupAdmin</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">User</span><span class="p">,</span> <span class="n">UserAdmin</span><span class="p">)</span>
+<span class="n">site</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">Group</span><span class="p">,</span> <span class="n">GroupAdmin</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

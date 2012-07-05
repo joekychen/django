@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › auth › tests › hashers.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>hashers.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.conf.global_settings</span> <span class="kn">import</span> <span class="n">PASSWORD_HASHERS</span> <span class="k">as</span> <span class="n">default_hashers</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.hashers</span> <span class="kn">import</span> <span class="p">(</span><span class="n">is_password_usable</span><span class="p">,</span> 
+    <span class="n">check_password</span><span class="p">,</span> <span class="n">make_password</span><span class="p">,</span> <span class="n">PBKDF2PasswordHasher</span><span class="p">,</span> <span class="n">load_hashers</span><span class="p">,</span>
+    <span class="n">PBKDF2SHA1PasswordHasher</span><span class="p">,</span> <span class="n">get_hasher</span><span class="p">,</span> <span class="n">identify_hasher</span><span class="p">,</span> <span class="n">UNUSABLE_PASSWORD</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+<span class="kn">from</span> <span class="nn">django.utils.unittest</span> <span class="kn">import</span> <span class="n">skipUnless</span>
+
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">crypt</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">crypt</span> <span class="o">=</span> <span class="bp">None</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">bcrypt</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">bcrypt</span> <span class="o">=</span> <span class="bp">None</span>
+
+
+<span class="k">class</span> <span class="nc">TestUtilsHashPass</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">load_hashers</span><span class="p">(</span><span class="n">password_hashers</span><span class="o">=</span><span class="n">default_hashers</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_simple</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">encoded</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;pbkdf2_sha256$&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_pkbdf2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">,</span> <span class="s">&#39;pbkdf2_sha256&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> 
+<span class="s">&#39;pbkdf2_sha256$10000$seasalt$FQCNpiZpTb0zub+HBsH6TOwyRxJ19FwvjbweatNmK/Y=&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;pbkdf2_sha256&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_sha1</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">,</span> <span class="s">&#39;sha1&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> 
+<span class="s">&#39;sha1$seasalt$fec3530984afba6bade3347b7140d1a7da7da8c7&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;sha1&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_md5</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">,</span> <span class="s">&#39;md5&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> 
+                         <span class="s">&#39;md5$seasalt$f5531bef9f3687d0ccf0f617f0e25573&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;md5&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_unsalted_md5</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">,</span> <span class="s">&#39;unsalted_md5&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> <span class="s">&#39;0d107d09f5bbe40cade3de5c71e9e9b7&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;unsalted_md5&quot;</span><span class="p">)</span>
+
+    <span class="nd">@skipUnless</span><span class="p">(</span><span class="n">crypt</span><span class="p">,</span> <span class="s">&quot;no crypt module to generate password.&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_crypt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;ab&#39;</span><span class="p">,</span> <span class="s">&#39;crypt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> <span class="s">&#39;crypt$$abN/qM.L/H8EQ&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;crypt&quot;</span><span class="p">)</span>
+
+    <span class="nd">@skipUnless</span><span class="p">(</span><span class="n">bcrypt</span><span class="p">,</span> <span class="s">&quot;py-bcrypt not installed&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_bcrypt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">hasher</span><span class="o">=</span><span class="s">&#39;bcrypt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">encoded</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;bcrypt$&#39;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">identify_hasher</span><span class="p">(</span><span class="n">encoded</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">,</span> <span class="s">&quot;bcrypt&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_unusable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">is_password_usable</span><span class="p">(</span><span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="bp">None</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="n">UNUSABLE_PASSWORD</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmeinz&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">identify_hasher</span><span class="p">,</span> <span class="n">encoded</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_bad_algorithm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">doit</span><span class="p">():</span>
+            <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">hasher</span><span class="o">=</span><span class="s">&#39;lolcat&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">doit</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">identify_hasher</span><span class="p">,</span> <span class="s">&quot;lolcat$salt$hash&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_low_level_pkbdf2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">hasher</span> <span class="o">=</span> <span class="n">PBKDF2PasswordHasher</span><span class="p">()</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">hasher</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> 
+<span class="s">&#39;pbkdf2_sha256$10000$seasalt$FQCNpiZpTb0zub+HBsH6TOwyRxJ19FwvjbweatNmK/Y=&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">hasher</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_low_level_pbkdf2_sha1</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">hasher</span> <span class="o">=</span> <span class="n">PBKDF2SHA1PasswordHasher</span><span class="p">()</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">hasher</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="s">&#39;seasalt&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">encoded</span><span class="p">,</span> 
+<span class="s">&#39;pbkdf2_sha1$10000$seasalt$91JiNKgwADC8j2j86Ije/cc4vfQ=&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">hasher</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_upgrade</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;pbkdf2_sha256&#39;</span><span class="p">,</span> <span class="n">get_hasher</span><span class="p">(</span><span class="s">&#39;default&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">algo</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;sha1&#39;</span><span class="p">,</span> <span class="s">&#39;md5&#39;</span><span class="p">):</span>
+            <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">hasher</span><span class="o">=</span><span class="n">algo</span><span class="p">)</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;upgraded&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">}</span>
+            <span class="k">def</span> <span class="nf">setter</span><span class="p">(</span><span class="n">password</span><span class="p">):</span>
+                <span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">,</span> <span class="n">setter</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_no_upgrade</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;upgraded&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">}</span>
+        <span class="k">def</span> <span class="nf">setter</span><span class="p">():</span>
+            <span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;WRONG&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">,</span> <span class="n">setter</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_no_upgrade_on_incorrect_pass</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="s">&#39;pbkdf2_sha256&#39;</span><span class="p">,</span> <span class="n">get_hasher</span><span class="p">(</span><span class="s">&#39;default&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">algorithm</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">algo</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;sha1&#39;</span><span class="p">,</span> <span class="s">&#39;md5&#39;</span><span class="p">):</span>
+            <span class="n">encoded</span> <span class="o">=</span> <span class="n">make_password</span><span class="p">(</span><span class="s">&#39;letmein&#39;</span><span class="p">,</span> <span class="n">hasher</span><span class="o">=</span><span class="n">algo</span><span class="p">)</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;upgraded&#39;</span><span class="p">:</span> <span class="bp">False</span><span class="p">}</span>
+            <span class="k">def</span> <span class="nf">setter</span><span class="p">():</span>
+                <span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">check_password</span><span class="p">(</span><span class="s">&#39;WRONG&#39;</span><span class="p">,</span> <span class="n">encoded</span><span class="p">,</span> <span class="n">setter</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s">&#39;upgraded&#39;</span><span class="p">])</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

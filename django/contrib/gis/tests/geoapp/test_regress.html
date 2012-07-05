@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › tests › geoapp › test_regress.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../index.html"></a><h1>test_regress.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.gis.tests.utils</span> <span class="kn">import</span> <span class="n">no_mysql</span><span class="p">,</span> <span class="n">no_spatialite</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.shortcuts</span> <span class="kn">import</span> <span class="n">render_to_kmz</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">Count</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">City</span><span class="p">,</span> <span class="n">PennsylvaniaCity</span><span class="p">,</span> <span class="n">State</span><span class="p">,</span> <span class="n">Truth</span>
+
+
+<span class="k">class</span> <span class="nc">GeoRegressionTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test01_update</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing GeoQuerySet.update(). See #10411.&quot;</span>
+        <span class="n">pnt</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span>
+        <span class="n">bak</span> <span class="o">=</span> <span class="n">pnt</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+        <span class="n">pnt</span><span class="o">.</span><span class="n">y</span> <span class="o">+=</span> <span class="mf">0.005</span>
+        <span class="n">pnt</span><span class="o">.</span><span class="n">x</span> <span class="o">+=</span> <span class="mf">0.005</span>
+
+        <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">point</span><span class="o">=</span><span class="n">pnt</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">pnt</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+        <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">point</span><span class="o">=</span><span class="n">bak</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">bak</span><span class="p">,</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test02_kmz</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing `render_to_kmz` with non-ASCII data. See #11624.&quot;</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;</span><span class="se">\xc3\x85</span><span class="s">land Islands&#39;</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s">&#39;iso-8859-1&#39;</span><span class="p">)</span>
+        <span class="n">places</span> <span class="o">=</span> <span class="p">[{</span><span class="s">&#39;name&#39;</span> <span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                  <span class="s">&#39;description&#39;</span> <span class="p">:</span> <span class="n">name</span><span class="p">,</span>
+                  <span class="s">&#39;kml&#39;</span> <span class="p">:</span> <span class="s">&#39;&lt;Point&gt;&lt;coordinates&gt;5.0,23.0&lt;/coordinates&gt;&lt;/Point&gt;&#39;</span>
+                  <span class="p">}]</span>
+        <span class="n">kmz</span> <span class="o">=</span> <span class="n">render_to_kmz</span><span class="p">(</span><span class="s">&#39;gis/kml/placemarks.kml&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;places&#39;</span> <span class="p">:</span> <span class="n">places</span><span class="p">})</span>
+
+    <span class="nd">@no_spatialite</span>
+    <span class="nd">@no_mysql</span>
+    <span class="k">def</span> <span class="nf">test03_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing `extent` on a table with a single point. See #11827.&quot;</span>
+        <span class="n">pnt</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">point</span>
+        <span class="n">ref_ext</span> <span class="o">=</span> <span class="p">(</span><span class="n">pnt</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">pnt</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">pnt</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">pnt</span><span class="o">.</span><span class="n">y</span><span class="p">)</span>
+        <span class="n">extent</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">extent</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">ref_val</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ref_ext</span><span class="p">,</span> <span class="n">extent</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertAlmostEqual</span><span class="p">(</span><span class="n">ref_val</span><span class="p">,</span> <span class="n">val</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test04_unicode_date</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing dates are converted properly, even on SpatiaLite. See #16408.&quot;</span>
+        <span class="n">founded</span> <span class="o">=</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">1857</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">23</span><span class="p">)</span>
+        <span class="n">mansfield</span> <span class="o">=</span> <span class="n">PennsylvaniaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Mansfield&#39;</span><span class="p">,</span> <span class="n">county</span><span class="o">=</span><span class="s">&#39;Tioga&#39;</span><span class="p">,</span> <span class="n">point</span><span class="o">=</span><span class="s">&#39;POINT(-77.071445 41.823881)&#39;</span><span class="p">,</span>
+                                                    <span class="n">founded</span><span class="o">=</span><span class="n">founded</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">founded</span><span class="p">,</span> <span class="n">PennsylvaniaCity</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">dates</span><span class="p">(</span><span class="s">&#39;founded&#39;</span><span class="p">,</span> <span class="s">&#39;day&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test05_empty_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+         <span class="s">&quot;Testing that PostGISAdapter.__eq__ does check empty strings. See #13670.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>contrived example, but need a geo lookup paired with an id__in lookup</p></td><td class="code"><div class="highlight"><pre>         <span class="n">pueblo</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Pueblo&#39;</span><span class="p">)</span>
+         <span class="n">state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">poly__contains</span><span class="o">=</span><span class="n">pueblo</span><span class="o">.</span><span class="n">point</span><span class="p">)</span>
+         <span class="n">cities_within_state</span> <span class="o">=</span> <span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">id__in</span><span class="o">=</span><span class="n">state</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>.count() should not throw TypeError in <strong>eq</strong></p></td><td class="code"><div class="highlight"><pre>         <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">cities_within_state</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test06_defer_or_only_with_annotate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Regression for #16409. Make sure defer() and only() work with annotate()&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&#39;point&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">defer</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)),</span> <span class="nb">list</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">City</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">Count</span><span class="p">(</span><span class="s">&#39;point&#39;</span><span class="p">))</span><span class="o">.</span><span class="n">only</span><span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">)),</span> <span class="nb">list</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test07_boolean_conversion</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Testing Boolean value conversion with the spatial backend, see #15169.&quot;</span>
+        <span class="n">t1</span> <span class="o">=</span> <span class="n">Truth</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="n">t2</span> <span class="o">=</span> <span class="n">Truth</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+        <span class="n">val1</span> <span class="o">=</span> <span class="n">Truth</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">val</span>
+        <span class="n">val2</span> <span class="o">=</span> <span class="n">Truth</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">val</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>verify types -- should't be 0/1</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="n">val1</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertIsInstance</span><span class="p">(</span><span class="n">val2</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>verify values</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">val1</span><span class="p">,</span> <span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">val2</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:5}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › fixtures_regress › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div><p>-<em>- coding: utf-8 -</em>-
+Unittests for fixtures.</p></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">io</span> <span class="kn">import</span> <span class="n">BytesIO</span>
+
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">management</span>
+<span class="kn">from</span> <span class="nn">django.core.management.base</span> <span class="kn">import</span> <span class="n">CommandError</span>
+<span class="kn">from</span> <span class="nn">django.core.management.commands.dumpdata</span> <span class="kn">import</span> <span class="n">sort_dependencies</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">IntegrityError</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="p">(</span><span class="n">TestCase</span><span class="p">,</span> <span class="n">TransactionTestCase</span><span class="p">,</span> <span class="n">skipIfDBFeature</span><span class="p">,</span>
+    <span class="n">skipUnlessDBFeature</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Animal</span><span class="p">,</span> <span class="n">Stuff</span><span class="p">,</span> <span class="n">Absolute</span><span class="p">,</span> <span class="n">Parent</span><span class="p">,</span> <span class="n">Child</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span> <span class="n">Widget</span><span class="p">,</span>
+    <span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">NKChild</span><span class="p">,</span> <span class="n">RefToNKChild</span><span class="p">,</span> <span class="n">Circle1</span><span class="p">,</span> <span class="n">Circle2</span><span class="p">,</span> <span class="n">Circle3</span><span class="p">,</span>
+    <span class="n">ExternalDependency</span><span class="p">,</span> <span class="n">Thingy</span><span class="p">)</span>
+
+
+<span class="n">pre_save_checks</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">def</span> <span class="nf">animal_pre_save_check</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="n">sender</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="s">&quot;A signal that is used to check the type of data loaded from fixtures&quot;</span>
+    <span class="n">pre_save_checks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+        <span class="p">(</span>
+            <span class="s">&#39;Count = </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">count</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">count</span><span class="p">)),</span>
+            <span class="s">&#39;Weight = </span><span class="si">%s</span><span class="s"> (</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">weight</span><span class="p">)),</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestFixtures</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_duplicate_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This is a regression test for ticket #3790.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Load a fixture that uses PK=1</p></td><td class="code"><div class="highlight"><pre>        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;sequence&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Create a new animal. Without a sequence reset, this new object
+will take a PK of 1 (on Postgres), and the save will fail.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">animal</span> <span class="o">=</span> <span class="n">Animal</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Platypus&#39;</span><span class="p">,</span>
+            <span class="n">latin_name</span><span class="o">=</span><span class="s">&#39;Ornithorhynchus anatinus&#39;</span><span class="p">,</span>
+            <span class="n">count</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">weight</span><span class="o">=</span><span class="mf">2.2</span>
+        <span class="p">)</span>
+        <span class="n">animal</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertGreater</span><span class="p">(</span><span class="n">animal</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="nd">@skipIfDBFeature</span><span class="p">(</span><span class="s">&#39;interprets_empty_strings_as_nulls&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_pretty_print_xml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for ticket #4558 -- pretty printing of XML fixtures</span>
+<span class="sd">        doesn&#39;t affect parsing of None values.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Load a pretty-printed XML fixture with Nulls.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;pretty.xml&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Stuff</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Stuff</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;interprets_empty_strings_as_nulls&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_pretty_print_xml_empty_strings</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for ticket #4558 -- pretty printing of XML fixtures</span>
+<span class="sd">        doesn&#39;t affect parsing of None values.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Load a pretty-printed XML fixture with Nulls.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;pretty.xml&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Stuff</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Stuff</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">owner</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_absolute_path</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for ticket #6436 --</span>
+<span class="sd">        os.path.join will throw away the initial parts of a path if it</span>
+<span class="sd">        encounters an absolute path.</span>
+<span class="sd">        This means that if a fixture is specified as an absolute path,</span>
+<span class="sd">        we need to make sure we don&#39;t discover the absolute path in every</span>
+<span class="sd">        fixture directory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">load_absolute_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span>
+            <span class="s">&#39;fixtures&#39;</span><span class="p">,</span>
+            <span class="s">&#39;absolute.json&#39;</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="n">load_absolute_path</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Absolute</span><span class="o">.</span><span class="n">load_count</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+
+    <span class="k">def</span> <span class="nf">test_unknown_format</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #4371 -- Loading data of an unknown format should fail</span>
+<span class="sd">        Validate that error conditions are caught correctly</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;Problem installing fixture &#39;bad_fixture1&#39;: &quot;</span>
+                <span class="s">&quot;unkn is not a known serialization format.&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;bad_fixture1.unkn&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_invalid_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #4371 -- Loading a fixture file with invalid data</span>
+<span class="sd">        using explicit filename.</span>
+<span class="sd">        Validate that error conditions are caught correctly</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;No fixture data found for &#39;bad_fixture2&#39;. \(File format may be invalid.\)&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;bad_fixture2.xml&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_invalid_data_no_ext</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #4371 -- Loading a fixture file with invalid data</span>
+<span class="sd">        without file extension.</span>
+<span class="sd">        Validate that error conditions are caught correctly</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;No fixture data found for &#39;bad_fixture2&#39;. \(File format may be invalid.\)&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;bad_fixture2&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_empty</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #4371 -- Loading a fixture file with no data returns an error.</span>
+<span class="sd">        Validate that error conditions are caught correctly</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;No fixture data found for &#39;empty&#39;. \(File format may be invalid.\)&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;empty&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        (Regression for #9011 - error message is correct)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;^No fixture data found for &#39;bad_fixture2&#39;. \(File format may be invalid.\)$&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;bad_fixture2&#39;</span><span class="p">,</span>
+                <span class="s">&#39;animal&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_pg_sequence_resetting_checks</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #7565 -- PostgreSQL sequence resetting checks shouldn&#39;t</span>
+<span class="sd">        ascend to parent models when inheritance is used</span>
+<span class="sd">        (since they are treated individually).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;model-inheritance.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Parent</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Child</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_close_connection_after_loaddata</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #7572 -- MySQL has a problem if the same connection is</span>
+<span class="sd">        used to create tables, load data, and then query over that data.</span>
+<span class="sd">        To compensate, we close the connection after running loaddata.</span>
+<span class="sd">        This ensures that a new connection is opened when test queries are</span>
+<span class="sd">        issued.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;big-fixture.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">articles</span> <span class="o">=</span> <span class="n">Article</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">9</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">articles</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+            <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Just for good measure, run the same query again.
+Under the influence of ticket #7572, this will
+give a different result to the previous call.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">articles</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="bp">True</span><span class="p">)),</span>
+            <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_field_value_coerce</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for tickets #8298, #9942 - Field values should be coerced into the</span>
+<span class="sd">        correct type by the deserializer, not as part of the database write.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">global</span> <span class="n">pre_save_checks</span>
+        <span class="n">pre_save_checks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">animal_pre_save_check</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;animal.xml&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+                <span class="n">pre_save_checks</span><span class="p">,</span>
+                <span class="p">[</span>
+                    <span class="p">(</span><span class="s">&quot;Count = 42 (&lt;type &#39;int&#39;&gt;)&quot;</span><span class="p">,</span> <span class="s">&quot;Weight = 1.2 (&lt;type &#39;float&#39;&gt;)&quot;</span><span class="p">)</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">animal_pre_save_check</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dumpdata_uses_default_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #11286</span>
+<span class="sd">        Ensure that dumpdata honors the default manager</span>
+<span class="sd">        Dump the current contents of the database as a JSON fixture</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;animal.xml&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;sequence.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">animal</span> <span class="o">=</span> <span class="n">Animal</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Platypus&#39;</span><span class="p">,</span>
+            <span class="n">latin_name</span><span class="o">=</span><span class="s">&#39;Ornithorhynchus anatinus&#39;</span><span class="p">,</span>
+            <span class="n">count</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">weight</span><span class="o">=</span><span class="mf">2.2</span>
+        <span class="p">)</span>
+        <span class="n">animal</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+        <span class="n">stdout</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;dumpdata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.animal&#39;</span><span class="p">,</span>
+            <span class="n">format</span><span class="o">=</span><span class="s">&#39;json&#39;</span><span class="p">,</span>
+            <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Output order isn't guaranteed, so check for parts</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Get rid of artifacts like '000000002' to eliminate the differences
+between different Python versions.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">data</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s">&#39;0{6,}\d&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+
+        <span class="n">lion_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;pk&quot;: 1, &quot;model&quot;: &quot;fixtures_regress.animal&quot;, &quot;fields&quot;: {&quot;count&quot;: 3, &quot;weight&quot;: 1.2, &quot;name&quot;: &quot;Lion&quot;, &quot;latin_name&quot;: &quot;Panthera leo&quot;}}&#39;</span>
+        <span class="n">emu_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;pk&quot;: 10, &quot;model&quot;: &quot;fixtures_regress.animal&quot;, &quot;fields&quot;: {&quot;count&quot;: 42, &quot;weight&quot;: 1.2, &quot;name&quot;: &quot;Emu&quot;, &quot;latin_name&quot;: &quot;Dromaius novaehollandiae&quot;}}&#39;</span>
+        <span class="n">platypus_json</span> <span class="o">=</span> <span class="s">&#39;{&quot;pk&quot;: </span><span class="si">%d</span><span class="s">, &quot;model&quot;: &quot;fixtures_regress.animal&quot;, &quot;fields&quot;: {&quot;count&quot;: 2, &quot;weight&quot;: 2.2, &quot;name&quot;: &quot;Platypus&quot;, &quot;latin_name&quot;: &quot;Ornithorhynchus anatinus&quot;}}&#39;</span>
+        <span class="n">platypus_json</span> <span class="o">=</span> <span class="n">platypus_json</span> <span class="o">%</span> <span class="n">animal</span><span class="o">.</span><span class="n">pk</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="s">&#39;[</span><span class="si">%s</span><span class="s">]&#39;</span> <span class="o">%</span> <span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">lion_json</span><span class="p">,</span> <span class="n">emu_json</span><span class="p">,</span> <span class="n">platypus_json</span><span class="p">])))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">lion_json</span> <span class="ow">in</span> <span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">emu_json</span> <span class="ow">in</span> <span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">platypus_json</span> <span class="ow">in</span> <span class="n">data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_model_included</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #11428 - Proxy models aren&#39;t included when you dumpdata</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">stdout</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Create an instance of the concrete class</p></td><td class="code"><div class="highlight"><pre>        <span class="n">widget</span> <span class="o">=</span> <span class="n">Widget</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;grommet&#39;</span><span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;dumpdata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.widget&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.widgetproxy&#39;</span><span class="p">,</span>
+            <span class="n">format</span><span class="o">=</span><span class="s">&#39;json&#39;</span><span class="p">,</span>
+            <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">stdout</span><span class="o">.</span><span class="n">getvalue</span><span class="p">(),</span>
+            <span class="sd">&quot;&quot;&quot;[{&quot;pk&quot;: %d, &quot;model&quot;: &quot;fixtures_regress.widget&quot;, &quot;fields&quot;: {&quot;name&quot;: &quot;grommet&quot;}}]&quot;&quot;&quot;</span>
+            <span class="o">%</span> <span class="n">widget</span><span class="o">.</span><span class="n">pk</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_loaddata_works_when_fixture_has_forward_refs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #3615 - Forward references cause fixtures not to load in MySQL (InnoDB)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;forward_ref.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_loaddata_raises_error_when_fixture_has_invalid_foreign_key</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #3615 - Ensure data with nonexistent child key references raises error</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">IntegrityError</span><span class="p">,</span>
+                <span class="s">&quot;Problem installing fixture&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="s">&#39;forward_ref_bad_data.json&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="n">_cur_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">__file__</span><span class="p">))</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span><span class="n">FIXTURE_DIRS</span><span class="o">=</span><span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_cur_dir</span><span class="p">,</span> <span class="s">&#39;fixtures_1&#39;</span><span class="p">),</span>
+                                     <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_cur_dir</span><span class="p">,</span> <span class="s">&#39;fixtures_2&#39;</span><span class="p">)])</span>
+    <span class="k">def</span> <span class="nf">test_loaddata_forward_refs_split_fixtures</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #17530 - should be able to cope with forward references</span>
+<span class="sd">        when the fixtures are not in the same files or directories.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;forward_ref_1.json&#39;</span><span class="p">,</span>
+            <span class="s">&#39;forward_ref_2.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_loaddata_no_fixture_specified</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #7043 - Error is quickly reported when no fixtures is provided in the command line.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">management</span><span class="o">.</span><span class="n">CommandError</span><span class="p">,</span>
+                <span class="s">&quot;No database fixture specified. Please provide the path of &quot;</span>
+                <span class="s">&quot;at least one fixture in the command line.&quot;</span><span class="p">):</span>
+            <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+                <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+                <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_loaddata_not_existant_fixture_file</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">stdout_output</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;this_fixture_doesnt_exist&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+            <span class="n">stdout</span><span class="o">=</span><span class="n">stdout_output</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&quot;No xml fixture &#39;this_fixture_doesnt_exist&#39; in&quot;</span> <span class="ow">in</span>
+            <span class="n">stdout_output</span><span class="o">.</span><span class="n">getvalue</span><span class="p">())</span>
+
+
+<span class="k">class</span> <span class="nc">NaturalKeyFixtureTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_nk_deserialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #13030 - Python based parser version</span>
+<span class="sd">        natural keys deserialize with fk to inheriting model</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;model-inheritance.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;nk-inheritance.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">NKChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+            <span class="s">&#39;apple&#39;</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">RefToNKChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">nk_fk</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+            <span class="s">&#39;apple&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nk_deserialize_xml</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test for ticket #13030 - XML version</span>
+<span class="sd">        natural keys deserialize with fk to inheriting model</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;model-inheritance.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;nk-inheritance.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;nk-inheritance2.xml&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">NKChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+            <span class="s">&#39;banana&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">RefToNKChild</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">nk_fk</span><span class="o">.</span><span class="n">data</span><span class="p">,</span>
+            <span class="s">&#39;apple&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_nk_on_serialize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that natural key requirements are taken into account</span>
+<span class="sd">        when serializing models</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;forward_ref_lookup.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+            <span class="p">)</span>
+
+        <span class="n">stdout</span> <span class="o">=</span> <span class="n">BytesIO</span><span class="p">()</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;dumpdata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.book&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.person&#39;</span><span class="p">,</span>
+            <span class="s">&#39;fixtures_regress.store&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">format</span><span class="o">=</span><span class="s">&#39;json&#39;</span><span class="p">,</span>
+            <span class="n">use_natural_keys</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">stdout</span><span class="o">.</span><span class="n">getvalue</span><span class="p">(),</span>
+            <span class="sd">&quot;&quot;&quot;[{&quot;pk&quot;: 2, &quot;model&quot;: &quot;fixtures_regress.store&quot;, &quot;fields&quot;: {&quot;main&quot;: null, &quot;name&quot;: &quot;Amazon&quot;}}, {&quot;pk&quot;: 3, &quot;model&quot;: &quot;fixtures_regress.store&quot;, &quot;fields&quot;: {&quot;main&quot;: null, &quot;name&quot;: &quot;Borders&quot;}}, {&quot;pk&quot;: 4, &quot;model&quot;: &quot;fixtures_regress.person&quot;, &quot;fields&quot;: {&quot;name&quot;: &quot;Neal Stephenson&quot;}}, {&quot;pk&quot;: 1, &quot;model&quot;: &quot;fixtures_regress.book&quot;, &quot;fields&quot;: {&quot;stores&quot;: [[&quot;Amazon&quot;], [&quot;Borders&quot;]], &quot;name&quot;: &quot;Cryptonomicon&quot;, &quot;author&quot;: [&quot;Neal Stephenson&quot;]}}]&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Now lets check the dependency sorting explicitly</span>
+<span class="sd">        It doesn&#39;t matter what order you mention the models</span>
+<span class="sd">        Store *must* be serialized before then Person, and both</span>
+<span class="sd">        must be serialized before Book.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Book</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Store</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Book</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_3</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Person</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_4</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_5</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Store</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_6</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Book</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_dangling</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Circle1</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Book</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Circle1</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_tight_circular</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span>
+            <span class="n">CommandError</span><span class="p">,</span>
+            <span class="sd">&quot;&quot;&quot;Can&#39;t resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.&quot;&quot;&quot;</span><span class="p">,</span>
+            <span class="n">sort_dependencies</span><span class="p">,</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Circle2</span><span class="p">,</span> <span class="n">Circle1</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Book</span><span class="p">])],</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_tight_circular_2</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span>
+            <span class="n">CommandError</span><span class="p">,</span>
+            <span class="sd">&quot;&quot;&quot;Can&#39;t resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2 in serialized app list.&quot;&quot;&quot;</span><span class="p">,</span>
+            <span class="n">sort_dependencies</span><span class="p">,</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Circle1</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">Circle2</span><span class="p">])],</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_self_referential</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span>
+            <span class="n">CommandError</span><span class="p">,</span>
+            <span class="sd">&quot;&quot;&quot;Can&#39;t resolve dependencies for fixtures_regress.Circle3 in serialized app list.&quot;&quot;&quot;</span><span class="p">,</span>
+            <span class="n">sort_dependencies</span><span class="p">,</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Book</span><span class="p">,</span> <span class="n">Circle3</span><span class="p">])],</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_long</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesMessage</span><span class="p">(</span>
+            <span class="n">CommandError</span><span class="p">,</span>
+            <span class="sd">&quot;&quot;&quot;Can&#39;t resolve dependencies for fixtures_regress.Circle1, fixtures_regress.Circle2, fixtures_regress.Circle3 in serialized app list.&quot;&quot;&quot;</span><span class="p">,</span>
+            <span class="n">sort_dependencies</span><span class="p">,</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Circle2</span><span class="p">,</span> <span class="n">Circle1</span><span class="p">,</span> <span class="n">Circle3</span><span class="p">,</span> <span class="n">Store</span><span class="p">,</span> <span class="n">Book</span><span class="p">])],</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_dependency_sorting_normal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">sorted_deps</span> <span class="o">=</span> <span class="n">sort_dependencies</span><span class="p">(</span>
+            <span class="p">[(</span><span class="s">&#39;fixtures_regress&#39;</span><span class="p">,</span> <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">ExternalDependency</span><span class="p">,</span> <span class="n">Book</span><span class="p">])]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">sorted_deps</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">Person</span><span class="p">,</span> <span class="n">Book</span><span class="p">,</span> <span class="n">ExternalDependency</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_normal_pk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Check that normal primary keys still work</span>
+<span class="sd">        on a model with natural key capabilities</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;non_natural_1.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;forward_ref_lookup.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;non_natural_2.xml&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="n">books</span> <span class="o">=</span> <span class="n">Book</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span>
+            <span class="n">books</span><span class="o">.</span><span class="n">__repr__</span><span class="p">(),</span>
+            <span class="sd">&quot;&quot;&quot;[&lt;Book: Cryptonomicon by Neal Stephenson (available at Amazon, Borders)&gt;, &lt;Book: Ender&#39;s Game by Orson Scott Card (available at Collins Bookstore)&gt;, &lt;Book: Permutation City by Greg Egan (available at Angus and Robertson)&gt;]&quot;&quot;&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestTicket11101</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">ticket_11101</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span>
+            <span class="s">&#39;loaddata&#39;</span><span class="p">,</span>
+            <span class="s">&#39;thingy.json&#39;</span><span class="p">,</span>
+            <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">commit</span><span class="o">=</span><span class="bp">False</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Thingy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Thingy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_transactions&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_ticket_11101</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test that fixtures can be rolled back (ticket #11101).&quot;&quot;&quot;</span>
+        <span class="n">ticket_11101</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">commit_manually</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ticket_11101</span><span class="p">)</span>
+        <span class="n">ticket_11101</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › db › utils.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>utils.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">from</span> <span class="nn">threading</span> <span class="kn">import</span> <span class="n">local</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.utils.importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+
+
+<span class="n">DEFAULT_DB_ALIAS</span> <span class="o">=</span> <span class="s">&#39;default&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Define some exceptions that mirror the PEP249 interface.
+We will rethrow any backend-specific errors using these
+common wrappers</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">DatabaseError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">IntegrityError</span><span class="p">(</span><span class="n">DatabaseError</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">def</span> <span class="nf">load_backend</span><span class="p">(</span><span class="n">backend_name</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Look for a fully qualified database backend name</p></td><td class="code"><div class="highlight"><pre>    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">import_module</span><span class="p">(</span><span class="s">&#39;.base&#39;</span><span class="p">,</span> <span class="n">backend_name</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e_user</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The database backend wasn't found. Display a helpful error message
+listing all possible (built-in) database backends.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">backend_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;backends&#39;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">available_backends</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">backend_dir</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">backend_dir</span><span class="p">,</span> <span class="n">f</span><span class="p">))</span>
+                    <span class="ow">and</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">)]</span>
+        <span class="k">except</span> <span class="ne">EnvironmentError</span><span class="p">:</span>
+            <span class="n">available_backends</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">full_notation</span> <span class="o">=</span> <span class="n">backend_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;django.db.backends.&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">full_notation</span><span class="p">:</span>
+            <span class="n">backend_name</span> <span class="o">=</span> <span class="n">backend_name</span><span class="p">[</span><span class="mi">19</span><span class="p">:]</span> <span class="c"># See #15621.</span>
+        <span class="k">if</span> <span class="n">backend_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">available_backends</span><span class="p">:</span>
+            <span class="n">backend_reprs</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">repr</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">available_backends</span><span class="p">))</span>
+            <span class="n">error_msg</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;</span><span class="si">%r</span><span class="s"> isn&#39;t an available database backend.</span><span class="se">\n</span><span class="s">&quot;</span>
+                         <span class="s">&quot;Try using django.db.backends.XXX, where XXX &quot;</span>
+                         <span class="s">&quot;is one of:</span><span class="se">\n</span><span class="s">    </span><span class="si">%s</span><span class="se">\n</span><span class="s">Error was: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span>
+                         <span class="p">(</span><span class="n">backend_name</span><span class="p">,</span> <span class="s">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">backend_reprs</span><span class="p">),</span> <span class="n">e_user</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">full_notation</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>user tried to use the old notation for the database backend</p></td><td class="code"><div class="highlight"><pre>            <span class="n">error_msg</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;</span><span class="si">%r</span><span class="s"> isn&#39;t an available database backend.</span><span class="se">\n</span><span class="s">&quot;</span>
+                         <span class="s">&quot;Try using django.db.backends.</span><span class="si">%s</span><span class="s"> instead.</span><span class="se">\n</span><span class="s">&quot;</span>
+                         <span class="s">&quot;Error was: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span>
+                         <span class="p">(</span><span class="n">backend_name</span><span class="p">,</span> <span class="n">backend_name</span><span class="p">,</span> <span class="n">e_user</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="n">error_msg</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>If there's some other error, this must be an error in Django</p></td><td class="code"><div class="highlight"><pre>            <span class="k">raise</span>
+
+
+<span class="k">class</span> <span class="nc">ConnectionDoesNotExist</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+
+<span class="k">class</span> <span class="nc">ConnectionHandler</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">databases</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">databases</span> <span class="o">=</span> <span class="n">databases</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connections</span> <span class="o">=</span> <span class="n">local</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">ensure_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alias</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Puts the defaults into the settings dictionary for a given connection</span>
+<span class="sd">        where no settings is provided.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">conn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">databases</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConnectionDoesNotExist</span><span class="p">(</span><span class="s">&quot;The connection </span><span class="si">%s</span><span class="s"> doesn&#39;t exist&quot;</span> <span class="o">%</span> <span class="n">alias</span><span class="p">)</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;ENGINE&#39;</span><span class="p">,</span> <span class="s">&#39;django.db.backends.dummy&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">conn</span><span class="p">[</span><span class="s">&#39;ENGINE&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;django.db.backends.&#39;</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">conn</span><span class="p">[</span><span class="s">&#39;ENGINE&#39;</span><span class="p">]:</span>
+            <span class="n">conn</span><span class="p">[</span><span class="s">&#39;ENGINE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s">&#39;django.db.backends.dummy&#39;</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;TIME_ZONE&#39;</span><span class="p">,</span> <span class="s">&#39;UTC&#39;</span> <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">USE_TZ</span> <span class="k">else</span> <span class="n">settings</span><span class="o">.</span><span class="n">TIME_ZONE</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">setting</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&#39;NAME&#39;</span><span class="p">,</span> <span class="s">&#39;USER&#39;</span><span class="p">,</span> <span class="s">&#39;PASSWORD&#39;</span><span class="p">,</span> <span class="s">&#39;HOST&#39;</span><span class="p">,</span> <span class="s">&#39;PORT&#39;</span><span class="p">]:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">setting</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">setting</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&#39;TEST_CHARSET&#39;</span><span class="p">,</span> <span class="s">&#39;TEST_COLLATION&#39;</span><span class="p">,</span> <span class="s">&#39;TEST_NAME&#39;</span><span class="p">,</span> <span class="s">&#39;TEST_MIRROR&#39;</span><span class="p">]:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">setting</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alias</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connections</span><span class="p">,</span> <span class="n">alias</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connections</span><span class="p">,</span> <span class="n">alias</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ensure_defaults</span><span class="p">(</span><span class="n">alias</span><span class="p">)</span>
+        <span class="n">db</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">databases</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span>
+        <span class="n">backend</span> <span class="o">=</span> <span class="n">load_backend</span><span class="p">(</span><span class="n">db</span><span class="p">[</span><span class="s">&#39;ENGINE&#39;</span><span class="p">])</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">DatabaseWrapper</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">alias</span><span class="p">)</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connections</span><span class="p">,</span> <span class="n">alias</span><span class="p">,</span> <span class="n">conn</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">conn</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connections</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">databases</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">all</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span> <span class="k">for</span> <span class="n">alias</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">]</span>
+
+
+<span class="k">class</span> <span class="nc">ConnectionRouter</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">routers</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">routers</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">routers</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">module_name</span><span class="p">,</span> <span class="n">klass_name</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                    <span class="n">module</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Error importing database router </span><span class="si">%s</span><span class="s">: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">klass_name</span><span class="p">,</span> <span class="n">e</span><span class="p">))</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">router_class</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">klass_name</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Module &quot;</span><span class="si">%s</span><span class="s">&quot; does not define a database router name &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">klass_name</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">router</span> <span class="o">=</span> <span class="n">router_class</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">router</span> <span class="o">=</span> <span class="n">r</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">routers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">router</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_router_func</span><span class="p">(</span><span class="n">action</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">_route_db</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">hints</span><span class="p">):</span>
+            <span class="n">chosen_db</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="k">for</span> <span class="n">router</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">routers</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">method</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">router</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>If the router doesn't have a method, skip to the next one.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">pass</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">chosen_db</span> <span class="o">=</span> <span class="n">method</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">hints</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">chosen_db</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">chosen_db</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">hints</span><span class="p">[</span><span class="s">&#39;instance&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">db</span> <span class="ow">or</span> <span class="n">DEFAULT_DB_ALIAS</span>
+            <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">DEFAULT_DB_ALIAS</span>
+        <span class="k">return</span> <span class="n">_route_db</span>
+
+    <span class="n">db_for_read</span> <span class="o">=</span> <span class="n">_router_func</span><span class="p">(</span><span class="s">&#39;db_for_read&#39;</span><span class="p">)</span>
+    <span class="n">db_for_write</span> <span class="o">=</span> <span class="n">_router_func</span><span class="p">(</span><span class="s">&#39;db_for_write&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">allow_relation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj1</span><span class="p">,</span> <span class="n">obj2</span><span class="p">,</span> <span class="o">**</span><span class="n">hints</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">router</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">routers</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">method</span> <span class="o">=</span> <span class="n">router</span><span class="o">.</span><span class="n">allow_relation</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If the router doesn't have a method, skip to the next one.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">allow</span> <span class="o">=</span> <span class="n">method</span><span class="p">(</span><span class="n">obj1</span><span class="p">,</span> <span class="n">obj2</span><span class="p">,</span> <span class="o">**</span><span class="n">hints</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">allow</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">allow</span>
+        <span class="k">return</span> <span class="n">obj1</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">db</span> <span class="o">==</span> <span class="n">obj2</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">db</span>
+
+    <span class="k">def</span> <span class="nf">allow_syncdb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="p">,</span> <span class="n">model</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">router</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">routers</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">method</span> <span class="o">=</span> <span class="n">router</span><span class="o">.</span><span class="n">allow_syncdb</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>If the router doesn't have a method, skip to the next one.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">allow</span> <span class="o">=</span> <span class="n">method</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">model</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">allow</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">allow</span>
+        <span class="k">return</span> <span class="bp">True</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

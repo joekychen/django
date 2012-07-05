@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › utils › decorators.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>decorators.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="s">&quot;Functions that help with dynamically creating decorators for views.&quot;</span>
+
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span><span class="p">,</span> <span class="n">update_wrapper</span><span class="p">,</span> <span class="n">WRAPPER_ASSIGNMENTS</span>
+
+<span class="k">class</span> <span class="nc">classonlymethod</span><span class="p">(</span><span class="nb">classmethod</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">owner</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s">&quot;This method is available only on the view class.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">classonlymethod</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__get__</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">owner</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">method_decorator</span><span class="p">(</span><span class="n">decorator</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Converts a function decorator into a method decorator</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>'func' is a function at the time it is passed to _dec, but will eventually
+be a method of the class it is defined it.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">_dec</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">_wrapper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="nd">@decorator</span>
+            <span class="k">def</span> <span class="nf">bound_func</span><span class="p">(</span><span class="o">*</span><span class="n">args2</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs2</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args2</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs2</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>bound_func has the signature that 'decorator' expects i.e.  no
+'self' argument, but it is a closure over self so it can call
+'func' correctly.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">bound_func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>In case 'decorator' adds attributes to the function it decorates, we
+want to copy those. We don't have access to bound_func in this scope,
+but we can cheat by using it on a dummy function.</p></td><td class="code"><div class="highlight"><pre>        <span class="nd">@decorator</span>
+        <span class="k">def</span> <span class="nf">dummy</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">pass</span>
+        <span class="n">update_wrapper</span><span class="p">(</span><span class="n">_wrapper</span><span class="p">,</span> <span class="n">dummy</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Need to preserve any existing attributes of 'func', including the name.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">update_wrapper</span><span class="p">(</span><span class="n">_wrapper</span><span class="p">,</span> <span class="n">func</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">_wrapper</span>
+    <span class="n">update_wrapper</span><span class="p">(</span><span class="n">_dec</span><span class="p">,</span> <span class="n">decorator</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Change the name to aid debugging.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">_dec</span><span class="o">.</span><span class="n">__name__</span> <span class="o">=</span> <span class="s">&#39;method_decorator(</span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">decorator</span><span class="o">.</span><span class="n">__name__</span>
+    <span class="k">return</span> <span class="n">_dec</span>
+
+
+<span class="k">def</span> <span class="nf">decorator_from_middleware_with_args</span><span class="p">(</span><span class="n">middleware_class</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Like decorator_from_middleware, but returns a function</span>
+<span class="sd">    that accepts the arguments to be passed to the middleware_class.</span>
+<span class="sd">    Use like::</span>
+
+<span class="sd">         cache_page = decorator_from_middleware_with_args(CacheMiddleware)</span>
+
+<span class="sd">#DIVIDER</span>
+
+<span class="sd">         @cache_page(3600)</span>
+<span class="sd">         def my_view(request):</span>
+
+<span class="sd">#DIVIDER</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">make_middleware_decorator</span><span class="p">(</span><span class="n">middleware_class</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">decorator_from_middleware</span><span class="p">(</span><span class="n">middleware_class</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a middleware class (not an instance), returns a view decorator. This</span>
+<span class="sd">    lets you use middleware functionality on a per-view basis. The middleware</span>
+<span class="sd">    is created with no params passed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">make_middleware_decorator</span><span class="p">(</span><span class="n">middleware_class</span><span class="p">)()</span>
+
+
+<span class="k">def</span> <span class="nf">available_attrs</span><span class="p">(</span><span class="n">fn</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the list of functools-wrappable attributes on a callable.</span>
+<span class="sd">    This is required as a workaround for http://bugs.python.org/issue3445.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">WRAPPER_ASSIGNMENTS</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">fn</span><span class="p">,</span> <span class="n">a</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">make_middleware_decorator</span><span class="p">(</span><span class="n">middleware_class</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_make_decorator</span><span class="p">(</span><span class="o">*</span><span class="n">m_args</span><span class="p">,</span> <span class="o">**</span><span class="n">m_kwargs</span><span class="p">):</span>
+        <span class="n">middleware</span> <span class="o">=</span> <span class="n">middleware_class</span><span class="p">(</span><span class="o">*</span><span class="n">m_args</span><span class="p">,</span> <span class="o">**</span><span class="n">m_kwargs</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">_decorator</span><span class="p">(</span><span class="n">view_func</span><span class="p">):</span>
+            <span class="nd">@wraps</span><span class="p">(</span><span class="n">view_func</span><span class="p">,</span> <span class="n">assigned</span><span class="o">=</span><span class="n">available_attrs</span><span class="p">(</span><span class="n">view_func</span><span class="p">))</span>
+            <span class="k">def</span> <span class="nf">_wrapped_view</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_request&#39;</span><span class="p">):</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">result</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_view&#39;</span><span class="p">):</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_view</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">view_func</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="n">result</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">response</span> <span class="o">=</span> <span class="n">view_func</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_exception&#39;</span><span class="p">):</span>
+                        <span class="n">result</span> <span class="o">=</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_exception</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                            <span class="k">return</span> <span class="n">result</span>
+                    <span class="k">raise</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="s">&#39;render&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">callable</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">render</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_template_response&#39;</span><span class="p">):</span>
+                        <span class="n">response</span> <span class="o">=</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_template_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>...</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_response&#39;</span><span class="p">):</span>
+                        <span class="n">callback</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">response</span><span class="p">:</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+                        <span class="n">response</span><span class="o">.</span><span class="n">add_post_render_callback</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">middleware</span><span class="p">,</span> <span class="s">&#39;process_response&#39;</span><span class="p">):</span>
+                        <span class="k">return</span> <span class="n">middleware</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">response</span>
+            <span class="k">return</span> <span class="n">_wrapped_view</span>
+        <span class="k">return</span> <span class="n">_decorator</span>
+    <span class="k">return</span> <span class="n">_make_decorator</span>
+
+</pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>...</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Defer running of process_response until after the template
+has been rendered:</p></td><td class="code"><div class="highlight"><pre>undefined</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

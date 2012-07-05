@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › forms › models.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../index.html"></a><h1>models.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Helper functions for creating Form classes from Django models</span>
+<span class="sd">and database field objects.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ValidationError</span><span class="p">,</span> <span class="n">NON_FIELD_ERRORS</span><span class="p">,</span> <span class="n">FieldError</span>
+<span class="kn">from</span> <span class="nn">django.core.validators</span> <span class="kn">import</span> <span class="n">EMPTY_VALUES</span>
+<span class="kn">from</span> <span class="nn">django.forms.fields</span> <span class="kn">import</span> <span class="n">Field</span><span class="p">,</span> <span class="n">ChoiceField</span>
+<span class="kn">from</span> <span class="nn">django.forms.forms</span> <span class="kn">import</span> <span class="n">BaseForm</span><span class="p">,</span> <span class="n">get_declared_fields</span>
+<span class="kn">from</span> <span class="nn">django.forms.formsets</span> <span class="kn">import</span> <span class="n">BaseFormSet</span><span class="p">,</span> <span class="n">formset_factory</span>
+<span class="kn">from</span> <span class="nn">django.forms.util</span> <span class="kn">import</span> <span class="n">ErrorList</span>
+<span class="kn">from</span> <span class="nn">django.forms.widgets</span> <span class="kn">import</span> <span class="p">(</span><span class="n">SelectMultiple</span><span class="p">,</span> <span class="n">HiddenInput</span><span class="p">,</span>
+    <span class="n">MultipleHiddenInput</span><span class="p">,</span> <span class="n">media_property</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.utils.encoding</span> <span class="kn">import</span> <span class="n">smart_unicode</span><span class="p">,</span> <span class="n">force_unicode</span>
+<span class="kn">from</span> <span class="nn">django.utils.datastructures</span> <span class="kn">import</span> <span class="n">SortedDict</span>
+<span class="kn">from</span> <span class="nn">django.utils.text</span> <span class="kn">import</span> <span class="n">get_text_list</span><span class="p">,</span> <span class="n">capfirst</span>
+<span class="kn">from</span> <span class="nn">django.utils.translation</span> <span class="kn">import</span> <span class="n">ugettext_lazy</span> <span class="k">as</span> <span class="n">_</span><span class="p">,</span> <span class="n">ugettext</span>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s">&#39;ModelForm&#39;</span><span class="p">,</span> <span class="s">&#39;BaseModelForm&#39;</span><span class="p">,</span> <span class="s">&#39;model_to_dict&#39;</span><span class="p">,</span> <span class="s">&#39;fields_for_model&#39;</span><span class="p">,</span>
+    <span class="s">&#39;save_instance&#39;</span><span class="p">,</span> <span class="s">&#39;ModelChoiceField&#39;</span><span class="p">,</span> <span class="s">&#39;ModelMultipleChoiceField&#39;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">construct_instance</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Constructs and returns a model instance from the bound ``form``&#39;s</span>
+<span class="sd">    ``cleaned_data``, but does not save the returned instance to the</span>
+<span class="sd">    database.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">_meta</span>
+
+    <span class="n">cleaned_data</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span>
+    <span class="n">file_field_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">editable</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">AutoField</span><span class="p">)</span> \
+                <span class="ow">or</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cleaned_data</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">exclude</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">:</span>
+            <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Defer saving file-type fields until after the other fields, so a
+callable upload_to can use the values from other fields.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">FileField</span><span class="p">):</span>
+            <span class="n">file_field_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">save_form_data</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">cleaned_data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">file_field_list</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">save_form_data</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">cleaned_data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">instance</span>
+
+<span class="k">def</span> <span class="nf">save_instance</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">fail_message</span><span class="o">=</span><span class="s">&#39;saved&#39;</span><span class="p">,</span>
+                  <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">construct</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Saves bound Form ``form``&#39;s cleaned_data into model instance ``instance``.</span>
+
+<span class="sd">    If commit=True, then the changes to ``instance`` will be saved to the</span>
+<span class="sd">    database. Returns ``instance``.</span>
+
+<span class="sd">    If construct=False, assume ``instance`` has already been constructed and</span>
+<span class="sd">    just needs to be saved.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">construct</span><span class="p">:</span>
+        <span class="n">instance</span> <span class="o">=</span> <span class="n">construct_instance</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="n">exclude</span><span class="p">)</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">_meta</span>
+    <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;The </span><span class="si">%s</span><span class="s"> could not be </span><span class="si">%s</span><span class="s"> because the data didn&#39;t&quot;</span>
+                         <span class="s">&quot; validate.&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">object_name</span><span class="p">,</span> <span class="n">fail_message</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Wrap up the saving of m2m data as a function.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">save_m2m</span><span class="p">():</span>
+        <span class="n">cleaned_data</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">many_to_many</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">fields</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">cleaned_data</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">save_form_data</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">cleaned_data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">commit</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>If we are committing, save the instance and the m2m data immediately.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">instance</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="n">save_m2m</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>We're not committing. Add a method to the form to allow deferred
+saving of m2m data.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">form</span><span class="o">.</span><span class="n">save_m2m</span> <span class="o">=</span> <span class="n">save_m2m</span>
+    <span class="k">return</span> <span class="n">instance</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>ModelForms #################################################################</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">model_to_dict</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a dict containing the data in ``instance`` suitable for passing as</span>
+<span class="sd">    a Form&#39;s ``initial`` keyword argument.</span>
+
+<span class="sd">    ``fields`` is an optional list of field names. If provided, only the named</span>
+<span class="sd">    fields will be included in the returned dict.</span>
+
+<span class="sd">    ``exclude`` is an optional list of field names. If provided, the named</span>
+<span class="sd">    fields will be excluded from the returned dict, even if they are listed in</span>
+<span class="sd">    the ``fields`` argument.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>avoid a circular import</p></td><td class="code"><div class="highlight"><pre>    <span class="kn">from</span> <span class="nn">django.db.models.fields.related</span> <span class="kn">import</span> <span class="n">ManyToManyField</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">_meta</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span> <span class="o">+</span> <span class="n">opts</span><span class="o">.</span><span class="n">many_to_many</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">editable</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">fields</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">exclude</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ManyToManyField</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>If the object doesn't have a primary key yet, just use an empty
+list for its m2m fields. Calling f.value<em>from</em>object will raise
+an exception.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">instance</span><span class="o">.</span><span class="n">pk</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>MultipleChoiceWidget needs a list of pks, not object instances.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">obj</span><span class="o">.</span><span class="n">pk</span> <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">f</span><span class="o">.</span><span class="n">value_from_object</span><span class="p">(</span><span class="n">instance</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">value_from_object</span><span class="p">(</span><span class="n">instance</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span>
+
+<span class="k">def</span> <span class="nf">fields_for_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">widgets</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">formfield_callback</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a ``SortedDict`` containing form fields for the given model.</span>
+
+<span class="sd">    ``fields`` is an optional list of field names. If provided, only the named</span>
+<span class="sd">    fields will be included in the returned fields.</span>
+
+<span class="sd">    ``exclude`` is an optional list of field names. If provided, the named</span>
+<span class="sd">    fields will be excluded from the returned fields, even if they are listed</span>
+<span class="sd">    in the ``fields`` argument.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">field_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ignored</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">fields</span> <span class="o">+</span> <span class="n">opts</span><span class="o">.</span><span class="n">many_to_many</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">editable</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">exclude</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">widgets</span> <span class="ow">and</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">widgets</span><span class="p">:</span>
+            <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;widget&#39;</span><span class="p">:</span> <span class="n">widgets</span><span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">]}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">formfield_callback</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">formfield</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">formfield</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="nb">callable</span><span class="p">(</span><span class="n">formfield_callback</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;formfield_callback must be a function or callable&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">formfield</span> <span class="o">=</span> <span class="n">formfield_callback</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">formfield</span><span class="p">:</span>
+            <span class="n">field_list</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">formfield</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ignored</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">field_dict</span> <span class="o">=</span> <span class="n">SortedDict</span><span class="p">(</span><span class="n">field_list</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fields</span><span class="p">:</span>
+        <span class="n">field_dict</span> <span class="o">=</span> <span class="n">SortedDict</span><span class="p">(</span>
+            <span class="p">[(</span><span class="n">f</span><span class="p">,</span> <span class="n">field_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">f</span><span class="p">))</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fields</span>
+                <span class="k">if</span> <span class="p">((</span><span class="ow">not</span> <span class="n">exclude</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">exclude</span> <span class="ow">and</span> <span class="n">f</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">))</span> <span class="ow">and</span> <span class="p">(</span><span class="n">f</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ignored</span><span class="p">)]</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">field_dict</span>
+
+<span class="k">class</span> <span class="nc">ModelFormOptions</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">options</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="s">&#39;model&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="s">&#39;fields&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exclude</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="s">&#39;exclude&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">widgets</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="s">&#39;widgets&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ModelFormMetaclass</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">):</span>
+        <span class="n">formfield_callback</span> <span class="o">=</span> <span class="n">attrs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;formfield_callback&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">parents</span> <span class="o">=</span> <span class="p">[</span><span class="n">b</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">bases</span> <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">ModelForm</span><span class="p">)]</span>
+        <span class="k">except</span> <span class="ne">NameError</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>We are defining ModelForm itself.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">parents</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">declared_fields</span> <span class="o">=</span> <span class="n">get_declared_fields</span><span class="p">(</span><span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="n">new_class</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">ModelFormMetaclass</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span>
+                <span class="n">attrs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">parents</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">new_class</span>
+
+        <span class="k">if</span> <span class="s">&#39;media&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">attrs</span><span class="p">:</span>
+            <span class="n">new_class</span><span class="o">.</span><span class="n">media</span> <span class="o">=</span> <span class="n">media_property</span><span class="p">(</span><span class="n">new_class</span><span class="p">)</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">new_class</span><span class="o">.</span><span class="n">_meta</span> <span class="o">=</span> <span class="n">ModelFormOptions</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">new_class</span><span class="p">,</span> <span class="s">&#39;Meta&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">opts</span><span class="o">.</span><span class="n">model</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>If a model is defined, extract form fields from it.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">fields</span> <span class="o">=</span> <span class="n">fields_for_model</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span>
+                                      <span class="n">opts</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">widgets</span><span class="p">,</span> <span class="n">formfield_callback</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>make sure opts.fields doesn't specify an invalid field</p></td><td class="code"><div class="highlight"><pre>            <span class="n">none_model_fields</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">fields</span><span class="o">.</span><span class="n">iteritems</span><span class="p">()</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">v</span><span class="p">]</span>
+            <span class="n">missing_fields</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">none_model_fields</span><span class="p">)</span> <span class="o">-</span> \
+                             <span class="nb">set</span><span class="p">(</span><span class="n">declared_fields</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">missing_fields</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="s">&#39;Unknown field(s) (</span><span class="si">%s</span><span class="s">) specified for </span><span class="si">%s</span><span class="s">&#39;</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="n">message</span> <span class="o">%</span> <span class="p">(</span><span class="s">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing_fields</span><span class="p">),</span>
+                                     <span class="n">opts</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">FieldError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Override default model fields with any custom declared ones
+(plus, include all the other declared fields).</p></td><td class="code"><div class="highlight"><pre>            <span class="n">fields</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">declared_fields</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="n">declared_fields</span>
+        <span class="n">new_class</span><span class="o">.</span><span class="n">declared_fields</span> <span class="o">=</span> <span class="n">declared_fields</span>
+        <span class="n">new_class</span><span class="o">.</span><span class="n">base_fields</span> <span class="o">=</span> <span class="n">fields</span>
+        <span class="k">return</span> <span class="n">new_class</span>
+
+<span class="k">class</span> <span class="nc">BaseModelForm</span><span class="p">(</span><span class="n">BaseForm</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="s">&#39;id_</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">initial</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">error_class</span><span class="o">=</span><span class="n">ErrorList</span><span class="p">,</span> <span class="n">label_suffix</span><span class="o">=</span><span class="s">&#39;:&#39;</span><span class="p">,</span>
+                 <span class="n">empty_permitted</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">instance</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span>
+        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">opts</span><span class="o">.</span><span class="n">model</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;ModelForm has no model class specified.&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>if we didn't get an instance, instantiate a new one</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span> <span class="o">=</span> <span class="n">opts</span><span class="o">.</span><span class="n">model</span><span class="p">()</span>
+            <span class="n">object_data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span> <span class="o">=</span> <span class="n">instance</span>
+            <span class="n">object_data</span> <span class="o">=</span> <span class="n">model_to_dict</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">exclude</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>if initial was provided, it should override the values from instance</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">initial</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">object_data</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">initial</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>self.<em>validate</em>unique will be set to True by BaseModelForm.clean().
+It is False by default so overriding self.clean() and failing to call
+super will stop validate_unique from being called.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_unique</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseModelForm</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">files</span><span class="p">,</span> <span class="n">auto_id</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">object_data</span><span class="p">,</span>
+                                            <span class="n">error_class</span><span class="p">,</span> <span class="n">label_suffix</span><span class="p">,</span> <span class="n">empty_permitted</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_update_errors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message_dict</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">message_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="n">NON_FIELD_ERRORS</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_errors</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_class</span><span class="p">())</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">v</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Remove the data from the cleaned_data dict since it was invalid</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">:</span>
+                    <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">k</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">NON_FIELD_ERRORS</span> <span class="ow">in</span> <span class="n">message_dict</span><span class="p">:</span>
+            <span class="n">messages</span> <span class="o">=</span> <span class="n">message_dict</span><span class="p">[</span><span class="n">NON_FIELD_ERRORS</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_errors</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">NON_FIELD_ERRORS</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_class</span><span class="p">())</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_validation_exclusions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        For backwards-compatibility, several types of fields need to be</span>
+<span class="sd">        excluded from model validation. See the following tickets for</span>
+<span class="sd">        details: #12507, #12521, #12553</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exclude</span> <span class="o">=</span> <span class="p">[]</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Build up a list of fields that should be excluded from model field
+validation and unique checks.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="n">field</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Exclude fields that aren't on the form. The developer may be
+adding these values to the model after form validation.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="n">field</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Don't perform model validation on fields that were defined
+manually on the form and excluded via the ModelForm's Meta
+class. See #12901.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+                <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">exclude</span> <span class="ow">and</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">exclude</span><span class="p">:</span>
+                <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><p>Exclude fields that failed form validation. There's no need for
+the model fields to validate them as well.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">elif</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_errors</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><p>Exclude empty fields that are not required by the form, if the
+underlying model field is required. This keeps the model field
+from raising a required error. Note: don't exclude the field from
+validation if the model field allows blanks. If it does, the blank
+value may be included in a unique check, so cannot be excluded
+from validation.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">else</span><span class="p">:</span>
+                <span class="n">form_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+                <span class="n">field_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">f</span><span class="o">.</span><span class="n">blank</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">form_field</span><span class="o">.</span><span class="n">required</span> <span class="ow">and</span> <span class="n">field_value</span> <span class="ow">in</span> <span class="n">EMPTY_VALUES</span><span class="p">:</span>
+                    <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">exclude</span>
+
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_unique</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span>
+
+    <span class="k">def</span> <span class="nf">_post_clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><p>Update the model instance with self.cleaned_data.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">instance</span> <span class="o">=</span> <span class="n">construct_instance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">exclude</span><span class="p">)</span>
+
+        <span class="n">exclude</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_validation_exclusions</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-24"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-24">&#182;</a></div><p>Foreign Keys being used to represent inline relationships
+are excluded from basic field value validation. This is for two
+reasons: firstly, the value may not be supplied (#12507; the
+case of providing new values to the admin); secondly the
+object being referred to may not yet fully exist (#12749).
+However, these fields <em>must</em> be included in uniqueness checks,
+so this can't be part of <em>get</em>validation_exclusions().</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">f_name</span><span class="p">,</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">InlineForeignKeyField</span><span class="p">):</span>
+                <span class="n">exclude</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-25"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-25">&#182;</a></div><p>Clean the model instance's fields.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">clean_fields</span><span class="p">(</span><span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_errors</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">message_dict</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-26"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-26">&#182;</a></div><p>Call the model instance's clean method.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">clean</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_errors</span><span class="p">({</span><span class="n">NON_FIELD_ERRORS</span><span class="p">:</span> <span class="n">e</span><span class="o">.</span><span class="n">messages</span><span class="p">})</span></pre></div></td></tr>
+
+
+<tr id="section-27"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-27">&#182;</a></div><p>Validate uniqueness if needed.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_unique</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">validate_unique</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">validate_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Calls the instance&#39;s validate_unique() method and updates the form&#39;s</span>
+<span class="sd">        validation errors if any were raised.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exclude</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_validation_exclusions</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">validate_unique</span><span class="p">(</span><span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_errors</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">message_dict</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Saves this ``form``&#39;s cleaned_data into model instance</span>
+<span class="sd">        ``self.instance``.</span>
+
+<span class="sd">        If commit=True, then the changes to ``instance`` will be saved to the</span>
+<span class="sd">        database. Returns ``instance``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">pk</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">fail_message</span> <span class="o">=</span> <span class="s">&#39;created&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">fail_message</span> <span class="o">=</span> <span class="s">&#39;changed&#39;</span>
+        <span class="k">return</span> <span class="n">save_instance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span>
+                             <span class="n">fail_message</span><span class="p">,</span> <span class="n">commit</span><span class="p">,</span> <span class="n">construct</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="n">save</span><span class="o">.</span><span class="n">alters_data</span> <span class="o">=</span> <span class="bp">True</span>
+
+<span class="k">class</span> <span class="nc">ModelForm</span><span class="p">(</span><span class="n">BaseModelForm</span><span class="p">):</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">ModelFormMetaclass</span>
+
+<span class="k">def</span> <span class="nf">modelform_factory</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">ModelForm</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                      <span class="n">formfield_callback</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>  <span class="n">widgets</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-28"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-28">&#182;</a></div><p>Create the inner Meta class. FIXME: ideally, we should be able to
+construct a ModelForm without creating and passing in a temporary
+inner class.</p></td><td class="code"><div class="highlight"><pre></pre></div></td></tr>
+
+
+<tr id="section-29"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-29">&#182;</a></div><p>Build up a list of attributes that the Meta object will have.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">attrs</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;model&#39;</span><span class="p">:</span> <span class="n">model</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">attrs</span><span class="p">[</span><span class="s">&#39;fields&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">fields</span>
+    <span class="k">if</span> <span class="n">exclude</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">attrs</span><span class="p">[</span><span class="s">&#39;exclude&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">exclude</span>
+    <span class="k">if</span> <span class="n">widgets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">attrs</span><span class="p">[</span><span class="s">&#39;widgets&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">widgets</span></pre></div></td></tr>
+
+
+<tr id="section-30"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-30">&#182;</a></div><p>If parent form class already has an inner Meta, the Meta we're
+creating needs to inherit from the parent's inner meta.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">parent</span> <span class="o">=</span> <span class="p">(</span><span class="nb">object</span><span class="p">,)</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;Meta&#39;</span><span class="p">):</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">Meta</span><span class="p">,</span> <span class="nb">object</span><span class="p">)</span>
+    <span class="n">Meta</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">b</span><span class="s">&#39;Meta&#39;</span><span class="p">,</span> <span class="n">parent</span><span class="p">,</span> <span class="n">attrs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-31"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-31">&#182;</a></div><p>Give this new form class a reasonable name.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">class_name</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">__name__</span> <span class="o">+</span> <span class="n">b</span><span class="s">&#39;Form&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-32"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-32">&#182;</a></div><p>Class attributes for the new form class.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">form_class_attrs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;Meta&#39;</span><span class="p">:</span> <span class="n">Meta</span><span class="p">,</span>
+        <span class="s">&#39;formfield_callback&#39;</span><span class="p">:</span> <span class="n">formfield_callback</span>
+    <span class="p">}</span>
+
+    <span class="n">form_metaclass</span> <span class="o">=</span> <span class="n">ModelFormMetaclass</span>
+
+    <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">BaseModelForm</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;__metaclass__&#39;</span><span class="p">):</span>
+        <span class="n">form_metaclass</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">__metaclass__</span>
+
+    <span class="k">return</span> <span class="n">form_metaclass</span><span class="p">(</span><span class="n">class_name</span><span class="p">,</span> <span class="p">(</span><span class="n">form</span><span class="p">,),</span> <span class="n">form_class_attrs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-33"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-33">&#182;</a></div><p>ModelFormSets ##############################################################</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">BaseModelFormSet</span><span class="p">(</span><span class="n">BaseFormSet</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A ``FormSet`` for editing a queryset and/or adding new objects to it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">auto_id</span><span class="o">=</span><span class="s">&#39;id_</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">queryset</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span> <span class="o">=</span> <span class="n">queryset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial_extra</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&#39;initial&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">defaults</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;data&#39;</span><span class="p">:</span> <span class="n">data</span><span class="p">,</span> <span class="s">&#39;files&#39;</span><span class="p">:</span> <span class="n">files</span><span class="p">,</span> <span class="s">&#39;auto_id&#39;</span><span class="p">:</span> <span class="n">auto_id</span><span class="p">,</span> <span class="s">&#39;prefix&#39;</span><span class="p">:</span> <span class="n">prefix</span><span class="p">}</span>
+        <span class="n">defaults</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">defaults</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">initial_form_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the number of forms that are required in this FormSet.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_queryset</span><span class="p">())</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_existing_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pk</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_object_dict&#39;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_object_dict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">o</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">o</span><span class="p">)</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_queryset</span><span class="p">()])</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_object_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_construct_form</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_bound</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">():</span></pre></div></td></tr>
+
+
+<tr id="section-34"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-34">&#182;</a></div><p>Import goes here instead of module-level because importing
+django.db has side effects.</p></td><td class="code"><div class="highlight"><pre>            <span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connections</span>
+            <span class="n">pk_key</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s">-</span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">add_prefix</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">pk_key</span><span class="p">]</span>
+            <span class="n">pk_field</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="n">pk_field</span><span class="o">.</span><span class="n">get_db_prep_lookup</span><span class="p">(</span><span class="s">&#39;exact&#39;</span><span class="p">,</span> <span class="n">pk</span><span class="p">,</span>
+                <span class="n">connection</span><span class="o">=</span><span class="n">connections</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_queryset</span><span class="p">()</span><span class="o">.</span><span class="n">db</span><span class="p">])</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pk</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">pk</span> <span class="o">=</span> <span class="n">pk</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;instance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_existing_object</span><span class="p">(</span><span class="n">pk</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;instance&#39;</span><span class="p">):</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;instance&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_queryset</span><span class="p">()[</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">()</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_extra</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-35"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-35">&#182;</a></div><p>Set initial values for extra forms</p></td><td class="code"><div class="highlight"><pre>            <span class="k">try</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;initial&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_extra</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">()]</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">_construct_form</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_queryset&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">get_query_set</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-36"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-36">&#182;</a></div><p>If the queryset isn't already ordered we need to add an
+artificial ordering here to make sure that all formsets
+constructed from this queryset have the same form order.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="ow">not</span> <span class="n">qs</span><span class="o">.</span><span class="n">ordered</span><span class="p">:</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-37"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-37">&#182;</a></div><p>Removed queryset limiting here. As per discussion re: #13023
+on django-dev, max_num should not prevent existing
+related objects/inlines from being displayed.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">_queryset</span> <span class="o">=</span> <span class="n">qs</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_queryset</span>
+
+    <span class="k">def</span> <span class="nf">save_new</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Saves and returns a new model instance for the given form.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="n">commit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save_existing</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Saves and returns an existing model instance for the given form.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="n">commit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Saves model instances for every form, adding and changing instances</span>
+<span class="sd">        as necessary, and returns the list of instances.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">commit</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">saved_forms</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">def</span> <span class="nf">save_m2m</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">saved_forms</span><span class="p">:</span>
+                    <span class="n">form</span><span class="o">.</span><span class="n">save_m2m</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save_m2m</span> <span class="o">=</span> <span class="n">save_m2m</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_existing_objects</span><span class="p">(</span><span class="n">commit</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_new_objects</span><span class="p">(</span><span class="n">commit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_unique</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">validate_unique</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-38"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-38">&#182;</a></div><p>Collect unique<em>checks and date</em>checks to run from all the forms.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">all_unique_checks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">all_date_checks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;cleaned_data&#39;</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">exclude</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">_get_validation_exclusions</span><span class="p">()</span>
+            <span class="n">unique_checks</span><span class="p">,</span> <span class="n">date_checks</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">_get_unique_checks</span><span class="p">(</span><span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">)</span>
+            <span class="n">all_unique_checks</span> <span class="o">=</span> <span class="n">all_unique_checks</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">unique_checks</span><span class="p">))</span>
+            <span class="n">all_date_checks</span> <span class="o">=</span> <span class="n">all_date_checks</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">date_checks</span><span class="p">))</span>
+
+        <span class="n">errors</span> <span class="o">=</span> <span class="p">[]</span></pre></div></td></tr>
+
+
+<tr id="section-39"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-39">&#182;</a></div><p>Do each of the unique checks (unique and unique_together)</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">uclass</span><span class="p">,</span> <span class="n">unique_check</span> <span class="ow">in</span> <span class="n">all_unique_checks</span><span class="p">:</span>
+            <span class="n">seen_data</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-40"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-40">&#182;</a></div><p>if the form doesn't have cleaned_data then we ignore it,
+it's already invalid</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&quot;cleaned_data&quot;</span><span class="p">):</span>
+                    <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-41"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-41">&#182;</a></div><p>get data for each field of each of unique_check</p></td><td class="code"><div class="highlight"><pre>                <span class="n">row_data</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">unique_check</span> <span class="k">if</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">row_data</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">in</span> <span class="n">row_data</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-42"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-42">&#182;</a></div><p>if we've aready seen it then we have a uniqueness failure</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">row_data</span> <span class="ow">in</span> <span class="n">seen_data</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-43"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-43">&#182;</a></div><p>poke error messages into the right places and mark
+the form as invalid</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_unique_error_message</span><span class="p">(</span><span class="n">unique_check</span><span class="p">))</span>
+                        <span class="n">form</span><span class="o">.</span><span class="n">_errors</span><span class="p">[</span><span class="n">NON_FIELD_ERRORS</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_class</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">get_form_error</span><span class="p">()])</span>
+                        <span class="k">del</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span>
+                        <span class="k">break</span></pre></div></td></tr>
+
+
+<tr id="section-44"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-44">&#182;</a></div><p>mark the data as seen</p></td><td class="code"><div class="highlight"><pre>                    <span class="n">seen_data</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">row_data</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-45"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-45">&#182;</a></div><p>iterate over each of the date checks now</p></td><td class="code"><div class="highlight"><pre>        <span class="k">for</span> <span class="n">date_check</span> <span class="ow">in</span> <span class="n">all_date_checks</span><span class="p">:</span>
+            <span class="n">seen_data</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="n">uclass</span><span class="p">,</span> <span class="n">lookup</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">unique_for</span> <span class="o">=</span> <span class="n">date_check</span>
+            <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">forms</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-46"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-46">&#182;</a></div><p>if the form doesn't have cleaned_data then we ignore it,
+it's already invalid</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;cleaned_data&#39;</span><span class="p">):</span>
+                    <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-47"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-47">&#182;</a></div><p>see if we have data for both fields</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span> <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+                    <span class="ow">and</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">unique_for</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-48"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-48">&#182;</a></div><p>if it's a date lookup we need to get the data for all the fields</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">lookup</span> <span class="o">==</span> <span class="s">&#39;date&#39;</span><span class="p">:</span>
+                        <span class="n">date</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">unique_for</span><span class="p">]</span>
+                        <span class="n">date_data</span> <span class="o">=</span> <span class="p">(</span><span class="n">date</span><span class="o">.</span><span class="n">year</span><span class="p">,</span> <span class="n">date</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">date</span><span class="o">.</span><span class="n">day</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-49"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-49">&#182;</a></div><p>otherwise it's just the attribute on the date/datetime
+object</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">date_data</span> <span class="o">=</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">unique_for</span><span class="p">],</span> <span class="n">lookup</span><span class="p">),)</span>
+                    <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="n">field</span><span class="p">],)</span> <span class="o">+</span> <span class="n">date_data</span></pre></div></td></tr>
+
+
+<tr id="section-50"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-50">&#182;</a></div><p>if we've aready seen it then we have a uniqueness failure</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">if</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">seen_data</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-51"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-51">&#182;</a></div><p>poke error messages into the right places and mark
+the form as invalid</p></td><td class="code"><div class="highlight"><pre>                        <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_date_error_message</span><span class="p">(</span><span class="n">date_check</span><span class="p">))</span>
+                        <span class="n">form</span><span class="o">.</span><span class="n">_errors</span><span class="p">[</span><span class="n">NON_FIELD_ERRORS</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_class</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">get_form_error</span><span class="p">()])</span>
+                        <span class="k">del</span> <span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span>
+                        <span class="k">break</span>
+                    <span class="n">seen_data</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_unique_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">unique_check</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_check</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ugettext</span><span class="p">(</span><span class="s">&quot;Please correct the duplicate data for </span><span class="si">%(field)s</span><span class="s">.&quot;</span><span class="p">)</span> <span class="o">%</span> <span class="p">{</span>
+                <span class="s">&quot;field&quot;</span><span class="p">:</span> <span class="n">unique_check</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ugettext</span><span class="p">(</span><span class="s">&quot;Please correct the duplicate data for </span><span class="si">%(field)s</span><span class="s">, &quot;</span>
+                <span class="s">&quot;which must be unique.&quot;</span><span class="p">)</span> <span class="o">%</span> <span class="p">{</span>
+                    <span class="s">&quot;field&quot;</span><span class="p">:</span> <span class="n">get_text_list</span><span class="p">(</span><span class="n">unique_check</span><span class="p">,</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">_</span><span class="p">(</span><span class="s">&quot;and&quot;</span><span class="p">))),</span>
+                <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">get_date_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">date_check</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">ugettext</span><span class="p">(</span><span class="s">&quot;Please correct the duplicate data for </span><span class="si">%(field_name)s</span><span class="s"> &quot;</span>
+            <span class="s">&quot;which must be unique for the </span><span class="si">%(lookup)s</span><span class="s"> in </span><span class="si">%(date_field)s</span><span class="s">.&quot;</span><span class="p">)</span> <span class="o">%</span> <span class="p">{</span>
+            <span class="s">&#39;field_name&#39;</span><span class="p">:</span> <span class="n">date_check</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="s">&#39;date_field&#39;</span><span class="p">:</span> <span class="n">date_check</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span>
+            <span class="s">&#39;lookup&#39;</span><span class="p">:</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">date_check</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+        <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">get_form_error</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">ugettext</span><span class="p">(</span><span class="s">&quot;Please correct the duplicate values below.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save_existing_objects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">changed_objects</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">deleted_objects</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_forms</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">saved_instances</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_forms</span><span class="p">:</span>
+            <span class="n">pk_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span><span class="o">.</span><span class="n">name</span>
+            <span class="n">raw_pk_value</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">_raw_value</span><span class="p">(</span><span class="n">pk_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-52"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-52">&#182;</a></div><p>clean() for different types of PK fields can sometimes return
+the model instance, and sometimes the PK. Handle either.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">pk_value</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">pk_name</span><span class="p">]</span><span class="o">.</span><span class="n">clean</span><span class="p">(</span><span class="n">raw_pk_value</span><span class="p">)</span>
+            <span class="n">pk_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pk_value</span><span class="p">,</span> <span class="s">&#39;pk&#39;</span><span class="p">,</span> <span class="n">pk_value</span><span class="p">)</span>
+
+            <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_existing_object</span><span class="p">(</span><span class="n">pk_value</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">can_delete</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_should_delete_form</span><span class="p">(</span><span class="n">form</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">deleted_objects</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+                <span class="n">obj</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">has_changed</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">changed_objects</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">obj</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">changed_data</span><span class="p">))</span>
+                <span class="n">saved_instances</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">save_existing</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">obj</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="n">commit</span><span class="p">))</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">commit</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">saved_forms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">saved_instances</span>
+
+    <span class="k">def</span> <span class="nf">save_new_objects</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">new_objects</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">form</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">extra_forms</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">has_changed</span><span class="p">():</span>
+                <span class="k">continue</span></pre></div></td></tr>
+
+
+<tr id="section-53"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-53">&#182;</a></div><p>If someone has marked an add form for deletion, don't save the
+object.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">can_delete</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_should_delete_form</span><span class="p">(</span><span class="n">form</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">new_objects</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">save_new</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="n">commit</span><span class="p">))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">commit</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">saved_forms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">new_objects</span>
+
+    <span class="k">def</span> <span class="nf">add_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Add a hidden field for the object&#39;s primary key.&quot;&quot;&quot;</span>
+        <span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">AutoField</span><span class="p">,</span> <span class="n">OneToOneField</span><span class="p">,</span> <span class="n">ForeignKey</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span> <span class="o">=</span> <span class="n">pk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span></pre></div></td></tr>
+
+
+<tr id="section-54"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-54">&#182;</a></div><p>If a pk isn't editable, then it won't be on the form, so we need to
+add it here so we can tell which object is which when we get the
+data back. Generally, pk.editable should be false, but for some
+reason, auto_created pk fields and AutoField's editable attribute is
+True, so check for that as well.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">def</span> <span class="nf">pk_is_not_editable</span><span class="p">(</span><span class="n">pk</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">((</span><span class="ow">not</span> <span class="n">pk</span><span class="o">.</span><span class="n">editable</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">pk</span><span class="o">.</span><span class="n">auto_created</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pk</span><span class="p">,</span> <span class="n">AutoField</span><span class="p">))</span>
+                <span class="ow">or</span> <span class="p">(</span><span class="n">pk</span><span class="o">.</span><span class="n">rel</span> <span class="ow">and</span> <span class="n">pk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">parent_link</span> <span class="ow">and</span> <span class="n">pk_is_not_editable</span><span class="p">(</span><span class="n">pk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="n">pk_is_not_editable</span><span class="p">(</span><span class="n">pk</span><span class="p">)</span> <span class="ow">or</span> <span class="n">pk</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">is_bound</span><span class="p">:</span>
+                <span class="n">pk_value</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">pk</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+                        <span class="n">pk_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_queryset</span><span class="p">()[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">pk</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">pk_value</span> <span class="o">=</span> <span class="bp">None</span>
+                <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+                    <span class="n">pk_value</span> <span class="o">=</span> <span class="bp">None</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pk</span><span class="p">,</span> <span class="n">OneToOneField</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pk</span><span class="p">,</span> <span class="n">ForeignKey</span><span class="p">):</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="n">pk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">get_query_set</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">qs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">get_query_set</span><span class="p">()</span>
+            <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">using</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">_state</span><span class="o">.</span><span class="n">db</span><span class="p">)</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ModelChoiceField</span><span class="p">(</span><span class="n">qs</span><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><span class="n">pk_value</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">widget</span><span class="o">=</span><span class="n">HiddenInput</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">add_fields</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">modelformset_factory</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">ModelForm</span><span class="p">,</span> <span class="n">formfield_callback</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                         <span class="n">formset</span><span class="o">=</span><span class="n">BaseModelFormSet</span><span class="p">,</span>
+                         <span class="n">extra</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                         <span class="n">max_num</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a FormSet class for the given Django model class.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">form</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">form</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="n">fields</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="n">exclude</span><span class="p">,</span>
+                             <span class="n">formfield_callback</span><span class="o">=</span><span class="n">formfield_callback</span><span class="p">)</span>
+    <span class="n">FormSet</span> <span class="o">=</span> <span class="n">formset_factory</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">formset</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="n">extra</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="n">max_num</span><span class="p">,</span>
+                              <span class="n">can_order</span><span class="o">=</span><span class="n">can_order</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="n">can_delete</span><span class="p">)</span>
+    <span class="n">FormSet</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
+    <span class="k">return</span> <span class="n">FormSet</span></pre></div></td></tr>
+
+
+<tr id="section-55"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-55">&#182;</a></div><p>InlineFormSets #############################################################</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">BaseInlineFormSet</span><span class="p">(</span><span class="n">BaseModelFormSet</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A formset for child objects related to a parent.&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">instance</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">save_as_new</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">queryset</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.db.models.fields.related</span> <span class="kn">import</span> <span class="n">RelatedObject</span>
+        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">instance</span> <span class="o">=</span> <span class="n">instance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save_as_new</span> <span class="o">=</span> <span class="n">save_as_new</span></pre></div></td></tr>
+
+
+<tr id="section-56"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-56">&#182;</a></div><p>is there a better way to get the object descriptor?</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">rel_name</span> <span class="o">=</span> <span class="n">RelatedObject</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="p">)</span><span class="o">.</span><span class="n">get_accessor_name</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">queryset</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">queryset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">_default_manager</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">queryset</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="p">})</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">files</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+                                                <span class="n">queryset</span><span class="o">=</span><span class="n">qs</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">initial_form_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_as_new</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">initial_form_count</span><span class="p">()</span>
+
+
+    <span class="k">def</span> <span class="nf">_construct_form</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">_construct_form</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_as_new</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-57"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-57">&#182;</a></div><p>Remove the primary key from the form's data, we are only
+creating new instances</p></td><td class="code"><div class="highlight"><pre>            <span class="n">form</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">form</span><span class="o">.</span><span class="n">add_prefix</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-58"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-58">&#182;</a></div><p>Remove the foreign key from the form's data</p></td><td class="code"><div class="highlight"><pre>            <span class="n">form</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">form</span><span class="o">.</span><span class="n">add_prefix</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">name</span><span class="p">)]</span> <span class="o">=</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-59"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-59">&#182;</a></div><p>Set the fk value here so that the form can do it's validation.</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">setattr</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">get_attname</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">form</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">get_default_prefix</span><span class="p">(</span><span class="n">cls</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.db.models.fields.related</span> <span class="kn">import</span> <span class="n">RelatedObject</span>
+        <span class="k">return</span> <span class="n">RelatedObject</span><span class="p">(</span><span class="n">cls</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="p">,</span> <span class="n">cls</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">cls</span><span class="o">.</span><span class="n">fk</span><span class="p">)</span><span class="o">.</span><span class="n">get_accessor_name</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s">&#39;+&#39;</span><span class="p">,</span><span class="s">&#39;&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">save_new</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-60"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-60">&#182;</a></div><p>Use commit=False so we can assign the parent key afterwards, then
+save the object.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">obj</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">pk_value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span><span class="p">)</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">get_attname</span><span class="p">(),</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pk_value</span><span class="p">,</span> <span class="s">&#39;pk&#39;</span><span class="p">,</span> <span class="n">pk_value</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">commit</span><span class="p">:</span>
+            <span class="n">obj</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-61"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-61">&#182;</a></div><p>form.save_m2m() can be called via the formset later on if commit=False</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">commit</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="s">&#39;save_m2m&#39;</span><span class="p">):</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">save_m2m</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">obj</span>
+
+    <span class="k">def</span> <span class="nf">add_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">add_fields</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pk_field</span><span class="o">.</span><span class="n">name</span>
+            <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;pk_field&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-62"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-62">&#182;</a></div><p>The foreign key field might not be on the form, so we poke at the
+Model field to get the label, since we need that for error messages.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">name</span>
+            <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s">&#39;label&#39;</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">),</span> <span class="s">&#39;label&#39;</span><span class="p">,</span> <span class="n">capfirst</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">verbose_name</span><span class="p">))</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">pk</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;to_field&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">field_name</span>
+
+        <span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">InlineForeignKeyField</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">instance</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-63"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-63">&#182;</a></div><p>Add the generated field to form._meta.fields if it's defined to make
+sure validation isn't skipped on that field.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+                <span class="n">form</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="p">)</span>
+            <span class="n">form</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_unique_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">unique_check</span><span class="p">):</span>
+        <span class="n">unique_check</span> <span class="o">=</span> <span class="p">[</span><span class="n">field</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">unique_check</span> <span class="k">if</span> <span class="n">field</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fk</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">get_unique_error_message</span><span class="p">(</span><span class="n">unique_check</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_get_foreign_key</span><span class="p">(</span><span class="n">parent_model</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">fk_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">can_fail</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Finds and returns the ForeignKey from model to parent if there is one</span>
+<span class="sd">    (returns None if can_fail is True and no such field exists). If fk_name is</span>
+<span class="sd">    provided, assume it is the name of the ForeignKey field. Unles can_fail is</span>
+<span class="sd">    True, an exception is raised if there is no ForeignKey from model to</span>
+<span class="sd">    parent_model.</span>
+<span class="sd">    &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-64"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-64">&#182;</a></div><p>avoid circular import</p></td><td class="code"><div class="highlight"><pre>    <span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">ForeignKey</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">_meta</span>
+    <span class="k">if</span> <span class="n">fk_name</span><span class="p">:</span>
+        <span class="n">fks_to_parent</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span> <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">fk_name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">fks_to_parent</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">fk</span> <span class="o">=</span> <span class="n">fks_to_parent</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fk</span><span class="p">,</span> <span class="n">ForeignKey</span><span class="p">)</span> <span class="ow">or</span> \
+                    <span class="p">(</span><span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span> <span class="o">!=</span> <span class="n">parent_model</span> <span class="ow">and</span>
+                     <span class="n">fk</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">parent_model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_parent_list</span><span class="p">()):</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;fk_name &#39;</span><span class="si">%s</span><span class="s">&#39; is not a ForeignKey to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">fk_name</span><span class="p">,</span> <span class="n">parent_model</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">fks_to_parent</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> has no field named &#39;</span><span class="si">%s</span><span class="s">&#39;&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">fk_name</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-65"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-65">&#182;</a></div><p>Try to discover what the ForeignKey from model to parent_model is</p></td><td class="code"><div class="highlight"><pre>        <span class="n">fks_to_parent</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">f</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">opts</span><span class="o">.</span><span class="n">fields</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">ForeignKey</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span> <span class="o">==</span> <span class="n">parent_model</span>
+                <span class="ow">or</span> <span class="n">f</span><span class="o">.</span><span class="n">rel</span><span class="o">.</span><span class="n">to</span> <span class="ow">in</span> <span class="n">parent_model</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">get_parent_list</span><span class="p">())</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">fks_to_parent</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">fk</span> <span class="o">=</span> <span class="n">fks_to_parent</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">fks_to_parent</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">can_fail</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> has no ForeignKey to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">parent_model</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&quot;</span><span class="si">%s</span><span class="s"> has more than 1 ForeignKey to </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">parent_model</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">fk</span>
+
+
+<span class="k">def</span> <span class="nf">inlineformset_factory</span><span class="p">(</span><span class="n">parent_model</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">ModelForm</span><span class="p">,</span>
+                          <span class="n">formset</span><span class="o">=</span><span class="n">BaseInlineFormSet</span><span class="p">,</span> <span class="n">fk_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                          <span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                          <span class="n">extra</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">can_order</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">can_delete</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">max_num</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                          <span class="n">formfield_callback</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns an ``InlineFormSet`` for the given kwargs.</span>
+
+<span class="sd">    You must provide ``fk_name`` if ``model`` has more than one ``ForeignKey``</span>
+<span class="sd">    to ``parent_model``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fk</span> <span class="o">=</span> <span class="n">_get_foreign_key</span><span class="p">(</span><span class="n">parent_model</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">fk_name</span><span class="o">=</span><span class="n">fk_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-66"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-66">&#182;</a></div><p>enforce a max_num=1 when the foreign key to the parent model is unique.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">fk</span><span class="o">.</span><span class="n">unique</span><span class="p">:</span>
+        <span class="n">max_num</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;form&#39;</span><span class="p">:</span> <span class="n">form</span><span class="p">,</span>
+        <span class="s">&#39;formfield_callback&#39;</span><span class="p">:</span> <span class="n">formfield_callback</span><span class="p">,</span>
+        <span class="s">&#39;formset&#39;</span><span class="p">:</span> <span class="n">formset</span><span class="p">,</span>
+        <span class="s">&#39;extra&#39;</span><span class="p">:</span> <span class="n">extra</span><span class="p">,</span>
+        <span class="s">&#39;can_delete&#39;</span><span class="p">:</span> <span class="n">can_delete</span><span class="p">,</span>
+        <span class="s">&#39;can_order&#39;</span><span class="p">:</span> <span class="n">can_order</span><span class="p">,</span>
+        <span class="s">&#39;fields&#39;</span><span class="p">:</span> <span class="n">fields</span><span class="p">,</span>
+        <span class="s">&#39;exclude&#39;</span><span class="p">:</span> <span class="n">exclude</span><span class="p">,</span>
+        <span class="s">&#39;max_num&#39;</span><span class="p">:</span> <span class="n">max_num</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">FormSet</span> <span class="o">=</span> <span class="n">modelformset_factory</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">FormSet</span><span class="o">.</span><span class="n">fk</span> <span class="o">=</span> <span class="n">fk</span>
+    <span class="k">return</span> <span class="n">FormSet</span></pre></div></td></tr>
+
+
+<tr id="section-67"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-67">&#182;</a></div><p>Fields #####################################################################</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">InlineForeignKeyHiddenInput</span><span class="p">(</span><span class="n">HiddenInput</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_has_changed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+<span class="k">class</span> <span class="nc">InlineForeignKeyField</span><span class="p">(</span><span class="n">Field</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A basic integer field that deals with validating the given value to a</span>
+<span class="sd">    given parent instance in an inline.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">default_error_messages</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;invalid_choice&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;The inline foreign key did not match the parent instance primary key.&#39;</span><span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parent_instance</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span> <span class="o">=</span> <span class="n">parent_instance</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pk_field</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&quot;pk_field&quot;</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">to_field</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s">&quot;to_field&quot;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&quot;initial&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&quot;initial&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span><span class="o">.</span><span class="n">pk</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s">&quot;required&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s">&quot;widget&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">InlineForeignKeyHiddenInput</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">InlineForeignKeyField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">EMPTY_VALUES</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">pk_field</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-68"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-68">&#182;</a></div><p>if there is no value act as we did before.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span></pre></div></td></tr>
+
+
+<tr id="section-69"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-69">&#182;</a></div><p>ensure the we compare the values as equal types.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field</span><span class="p">:</span>
+            <span class="n">orig</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">orig</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span><span class="o">.</span><span class="n">pk</span>
+        <span class="k">if</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">!=</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">orig</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;invalid_choice&#39;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">parent_instance</span>
+
+<span class="k">class</span> <span class="nc">ModelChoiceIterator</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">field</span> <span class="o">=</span> <span class="n">field</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span> <span class="o">=</span> <span class="n">field</span><span class="o">.</span><span class="n">queryset</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">empty_label</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">empty_label</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">cache_choices</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">choice_cache</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">choice_cache</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span> <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+                <span class="p">]</span>
+            <span class="k">for</span> <span class="n">choice</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">choice_cache</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">choice</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+                <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">choice</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">prepare_value</span><span class="p">(</span><span class="n">obj</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">label_from_instance</span><span class="p">(</span><span class="n">obj</span><span class="p">))</span>
+
+<span class="k">class</span> <span class="nc">ModelChoiceField</span><span class="p">(</span><span class="n">ChoiceField</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A ChoiceField whose choices are a model QuerySet.&quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-70"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-70">&#182;</a></div><p>This class is a subclass of ChoiceField for purity, but it doesn't
+actually use any of ChoiceField's implementation.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">default_error_messages</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;invalid_choice&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;Select a valid choice. That choice is not one of&#39;</span>
+                            <span class="s">&#39; the available choices.&#39;</span><span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queryset</span><span class="p">,</span> <span class="n">empty_label</span><span class="o">=</span><span class="s">&quot;---------&quot;</span><span class="p">,</span> <span class="n">cache_choices</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+                 <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">widget</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">help_text</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">to_field_name</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">required</span> <span class="ow">and</span> <span class="p">(</span><span class="n">initial</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">empty_label</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">empty_label</span> <span class="o">=</span> <span class="n">empty_label</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache_choices</span> <span class="o">=</span> <span class="n">cache_choices</span></pre></div></td></tr>
+
+
+<tr id="section-71"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-71">&#182;</a></div><p>Call Field instead of ChoiceField <strong>init</strong>() because we don't need
+ChoiceField.<strong>init</strong>().</p></td><td class="code"><div class="highlight"><pre>        <span class="n">Field</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">required</span><span class="p">,</span> <span class="n">widget</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">initial</span><span class="p">,</span> <span class="n">help_text</span><span class="p">,</span>
+                       <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span> <span class="o">=</span> <span class="n">queryset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">choice_cache</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">to_field_name</span> <span class="o">=</span> <span class="n">to_field_name</span>
+
+    <span class="k">def</span> <span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">ChoiceField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__deepcopy__</span><span class="p">(</span><span class="n">memo</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-72"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-72">&#182;</a></div><p>Need to force a new ModelChoiceIterator to be created, bug #11183</p></td><td class="code"><div class="highlight"><pre>        <span class="n">result</span><span class="o">.</span><span class="n">queryset</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">queryset</span>
+        <span class="k">return</span> <span class="n">result</span>
+
+    <span class="k">def</span> <span class="nf">_get_queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_queryset</span>
+
+    <span class="k">def</span> <span class="nf">_set_queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queryset</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_queryset</span> <span class="o">=</span> <span class="n">queryset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">choices</span>
+
+    <span class="n">queryset</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_queryset</span><span class="p">,</span> <span class="n">_set_queryset</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-73"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-73">&#182;</a></div><p>this method will be used to create object labels by the QuerySetIterator.
+Override it to customize the label.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">label_from_instance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        This method is used to convert objects into strings; it&#39;s used to</span>
+<span class="sd">        generate the labels for the choices presented by this object. Subclasses</span>
+<span class="sd">        can override this method to customize the display of the choices.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">smart_unicode</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_choices</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-74"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-74">&#182;</a></div><p>If self.<em>choices is set, then somebody must have manually set
+the property self.choices. In this case, just return self.</em>choices.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s">&#39;_choices&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_choices</span></pre></div></td></tr>
+
+
+<tr id="section-75"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-75">&#182;</a></div><p>Otherwise, execute the QuerySet in self.queryset to determine the
+choices dynamically. Return a fresh ModelChoiceIterator that has not been
+consumed. Note that we're instantiating a new ModelChoiceIterator <em>each</em>
+time <em>get</em>choices() is called (and, thus, each time self.choices is
+accessed) so that we can ensure the QuerySet has not been consumed. This
+construct might look complicated but it allows for lazy evaluation of
+the queryset.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">ModelChoiceIterator</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="n">choices</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="n">_get_choices</span><span class="p">,</span> <span class="n">ChoiceField</span><span class="o">.</span><span class="n">_set_choices</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">prepare_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;_meta&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field_name</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">serializable_value</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">to_field_name</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">pk</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ModelChoiceField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">prepare_value</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">to_python</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">EMPTY_VALUES</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field_name</span> <span class="ow">or</span> <span class="s">&#39;pk&#39;</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;invalid_choice&#39;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">Field</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ModelMultipleChoiceField</span><span class="p">(</span><span class="n">ModelChoiceField</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A MultipleChoiceField whose choices are a model QuerySet.&quot;&quot;&quot;</span>
+    <span class="n">widget</span> <span class="o">=</span> <span class="n">SelectMultiple</span>
+    <span class="n">hidden_widget</span> <span class="o">=</span> <span class="n">MultipleHiddenInput</span>
+    <span class="n">default_error_messages</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;list&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;Enter a list of values.&#39;</span><span class="p">),</span>
+        <span class="s">&#39;invalid_choice&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;Select a valid choice. </span><span class="si">%s</span><span class="s"> is not one of the&#39;</span>
+                            <span class="s">&#39; available choices.&#39;</span><span class="p">),</span>
+        <span class="s">&#39;invalid_pk_value&#39;</span><span class="p">:</span> <span class="n">_</span><span class="p">(</span><span class="s">&#39;&quot;</span><span class="si">%s</span><span class="s">&quot; is not a valid value for a primary key.&#39;</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">queryset</span><span class="p">,</span> <span class="n">cache_choices</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+                 <span class="n">widget</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">help_text</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ModelMultipleChoiceField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">queryset</span><span class="p">,</span> <span class="bp">None</span><span class="p">,</span>
+            <span class="n">cache_choices</span><span class="p">,</span> <span class="n">required</span><span class="p">,</span> <span class="n">widget</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">initial</span><span class="p">,</span> <span class="n">help_text</span><span class="p">,</span>
+            <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">required</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;required&#39;</span><span class="p">])</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">required</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;list&#39;</span><span class="p">])</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_field_name</span> <span class="ow">or</span> <span class="s">&#39;pk&#39;</span>
+        <span class="k">for</span> <span class="n">pk</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">pk</span><span class="p">})</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;invalid_pk_value&#39;</span><span class="p">]</span> <span class="o">%</span> <span class="n">pk</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">queryset</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">__in&#39;</span> <span class="o">%</span> <span class="n">key</span><span class="p">:</span> <span class="n">value</span><span class="p">})</span>
+        <span class="n">pks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">force_unicode</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">key</span><span class="p">))</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">qs</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">force_unicode</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">pks</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">error_messages</span><span class="p">[</span><span class="s">&#39;invalid_choice&#39;</span><span class="p">]</span> <span class="o">%</span> <span class="n">val</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-76"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-76">&#182;</a></div><p>Since this overrides the inherited ModelChoiceField.clean
+we run custom validators here</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">run_validators</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">qs</span>
+
+    <span class="k">def</span> <span class="nf">prepare_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;__iter__&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="nb">super</span><span class="p">(</span><span class="n">ModelMultipleChoiceField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">prepare_value</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">(</span><span class="n">ModelMultipleChoiceField</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">prepare_value</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:2}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../javascript/docco.min.js"></script>
+</html>

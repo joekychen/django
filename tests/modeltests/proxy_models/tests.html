@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › modeltests › proxy_models › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">django.contrib.contenttypes.models</span> <span class="kn">import</span> <span class="n">ContentType</span>
+<span class="kn">from</span> <span class="nn">django.core</span> <span class="kn">import</span> <span class="n">management</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">FieldError</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">models</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+<span class="kn">from</span> <span class="nn">django.db.models</span> <span class="kn">import</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">MyPerson</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span> <span class="n">StatusPerson</span><span class="p">,</span> <span class="n">LowerStatusPerson</span><span class="p">,</span>
+    <span class="n">MyPersonProxy</span><span class="p">,</span> <span class="n">Abstract</span><span class="p">,</span> <span class="n">OtherPerson</span><span class="p">,</span> <span class="n">User</span><span class="p">,</span> <span class="n">UserProxy</span><span class="p">,</span> <span class="n">UserProxyProxy</span><span class="p">,</span>
+    <span class="n">Country</span><span class="p">,</span> <span class="n">State</span><span class="p">,</span> <span class="n">StateProxy</span><span class="p">,</span> <span class="n">TrackerUser</span><span class="p">,</span> <span class="n">BaseUser</span><span class="p">,</span> <span class="n">Bug</span><span class="p">,</span> <span class="n">ProxyTrackerUser</span><span class="p">,</span>
+    <span class="n">Improvement</span><span class="p">,</span> <span class="n">ProxyProxyBug</span><span class="p">,</span> <span class="n">ProxyBug</span><span class="p">,</span> <span class="n">ProxyImprovement</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">ProxyModelTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_same_manager_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The MyPerson model should be generating the same database queries as</span>
+<span class="sd">        the Person model (when the same manager is used in each case).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">my_person_sql</span> <span class="o">=</span> <span class="n">MyPerson</span><span class="o">.</span><span class="n">other</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span>
+            <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span><span class="o">.</span><span class="n">as_sql</span><span class="p">()</span>
+        <span class="n">person_sql</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span>
+            <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span><span class="o">.</span><span class="n">as_sql</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">my_person_sql</span><span class="p">,</span> <span class="n">person_sql</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_inheretance_new_table</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The StatusPerson models should have its own table (it&#39;s using ORM-level</span>
+<span class="sd">        inheritance).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sp_sql</span> <span class="o">=</span> <span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span>
+            <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span><span class="o">.</span><span class="n">as_sql</span><span class="p">()</span>
+        <span class="n">p_sql</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">get_compiler</span><span class="p">(</span>
+            <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span><span class="o">.</span><span class="n">as_sql</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">sp_sql</span><span class="p">,</span> <span class="n">p_sql</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_basic_proxy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creating a Person makes them accessible through the MyPerson proxy.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">person</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Foo McBar&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Foo McBar&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">person</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">person</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">has_special_name</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_no_proxy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Person is not proxied by StatusPerson subclass.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Foo McBar&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="p">[])</span>
+
+    <span class="k">def</span> <span class="nf">test_basic_proxy_reverse</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A new MyPerson also shows up as a standard Person.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Bazza del Frob&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()),</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">LowerStatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="s">&quot;low&quot;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;homer&quot;</span><span class="p">)</span>
+        <span class="n">lsps</span> <span class="o">=</span> <span class="p">[</span><span class="n">lsp</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">lsp</span> <span class="ow">in</span> <span class="n">LowerStatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">lsps</span><span class="p">,</span> <span class="p">[</span><span class="s">&quot;homer&quot;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_correct_type_proxy_of_proxy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Correct type when querying a proxy of proxy</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Foo McBar&quot;</span><span class="p">)</span>
+        <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Bazza del Frob&quot;</span><span class="p">)</span>
+        <span class="n">LowerStatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="s">&quot;low&quot;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;homer&quot;</span><span class="p">)</span>
+        <span class="n">pp</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">([</span><span class="n">mpp</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">mpp</span> <span class="ow">in</span> <span class="n">MyPersonProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">pp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bazza del Frob&#39;</span><span class="p">,</span> <span class="s">&#39;Foo McBar&#39;</span><span class="p">,</span> <span class="s">&#39;homer&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_included_in_ancestors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Proxy models are included in the ancestors for a model&#39;s DoesNotExist</span>
+<span class="sd">        and MultipleObjectsReturned</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Foo McBar&quot;</span><span class="p">)</span>
+        <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Bazza del Frob&quot;</span><span class="p">)</span>
+        <span class="n">LowerStatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="s">&quot;low&quot;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;homer&quot;</span><span class="p">)</span>
+        <span class="n">max_id</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">max_id</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">Max</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">))[</span><span class="s">&#39;max_id&#39;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">MyPersonProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Zathras&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">MultipleObjectsReturned</span><span class="p">,</span>
+            <span class="n">MyPersonProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">id__lt</span><span class="o">=</span><span class="n">max_id</span><span class="o">+</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">,</span>
+            <span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s">&#39;Zathras&#39;</span>
+        <span class="p">)</span>
+
+        <span class="n">sp1</span> <span class="o">=</span> <span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Bazza Jr.&#39;</span><span class="p">)</span>
+        <span class="n">sp2</span> <span class="o">=</span> <span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Foo Jr.&#39;</span><span class="p">)</span>
+        <span class="n">max_id</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">aggregate</span><span class="p">(</span><span class="n">max_id</span><span class="o">=</span><span class="n">models</span><span class="o">.</span><span class="n">Max</span><span class="p">(</span><span class="s">&#39;id&#39;</span><span class="p">))[</span><span class="s">&#39;max_id&#39;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">MultipleObjectsReturned</span><span class="p">,</span>
+            <span class="n">StatusPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">,</span>
+            <span class="n">id__lt</span><span class="o">=</span><span class="n">max_id</span><span class="o">+</span><span class="mi">1</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_abc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        All base classes must be non-abstract</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">build_abc</span><span class="p">():</span>
+            <span class="k">class</span> <span class="nc">NoAbstract</span><span class="p">(</span><span class="n">Abstract</span><span class="p">):</span>
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">proxy</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">build_abc</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_cbc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The proxy must actually have one concrete base class</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">build_no_cbc</span><span class="p">():</span>
+            <span class="k">class</span> <span class="nc">TooManyBases</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">Abstract</span><span class="p">):</span>
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">proxy</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">build_no_cbc</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_no_base_classes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">build_no_base_classes</span><span class="p">():</span>
+            <span class="k">class</span> <span class="nc">NoBaseClasses</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">proxy</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">build_no_base_classes</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_new_fields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">build_new_fields</span><span class="p">():</span>
+            <span class="k">class</span> <span class="nc">NoNewFields</span><span class="p">(</span><span class="n">Person</span><span class="p">):</span>
+                <span class="n">newfield</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">()</span>
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">proxy</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">FieldError</span><span class="p">,</span> <span class="n">build_new_fields</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_myperson_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;fred&quot;</span><span class="p">)</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;wilma&quot;</span><span class="p">)</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;barney&quot;</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;barney&#39;</span><span class="p">,</span> <span class="s">&#39;fred&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">MyPerson</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;barney&#39;</span><span class="p">,</span> <span class="s">&#39;fred&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_otherperson_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;fred&quot;</span><span class="p">)</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;wilma&quot;</span><span class="p">)</span>
+        <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;barney&quot;</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">OtherPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;barney&#39;</span><span class="p">,</span> <span class="s">&#39;wilma&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">OtherPerson</span><span class="o">.</span><span class="n">excluder</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;barney&#39;</span><span class="p">,</span> <span class="s">&#39;fred&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">OtherPerson</span><span class="o">.</span><span class="n">_default_manager</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;barney&#39;</span><span class="p">,</span> <span class="s">&#39;wilma&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_permissions_created</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">Permission</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">Permission</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;May display users information&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">Permission</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;The permission &#39;May display users information&#39; has not been created&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_model_signals</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test save signals for proxy models</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">def</span> <span class="nf">make_handler</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+            <span class="k">def</span> <span class="nf">_handler</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="n">output</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s"> save&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">event</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">_handler</span>
+
+        <span class="n">h1</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;MyPerson&#39;</span><span class="p">,</span> <span class="s">&#39;pre&#39;</span><span class="p">)</span>
+        <span class="n">h2</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;MyPerson&#39;</span><span class="p">,</span> <span class="s">&#39;post&#39;</span><span class="p">)</span>
+        <span class="n">h3</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;Person&#39;</span><span class="p">,</span> <span class="s">&#39;pre&#39;</span><span class="p">)</span>
+        <span class="n">h4</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;Person&#39;</span><span class="p">,</span> <span class="s">&#39;post&#39;</span><span class="p">)</span>
+
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h1</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPerson</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h2</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPerson</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h3</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">Person</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h4</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">Person</span><span class="p">)</span>
+
+        <span class="n">dino</span> <span class="o">=</span> <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;dino&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="p">[</span>
+            <span class="s">&#39;MyPerson pre save&#39;</span><span class="p">,</span>
+            <span class="s">&#39;MyPerson post save&#39;</span>
+        <span class="p">])</span>
+
+        <span class="n">output</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">h5</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;MyPersonProxy&#39;</span><span class="p">,</span> <span class="s">&#39;pre&#39;</span><span class="p">)</span>
+        <span class="n">h6</span> <span class="o">=</span> <span class="n">make_handler</span><span class="p">(</span><span class="s">&#39;MyPersonProxy&#39;</span><span class="p">,</span> <span class="s">&#39;post&#39;</span><span class="p">)</span>
+
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h5</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPersonProxy</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">h6</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPersonProxy</span><span class="p">)</span>
+
+        <span class="n">dino</span> <span class="o">=</span> <span class="n">MyPersonProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;pebbles&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="p">[</span>
+            <span class="s">&#39;MyPersonProxy pre save&#39;</span><span class="p">,</span>
+            <span class="s">&#39;MyPersonProxy post save&#39;</span>
+        <span class="p">])</span>
+
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h1</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPerson</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h2</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPerson</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h3</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">Person</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h4</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">Person</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">pre_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h5</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPersonProxy</span><span class="p">)</span>
+        <span class="n">signals</span><span class="o">.</span><span class="n">post_save</span><span class="o">.</span><span class="n">disconnect</span><span class="p">(</span><span class="n">h6</span><span class="p">,</span> <span class="n">sender</span><span class="o">=</span><span class="n">MyPersonProxy</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_content_type</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">ctype</span> <span class="o">=</span> <span class="n">ContentType</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_for_model</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">ctype</span><span class="p">(</span><span class="n">Person</span><span class="p">)</span> <span class="ow">is</span> <span class="n">ctype</span><span class="p">(</span><span class="n">OtherPerson</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">test_user_userproxy_userproxyproxy</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Bruce&#39;</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">u</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bruce&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">u</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">UserProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bruce&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">u</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">UserProxyProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bruce&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_for_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">UserProxy</span><span class="p">,</span> <span class="n">UserProxyProxy</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">proxy_for_model</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_concrete_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">User</span><span class="p">,</span> <span class="n">UserProxyProxy</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">concrete_model</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Proxy objects can be deleted</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Bruce&#39;</span><span class="p">)</span>
+        <span class="n">u2</span> <span class="o">=</span> <span class="n">UserProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;George&#39;</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">u</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">UserProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bruce&#39;</span><span class="p">,</span> <span class="s">&#39;George&#39;</span><span class="p">])</span>
+
+        <span class="n">u2</span><span class="o">.</span><span class="n">delete</span><span class="p">()</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">u</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">u</span> <span class="ow">in</span> <span class="n">UserProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;Bruce&#39;</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">test_select_related</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        We can still use `select_related()` to include related models in our</span>
+<span class="sd">        querysets.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">country</span> <span class="o">=</span> <span class="n">Country</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Australia&#39;</span><span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;New South Wales&#39;</span><span class="p">,</span> <span class="n">country</span><span class="o">=</span><span class="n">country</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">State</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;New South Wales&#39;</span><span class="p">])</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">StateProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;New South Wales&#39;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">StateProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;New South Wales&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s">&#39;New South Wales&#39;</span><span class="p">)</span>
+
+        <span class="n">resp</span> <span class="o">=</span> <span class="n">StateProxy</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;New South Wales&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;New South Wales&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_bug</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">contributor</span> <span class="o">=</span> <span class="n">TrackerUser</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Contributor&#39;</span><span class="p">,</span>
+            <span class="n">status</span><span class="o">=</span><span class="s">&#39;contrib&#39;</span><span class="p">)</span>
+        <span class="n">someone</span> <span class="o">=</span> <span class="n">BaseUser</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Someone&#39;</span><span class="p">)</span>
+        <span class="n">Bug</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">summary</span><span class="o">=</span><span class="s">&#39;fix this&#39;</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="s">&#39;1.1beta&#39;</span><span class="p">,</span>
+            <span class="n">assignee</span><span class="o">=</span><span class="n">contributor</span><span class="p">,</span> <span class="n">reporter</span><span class="o">=</span><span class="n">someone</span><span class="p">)</span>
+        <span class="n">pcontributor</span> <span class="o">=</span> <span class="n">ProxyTrackerUser</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;OtherContributor&#39;</span><span class="p">,</span>
+            <span class="n">status</span><span class="o">=</span><span class="s">&#39;proxy&#39;</span><span class="p">)</span>
+        <span class="n">Improvement</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">summary</span><span class="o">=</span><span class="s">&#39;improve that&#39;</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="s">&#39;1.1beta&#39;</span><span class="p">,</span>
+            <span class="n">assignee</span><span class="o">=</span><span class="n">contributor</span><span class="p">,</span> <span class="n">reporter</span><span class="o">=</span><span class="n">pcontributor</span><span class="p">,</span>
+            <span class="n">associated_bug</span><span class="o">=</span><span class="n">ProxyProxyBug</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Related field filter on proxy</p></td><td class="code"><div class="highlight"><pre>        <span class="n">resp</span> <span class="o">=</span> <span class="n">ProxyBug</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">version__icontains</span><span class="o">=</span><span class="s">&#39;beta&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span> <span class="s">&#39;&lt;ProxyBug: ProxyBug:fix this&gt;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Select related + filter on proxy</p></td><td class="code"><div class="highlight"><pre>        <span class="n">resp</span> <span class="o">=</span> <span class="n">ProxyBug</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">version__icontains</span><span class="o">=</span><span class="s">&#39;beta&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span> <span class="s">&#39;&lt;ProxyBug: ProxyBug:fix this&gt;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Proxy of proxy, select_related + filter</p></td><td class="code"><div class="highlight"><pre>        <span class="n">resp</span> <span class="o">=</span> <span class="n">ProxyProxyBug</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">version__icontains</span><span class="o">=</span><span class="s">&#39;beta&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span> <span class="s">&#39;&lt;ProxyProxyBug: ProxyProxyBug:fix this&gt;&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Select related + filter on a related proxy field</p></td><td class="code"><div class="highlight"><pre>        <span class="n">resp</span> <span class="o">=</span> <span class="n">ProxyImprovement</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">reporter__name__icontains</span><span class="o">=</span><span class="s">&#39;butor&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span>
+            <span class="s">&#39;&lt;ProxyImprovement: ProxyImprovement:improve that&gt;&#39;</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Select related + filter on a related proxy of proxy field</p></td><td class="code"><div class="highlight"><pre>        <span class="n">resp</span> <span class="o">=</span> <span class="n">ProxyImprovement</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">select_related</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">associated_bug__summary__icontains</span><span class="o">=</span><span class="s">&#39;fix&#39;</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">resp</span><span class="p">),</span>
+            <span class="s">&#39;&lt;ProxyImprovement: ProxyImprovement:improve that&gt;&#39;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_proxy_load_from_fixture</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">management</span><span class="o">.</span><span class="n">call_command</span><span class="p">(</span><span class="s">&#39;loaddata&#39;</span><span class="p">,</span> <span class="s">&#39;mypeople.json&#39;</span><span class="p">,</span> <span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">MyPerson</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;Elvis Presley&#39;</span><span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

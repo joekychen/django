@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › db › backends › oracle › operations.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../../../index.html"></a><h1>operations.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd"> This module contains the spatial lookup types, and the `get_geo_where_clause`</span>
+<span class="sd"> routine for Oracle Spatial.</span>
+
+<span class="sd"> Please note that WKT support is broken on the XE version, and thus</span>
+<span class="sd"> this backend will not work on such platforms.  Specifically, XE lacks</span>
+<span class="sd"> support for an internal JVM, and Java libraries are required to use</span>
+<span class="sd"> the WKT constructors.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">decimal</span> <span class="kn">import</span> <span class="n">Decimal</span>
+
+<span class="kn">from</span> <span class="nn">django.db.backends.oracle.base</span> <span class="kn">import</span> <span class="n">DatabaseOperations</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.base</span> <span class="kn">import</span> <span class="n">BaseSpatialOperations</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.oracle.adapter</span> <span class="kn">import</span> <span class="n">OracleSpatialAdapter</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.util</span> <span class="kn">import</span> <span class="n">SpatialFunction</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geometry.backend</span> <span class="kn">import</span> <span class="n">Geometry</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.measure</span> <span class="kn">import</span> <span class="n">Distance</span>
+
+<span class="k">class</span> <span class="nc">SDOOperation</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="s">&quot;Base class for SDO* Oracle operations.&quot;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">) </span><span class="si">%(operator)s</span><span class="s"> &#39;</span><span class="si">%(result)s</span><span class="s">&#39;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;operator&#39;</span><span class="p">,</span> <span class="s">&#39;=&#39;</span><span class="p">)</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s">&#39;result&#39;</span><span class="p">,</span> <span class="s">&#39;TRUE&#39;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SDOOperation</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SDODistance</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="s">&quot;Class for Distance queries.&quot;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">, </span><span class="si">%(tolerance)s</span><span class="s">) &#39;</span>
+                    <span class="s">&#39;</span><span class="si">%(operator)s</span><span class="s"> </span><span class="si">%(result)s</span><span class="s">&#39;</span><span class="p">)</span>
+    <span class="n">dist_func</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_DISTANCE&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SDODistance</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dist_func</span><span class="p">,</span>
+                                          <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">,</span>
+                                          <span class="n">operator</span><span class="o">=</span><span class="n">op</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SDODWithin</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="n">dwithin_func</span> <span class="o">=</span> <span class="s">&#39;SDO_WITHIN_DISTANCE&#39;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">, </span><span class="si">%%</span><span class="s">s) = &#39;TRUE&#39;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SDODWithin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dwithin_func</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SDOGeomRelate</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="s">&quot;Class for using SDO_GEOM.RELATE.&quot;</span>
+    <span class="n">relate_func</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.RELATE&#39;</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="p">(</span><span class="s">&quot;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, &#39;</span><span class="si">%(mask)s</span><span class="s">&#39;, </span><span class="si">%(geometry)s</span><span class="s">, &quot;</span>
+                    <span class="s">&quot;</span><span class="si">%(tolerance)s</span><span class="s">) </span><span class="si">%(operator)s</span><span class="s"> &#39;</span><span class="si">%(mask)s</span><span class="s">&#39;&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>SDO_GEOM.RELATE(...) has a peculiar argument order: column, mask, geom, tolerance.
+Moreover, the runction result is the mask (e.g., 'DISJOINT' instead of 'TRUE').</p></td><td class="code"><div class="highlight"><pre>        <span class="nb">super</span><span class="p">(</span><span class="n">SDOGeomRelate</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">relate_func</span><span class="p">,</span> <span class="n">operator</span><span class="o">=</span><span class="s">&#39;=&#39;</span><span class="p">,</span>
+                                            <span class="n">mask</span><span class="o">=</span><span class="n">mask</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">SDORelate</span><span class="p">(</span><span class="n">SpatialFunction</span><span class="p">):</span>
+    <span class="s">&quot;Class for using SDO_RELATE.&quot;</span>
+    <span class="n">masks</span> <span class="o">=</span> <span class="s">&#39;TOUCH|OVERLAPBDYDISJOINT|OVERLAPBDYINTERSECT|EQUAL|INSIDE|COVEREDBY|CONTAINS|COVERS|ANYINTERACT|ON&#39;</span>
+    <span class="n">mask_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^(</span><span class="si">%s</span><span class="s">)(\+(</span><span class="si">%s</span><span class="s">))*$&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">masks</span><span class="p">,</span> <span class="n">masks</span><span class="p">),</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">)</span>
+    <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&quot;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(geo_col)s</span><span class="s">, </span><span class="si">%(geometry)s</span><span class="s">, &#39;mask=</span><span class="si">%(mask)s</span><span class="s">&#39;) = &#39;TRUE&#39;&quot;</span>
+    <span class="n">relate_func</span> <span class="o">=</span> <span class="s">&#39;SDO_RELATE&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mask</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">mask_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">mask</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Invalid </span><span class="si">%s</span><span class="s"> mask: &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">relate_func</span><span class="p">,</span> <span class="n">mask</span><span class="p">))</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">SDORelate</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">relate_func</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">mask</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Valid distance types and substitutions</p></td><td class="code"><div class="highlight"><pre><span class="n">dtypes</span> <span class="o">=</span> <span class="p">(</span><span class="n">Decimal</span><span class="p">,</span> <span class="n">Distance</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">OracleOperations</span><span class="p">(</span><span class="n">DatabaseOperations</span><span class="p">,</span> <span class="n">BaseSpatialOperations</span><span class="p">):</span>
+    <span class="n">compiler_module</span> <span class="o">=</span> <span class="s">&quot;django.contrib.gis.db.backends.oracle.compiler&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s">&#39;oracle&#39;</span>
+    <span class="n">oracle</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">valid_aggregates</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">a</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">(</span><span class="s">&#39;Union&#39;</span><span class="p">,</span> <span class="s">&#39;Extent&#39;</span><span class="p">)])</span>
+
+    <span class="n">Adapter</span> <span class="o">=</span> <span class="n">OracleSpatialAdapter</span>
+    <span class="n">Adaptor</span> <span class="o">=</span> <span class="n">Adapter</span> <span class="c"># Backwards-compatibility alias.</span>
+
+    <span class="n">area</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_AREA&#39;</span>
+    <span class="n">gml</span><span class="o">=</span> <span class="s">&#39;SDO_UTIL.TO_GMLGEOMETRY&#39;</span>
+    <span class="n">centroid</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_CENTROID&#39;</span>
+    <span class="n">difference</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_DIFFERENCE&#39;</span>
+    <span class="n">distance</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_DISTANCE&#39;</span>
+    <span class="n">extent</span><span class="o">=</span> <span class="s">&#39;SDO_AGGR_MBR&#39;</span>
+    <span class="n">intersection</span><span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_INTERSECTION&#39;</span>
+    <span class="n">length</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_LENGTH&#39;</span>
+    <span class="n">num_geom</span> <span class="o">=</span> <span class="s">&#39;SDO_UTIL.GETNUMELEM&#39;</span>
+    <span class="n">num_points</span> <span class="o">=</span> <span class="s">&#39;SDO_UTIL.GETNUMVERTICES&#39;</span>
+    <span class="n">perimeter</span> <span class="o">=</span> <span class="n">length</span>
+    <span class="n">point_on_surface</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_POINTONSURFACE&#39;</span>
+    <span class="n">reverse</span> <span class="o">=</span> <span class="s">&#39;SDO_UTIL.REVERSE_LINESTRING&#39;</span>
+    <span class="n">sym_difference</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_XOR&#39;</span>
+    <span class="n">transform</span> <span class="o">=</span> <span class="s">&#39;SDO_CS.TRANSFORM&#39;</span>
+    <span class="n">union</span> <span class="o">=</span> <span class="s">&#39;SDO_GEOM.SDO_UNION&#39;</span>
+    <span class="n">unionagg</span> <span class="o">=</span> <span class="s">&#39;SDO_AGGR_UNION&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>We want to get SDO Geometries as WKT because it is much easier to
+instantiate GEOS proxies from WKT than SDO<em>GEOMETRY(...) strings.
+However, this adversely affects performance (i.e., Java is called
+to convert to WKT on every query).  If someone wishes to write a
+SDO</em>GEOMETRY(...) parser in Python, let me know =)</p></td><td class="code"><div class="highlight"><pre>    <span class="n">select</span> <span class="o">=</span> <span class="s">&#39;SDO_UTIL.TO_WKTGEOMETRY(</span><span class="si">%s</span><span class="s">)&#39;</span>
+
+    <span class="n">distance_functions</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;distance_gt&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDODistance</span><span class="p">(</span><span class="s">&#39;&gt;&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+        <span class="s">&#39;distance_gte&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDODistance</span><span class="p">(</span><span class="s">&#39;&gt;=&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+        <span class="s">&#39;distance_lt&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDODistance</span><span class="p">(</span><span class="s">&#39;&lt;&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+        <span class="s">&#39;distance_lte&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDODistance</span><span class="p">(</span><span class="s">&#39;&lt;=&#39;</span><span class="p">),</span> <span class="n">dtypes</span><span class="p">),</span>
+        <span class="s">&#39;dwithin&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDODWithin</span><span class="p">(),</span> <span class="n">dtypes</span><span class="p">),</span>
+        <span class="p">}</span>
+
+    <span class="n">geometry_functions</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s">&#39;contains&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_CONTAINS&#39;</span><span class="p">),</span>
+        <span class="s">&#39;coveredby&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_COVEREDBY&#39;</span><span class="p">),</span>
+        <span class="s">&#39;covers&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_COVERS&#39;</span><span class="p">),</span>
+        <span class="s">&#39;disjoint&#39;</span> <span class="p">:</span> <span class="n">SDOGeomRelate</span><span class="p">(</span><span class="s">&#39;DISJOINT&#39;</span><span class="p">),</span>
+        <span class="s">&#39;intersects&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_OVERLAPBDYINTERSECT&#39;</span><span class="p">),</span> <span class="c"># TODO: Is this really the same as ST_Intersects()?</span>
+        <span class="s">&#39;equals&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_EQUAL&#39;</span><span class="p">),</span>
+        <span class="s">&#39;exact&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_EQUAL&#39;</span><span class="p">),</span>
+        <span class="s">&#39;overlaps&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_OVERLAPS&#39;</span><span class="p">),</span>
+        <span class="s">&#39;same_as&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_EQUAL&#39;</span><span class="p">),</span>
+        <span class="s">&#39;relate&#39;</span> <span class="p">:</span> <span class="p">(</span><span class="n">SDORelate</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">),</span> <span class="c"># Oracle uses a different syntax, e.g., &#39;mask=inside+touch&#39;</span>
+        <span class="s">&#39;touches&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_TOUCH&#39;</span><span class="p">),</span>
+        <span class="s">&#39;within&#39;</span> <span class="p">:</span> <span class="n">SDOOperation</span><span class="p">(</span><span class="s">&#39;SDO_INSIDE&#39;</span><span class="p">),</span>
+        <span class="p">}</span>
+    <span class="n">geometry_functions</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">distance_functions</span><span class="p">)</span>
+
+    <span class="n">gis_terms</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;isnull&#39;</span><span class="p">]</span>
+    <span class="n">gis_terms</span> <span class="o">+=</span> <span class="n">geometry_functions</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+    <span class="n">gis_terms</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">([(</span><span class="n">term</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">gis_terms</span><span class="p">])</span>
+
+    <span class="n">truncate_params</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;relate&#39;</span> <span class="p">:</span> <span class="bp">None</span><span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">convert_extent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">clob</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">clob</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Generally, Oracle returns a polygon for the extent -- however,
+it can return a single point if there's only one Point in the
+table.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">ext_geom</span> <span class="o">=</span> <span class="n">Geometry</span><span class="p">(</span><span class="n">clob</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+            <span class="n">gtype</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">ext_geom</span><span class="o">.</span><span class="n">geom_type</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">gtype</span> <span class="o">==</span> <span class="s">&#39;Polygon&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Construct the 4-tuple from the coordinates in the polygon.</p></td><td class="code"><div class="highlight"><pre>                <span class="n">shell</span> <span class="o">=</span> <span class="n">ext_geom</span><span class="o">.</span><span class="n">shell</span>
+                <span class="n">ll</span><span class="p">,</span> <span class="n">ur</span> <span class="o">=</span> <span class="n">shell</span><span class="p">[</span><span class="mi">0</span><span class="p">][:</span><span class="mi">2</span><span class="p">],</span> <span class="n">shell</span><span class="p">[</span><span class="mi">2</span><span class="p">][:</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="n">gtype</span> <span class="o">==</span> <span class="s">&#39;Point&#39;</span><span class="p">:</span>
+                <span class="n">ll</span> <span class="o">=</span> <span class="n">ext_geom</span><span class="o">.</span><span class="n">coords</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
+                <span class="n">ur</span> <span class="o">=</span> <span class="n">ll</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="s">&#39;Unexpected geometry type returned for extent: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">gtype</span><span class="p">)</span>
+            <span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span> <span class="o">=</span> <span class="n">ll</span>
+            <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span> <span class="o">=</span> <span class="n">ur</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">xmin</span><span class="p">,</span> <span class="n">ymin</span><span class="p">,</span> <span class="n">xmax</span><span class="p">,</span> <span class="n">ymax</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">convert_geom</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">clob</span><span class="p">,</span> <span class="n">geo_field</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">clob</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Geometry</span><span class="p">(</span><span class="n">clob</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">geo_field</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">geo_db_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the geometry database type for Oracle.  Unlike other spatial</span>
+<span class="sd">        backends, no stored procedure is necessary and it&#39;s the same for all</span>
+<span class="sd">        geometry types.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="s">&#39;MDSYS.SDO_GEOMETRY&#39;</span>
+
+    <span class="k">def</span> <span class="nf">get_distance</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the distance parameters given the value and the lookup type.</span>
+<span class="sd">        On Oracle, geometry columns with a geodetic coordinate system behave</span>
+<span class="sd">        implicitly like a geography column, and thus meters will be used as</span>
+<span class="sd">        the distance parameter on them.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Distance</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">f</span><span class="o">.</span><span class="n">geodetic</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">):</span>
+                <span class="n">dist_param</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">m</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">dist_param</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">Distance</span><span class="o">.</span><span class="n">unit_attname</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">units_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">dist_param</span> <span class="o">=</span> <span class="n">value</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>dwithin lookups on oracle require a special string parameter
+that starts with "distance=".</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;dwithin&#39;</span><span class="p">:</span>
+            <span class="n">dist_param</span> <span class="o">=</span> <span class="s">&#39;distance=</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">dist_param</span>
+
+        <span class="k">return</span> <span class="p">[</span><span class="n">dist_param</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">get_geom_placeholder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Provides a proper substitution value for Geometries that are not in the</span>
+<span class="sd">        SRID of the field.  Specifically, this routine will substitute in the</span>
+<span class="sd">        SDO_CS.TRANSFORM() function call.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s">&#39;NULL&#39;</span>
+
+        <span class="k">def</span> <span class="nf">transform_value</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">srid</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">val</span><span class="o">.</span><span class="n">srid</span> <span class="o">!=</span> <span class="n">srid</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&#39;expression&#39;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">transform_value</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">):</span>
+                <span class="n">placeholder</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(</span><span class="si">%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">placeholder</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>No geometry value used for F expression, substitue in
+the column name instead.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">placeholder</span> <span class="o">%</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">quote_name</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">cols</span><span class="p">[</span><span class="n">value</span><span class="o">.</span><span class="n">expression</span><span class="p">]))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">transform_value</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">):</span>
+                <span class="k">return</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">(SDO_GEOMETRY(</span><span class="si">%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">), </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transform</span><span class="p">,</span> <span class="n">value</span><span class="o">.</span><span class="n">srid</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s">&#39;SDO_GEOMETRY(</span><span class="si">%%</span><span class="s">s, </span><span class="si">%s</span><span class="s">)&#39;</span> <span class="o">%</span> <span class="n">f</span><span class="o">.</span><span class="n">srid</span>
+
+    <span class="k">def</span> <span class="nf">spatial_lookup_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lvalue</span><span class="p">,</span> <span class="n">lookup_type</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">qn</span><span class="p">):</span>
+        <span class="s">&quot;Returns the SQL WHERE clause for use in Oracle spatial SQL construction.&quot;</span>
+        <span class="n">alias</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">db_type</span> <span class="o">=</span> <span class="n">lvalue</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Getting the quoted table name as <code>geo_col</code>.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">geo_col</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%s</span><span class="s">.</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">qn</span><span class="p">(</span><span class="n">alias</span><span class="p">),</span> <span class="n">qn</span><span class="p">(</span><span class="n">col</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>See if a Oracle Geometry function matches the lookup type next</p></td><td class="code"><div class="highlight"><pre>        <span class="n">lookup_info</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry_functions</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">lookup_info</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Lookup types that are tuples take tuple arguments, e.g., 'relate' and
+'dwithin' lookup types.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lookup_info</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>First element of tuple is lookup type, second element is the type
+of the expected argument (e.g., str, float)</p></td><td class="code"><div class="highlight"><pre>                <span class="n">sdo_op</span><span class="p">,</span> <span class="n">arg_type</span> <span class="o">=</span> <span class="n">lookup_info</span>
+                <span class="n">geom</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Ensuring that a tuple <em>value</em> was passed in from the user</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Tuple required for `</span><span class="si">%s</span><span class="s">` lookup type.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;2-element tuple required for </span><span class="si">%s</span><span class="s"> lookup type.&#39;</span> <span class="o">%</span> <span class="n">lookup_type</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Ensuring the argument type matches what we expect.</p></td><td class="code"><div class="highlight"><pre>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">arg_type</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&#39;Argument type should be </span><span class="si">%s</span><span class="s">, got </span><span class="si">%s</span><span class="s"> instead.&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">arg_type</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">])))</span>
+
+                <span class="k">if</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;relate&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>The SDORelate class handles construction for these queries,
+and verifies the mask argument.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">return</span> <span class="n">sdo_op</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_placeholder</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">geom</span><span class="p">))</span>
+                <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Otherwise, just call the <code>as_sql</code> method on the SDOOperation instance.</p></td><td class="code"><div class="highlight"><pre>                    <span class="k">return</span> <span class="n">sdo_op</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_placeholder</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">geom</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Lookup info is a SDOOperation instance, whose <code>as_sql</code> method returns
+the SQL necessary for the geometry function call. For example:
+ SDO<em>CONTAINS("geoapp</em>country"."poly", SDO_GEOMTRY('POINT(5 23)', 4326)) = 'TRUE'</p></td><td class="code"><div class="highlight"><pre>                <span class="k">return</span> <span class="n">lookup_info</span><span class="o">.</span><span class="n">as_sql</span><span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_geom_placeholder</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="n">lookup_type</span> <span class="o">==</span> <span class="s">&#39;isnull&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>Handling 'isnull' lookup type</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="s">&quot;</span><span class="si">%s</span><span class="s"> IS </span><span class="si">%s</span><span class="s">NULL&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">geo_col</span><span class="p">,</span> <span class="p">(</span><span class="ow">not</span> <span class="n">value</span> <span class="ow">and</span> <span class="s">&#39;NOT &#39;</span> <span class="ow">or</span> <span class="s">&#39;&#39;</span><span class="p">))</span>
+
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;Got invalid lookup_type: </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="nb">repr</span><span class="p">(</span><span class="n">lookup_type</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">spatial_aggregate_sql</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agg</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the spatial aggregate SQL template and function for the</span>
+<span class="sd">        given Aggregate instance.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">agg_name</span> <span class="o">=</span> <span class="n">agg</span><span class="o">.</span><span class="n">__class__</span><span class="o">.</span><span class="n">__name__</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">agg_name</span> <span class="o">==</span> <span class="s">&#39;union&#39;</span> <span class="p">:</span> <span class="n">agg_name</span> <span class="o">+=</span> <span class="s">&#39;agg&#39;</span>
+        <span class="k">if</span> <span class="n">agg</span><span class="o">.</span><span class="n">is_extent</span><span class="p">:</span>
+            <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(</span><span class="si">%(field)s</span><span class="s">)&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sql_template</span> <span class="o">=</span> <span class="s">&#39;</span><span class="si">%(function)s</span><span class="s">(SDOAGGRTYPE(</span><span class="si">%(field)s</span><span class="s">,</span><span class="si">%(tolerance)s</span><span class="s">))&#39;</span>
+        <span class="n">sql_function</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agg_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">select</span> <span class="o">%</span> <span class="n">sql_template</span><span class="p">,</span> <span class="n">sql_function</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>Routines for getting the OGC-compliant models.</p></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">geometry_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.oracle.models</span> <span class="kn">import</span> <span class="n">GeometryColumns</span>
+        <span class="k">return</span> <span class="n">GeometryColumns</span>
+
+    <span class="k">def</span> <span class="nf">spatial_ref_sys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.gis.db.backends.oracle.models</span> <span class="kn">import</span> <span class="n">SpatialRefSys</span>
+        <span class="k">return</span> <span class="n">SpatialRefSys</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:6}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../../../javascript/docco.min.js"></script>
+</html>

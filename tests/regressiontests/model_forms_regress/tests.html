@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › model_forms_regress › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span><span class="p">,</span> <span class="n">unicode_literals</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">forms</span>
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">FieldError</span><span class="p">,</span> <span class="n">ValidationError</span>
+<span class="kn">from</span> <span class="nn">django.core.files.uploadedfile</span> <span class="kn">import</span> <span class="n">SimpleUploadedFile</span>
+<span class="kn">from</span> <span class="nn">django.forms.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">modelform_factory</span><span class="p">,</span> <span class="n">ModelChoiceField</span><span class="p">,</span>
+    <span class="n">fields_for_model</span><span class="p">,</span> <span class="n">construct_instance</span><span class="p">,</span> <span class="n">ModelFormMetaclass</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TestCase</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">RealPerson</span><span class="p">,</span> <span class="n">Triple</span><span class="p">,</span> <span class="n">FilePathModel</span><span class="p">,</span> <span class="n">Article</span><span class="p">,</span>
+    <span class="n">Publication</span><span class="p">,</span> <span class="n">CustomFF</span><span class="p">,</span> <span class="n">Author</span><span class="p">,</span> <span class="n">Author1</span><span class="p">,</span> <span class="n">Homepage</span><span class="p">,</span> <span class="n">Document</span><span class="p">,</span> <span class="n">Edition</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">ModelMultipleChoiceFieldTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_model_multiple_choice_number_of_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that ModelMultipleChoiceField does O(1) queries instead of</span>
+<span class="sd">        O(n) (#10156).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">persons</span> <span class="o">=</span> <span class="p">[</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Person </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">30</span><span class="p">)]</span>
+
+        <span class="n">f</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">ModelMultipleChoiceField</span><span class="p">(</span><span class="n">queryset</span><span class="o">=</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNumQueries</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">,</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">pk</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">persons</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">11</span><span class="p">:</span><span class="mi">2</span><span class="p">]])</span>
+
+    <span class="k">def</span> <span class="nf">test_model_multiple_choice_run_validators</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that ModelMultipleChoiceField run given validators (#14144).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">30</span><span class="p">):</span>
+            <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&quot;Person </span><span class="si">%s</span><span class="s">&quot;</span> <span class="o">%</span> <span class="n">i</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validator_run</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">def</span> <span class="nf">my_validator</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validator_run</span> <span class="o">=</span> <span class="bp">True</span>
+
+        <span class="n">f</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">ModelMultipleChoiceField</span><span class="p">(</span><span class="n">queryset</span><span class="o">=</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">(),</span>
+                                           <span class="n">validators</span><span class="o">=</span><span class="p">[</span><span class="n">my_validator</span><span class="p">])</span>
+
+        <span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">pk</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">8</span><span class="p">:</span><span class="mi">9</span><span class="p">]])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_validator_run</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">TripleForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Triple</span>
+
+<span class="k">class</span> <span class="nc">UniqueTogetherTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_multiple_field_unique_together</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When the same field is involved in multiple unique_together</span>
+<span class="sd">        constraints, we need to make sure we don&#39;t remove the data for it</span>
+<span class="sd">        before doing all the validation checking (not just failing after</span>
+<span class="sd">        the first one).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">Triple</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">left</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">middle</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">right</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="n">form</span> <span class="o">=</span> <span class="n">TripleForm</span><span class="p">({</span><span class="s">&#39;left&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="s">&#39;middle&#39;</span><span class="p">:</span> <span class="s">&#39;2&#39;</span><span class="p">,</span> <span class="s">&#39;right&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+        <span class="n">form</span> <span class="o">=</span> <span class="n">TripleForm</span><span class="p">({</span><span class="s">&#39;left&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">,</span> <span class="s">&#39;middle&#39;</span><span class="p">:</span> <span class="s">&#39;3&#39;</span><span class="p">,</span> <span class="s">&#39;right&#39;</span><span class="p">:</span> <span class="s">&#39;1&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+<span class="k">class</span> <span class="nc">TripleFormWithCleanOverride</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Triple</span>
+
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s">&#39;left&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s">&#39;right&#39;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="n">forms</span><span class="o">.</span><span class="n">ValidationError</span><span class="p">(</span><span class="s">&#39;Left and right should be equal&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span>
+
+<span class="k">class</span> <span class="nc">OverrideCleanTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_override_clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #12596: Calling super from ModelForm.clean() should be</span>
+<span class="sd">        optional.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">TripleFormWithCleanOverride</span><span class="p">({</span><span class="s">&#39;left&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;middle&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;right&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>form.instance.left will be None if the instance was not constructed
+by form.full_clean().</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">instance</span><span class="o">.</span><span class="n">left</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Regression test for #12960.
+Make sure the cleaned_data returned from ModelForm.clean() is applied to the
+model instance.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">PublicationForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s">&#39;title&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleaned_data</span>
+
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Publication</span>
+
+<span class="k">class</span> <span class="nc">ModelFormCleanTest</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_model_form_clean_applies_to_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;title&#39;</span><span class="p">:</span> <span class="s">&#39;test&#39;</span><span class="p">,</span> <span class="s">&#39;date_published&#39;</span><span class="p">:</span> <span class="s">&#39;2010-2-25&#39;</span><span class="p">}</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">PublicationForm</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="n">publication</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">publication</span><span class="o">.</span><span class="n">title</span><span class="p">,</span> <span class="s">&#39;TEST&#39;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">FPForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">FilePathModel</span>
+
+<span class="k">class</span> <span class="nc">FilePathFieldTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_file_path_field_blank</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression test for #8842: FilePathField(blank=True)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">FPForm</span><span class="p">()</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">form</span><span class="p">[</span><span class="s">&#39;path&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">field</span><span class="o">.</span><span class="n">choices</span><span class="p">]</span>
+        <span class="n">names</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">names</span><span class="p">,</span> <span class="p">[</span><span class="s">&#39;---------&#39;</span><span class="p">,</span> <span class="s">&#39;__init__.py&#39;</span><span class="p">,</span> <span class="s">&#39;models.py&#39;</span><span class="p">,</span> <span class="s">&#39;tests.py&#39;</span><span class="p">])</span>
+
+<span class="k">class</span> <span class="nc">ManyToManyCallableInitialTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_callable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Regression for #10349: A callable can be provided as the initial value for an m2m field&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Set up a callable initial value</p></td><td class="code"><div class="highlight"><pre>        <span class="k">def</span> <span class="nf">formfield_for_dbfield</span><span class="p">(</span><span class="n">db_field</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">db_field</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s">&#39;publications&#39;</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s">&#39;initial&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span><span class="p">:</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s">&#39;date_published&#39;</span><span class="p">)[:</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">db_field</span><span class="o">.</span><span class="n">formfield</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Set up some Publications to use as data</p></td><td class="code"><div class="highlight"><pre>        <span class="n">book1</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;First Book&quot;</span><span class="p">,</span> <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2007</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">book2</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;Second Book&quot;</span><span class="p">,</span> <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2008</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+        <span class="n">book3</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;Third Book&quot;</span><span class="p">,</span> <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2009</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Create a ModelForm, instantiate it, and check that the output is as expected</p></td><td class="code"><div class="highlight"><pre>        <span class="n">ModelForm</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Article</span><span class="p">,</span> <span class="n">formfield_callback</span><span class="o">=</span><span class="n">formfield_for_dbfield</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">ModelForm</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertHTMLEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">as_ul</span><span class="p">(),</span> <span class="s">&quot;&quot;&quot;&lt;li&gt;&lt;label for=&quot;id_headline&quot;&gt;Headline:&lt;/label&gt; &lt;input id=&quot;id_headline&quot; type=&quot;text&quot; name=&quot;headline&quot; maxlength=&quot;100&quot; /&gt;&lt;/li&gt;</span>
+<span class="s">&lt;li&gt;&lt;label for=&quot;id_publications&quot;&gt;Publications:&lt;/label&gt; &lt;select multiple=&quot;multiple&quot; name=&quot;publications&quot; id=&quot;id_publications&quot;&gt;</span>
+<span class="s">&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot; selected=&quot;selected&quot;&gt;First Book&lt;/option&gt;</span>
+<span class="s">&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot; selected=&quot;selected&quot;&gt;Second Book&lt;/option&gt;</span>
+<span class="s">&lt;option value=&quot;</span><span class="si">%d</span><span class="s">&quot;&gt;Third Book&lt;/option&gt;</span>
+<span class="s">&lt;/select&gt; &lt;span class=&quot;helptext&quot;&gt; Hold down &quot;Control&quot;, or &quot;Command&quot; on a Mac, to select more than one.&lt;/span&gt;&lt;/li&gt;&quot;&quot;&quot;</span>
+            <span class="o">%</span> <span class="p">(</span><span class="n">book1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">book2</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="n">book3</span><span class="o">.</span><span class="n">pk</span><span class="p">))</span>
+
+<span class="k">class</span> <span class="nc">CFFForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">CustomFF</span>
+
+<span class="k">class</span> <span class="nc">CustomFieldSaveTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_save</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Regression for #11149: save_form_data should be called only once&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>It's enough that the form saves without error -- the custom save routine will
+generate an AssertionError if it is called more than once during save.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">form</span> <span class="o">=</span> <span class="n">CFFForm</span><span class="p">(</span><span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;f&#39;</span><span class="p">:</span> <span class="bp">None</span><span class="p">})</span>
+        <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">ModelChoiceIteratorTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_len</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">Form</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Article</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&quot;publications&quot;</span><span class="p">]</span>
+
+        <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;Pravda&quot;</span><span class="p">,</span>
+            <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">1991</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">22</span><span class="p">))</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">Form</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s">&quot;publications&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">choices</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">RealPersonForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">RealPerson</span>
+
+<span class="k">class</span> <span class="nc">CustomModelFormSaveMethod</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_string_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;anonymous&#39;</span><span class="p">}</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">RealPersonForm</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">(),</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s">&#39;__all__&#39;</span><span class="p">],</span> <span class="p">[</span><span class="s">&#39;Please specify a real name.&#39;</span><span class="p">])</span>
+
+<span class="k">class</span> <span class="nc">ModelClassTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_no_model_class</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">NoModelModelForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">pass</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">NoModelModelForm</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">OneToOneFieldTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_assignment_of_none</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">AuthorForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Author</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;publication&#39;</span><span class="p">,</span> <span class="s">&#39;full_name&#39;</span><span class="p">]</span>
+
+        <span class="n">publication</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;Pravda&quot;</span><span class="p">,</span>
+            <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">1991</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">22</span><span class="p">))</span>
+        <span class="n">author</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">publication</span><span class="o">=</span><span class="n">publication</span><span class="p">,</span> <span class="n">full_name</span><span class="o">=</span><span class="s">&#39;John Doe&#39;</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">AuthorForm</span><span class="p">({</span><span class="s">&#39;publication&#39;</span><span class="p">:</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;full_name&#39;</span><span class="p">:</span><span class="s">&#39;John Doe&#39;</span><span class="p">},</span> <span class="n">instance</span><span class="o">=</span><span class="n">author</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">cleaned_data</span><span class="p">[</span><span class="s">&#39;publication&#39;</span><span class="p">],</span> <span class="bp">None</span><span class="p">)</span>
+        <span class="n">author</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>author object returned from form still retains original publication object
+that's why we need to retreive it from database again</p></td><td class="code"><div class="highlight"><pre>        <span class="n">new_author</span> <span class="o">=</span> <span class="n">Author</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">author</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">new_author</span><span class="o">.</span><span class="n">publication</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_assignment_of_none_null_false</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">AuthorForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Author1</span>
+                <span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;publication&#39;</span><span class="p">,</span> <span class="s">&#39;full_name&#39;</span><span class="p">]</span>
+
+        <span class="n">publication</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&quot;Pravda&quot;</span><span class="p">,</span>
+            <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">1991</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">22</span><span class="p">))</span>
+        <span class="n">author</span> <span class="o">=</span> <span class="n">Author1</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">publication</span><span class="o">=</span><span class="n">publication</span><span class="p">,</span> <span class="n">full_name</span><span class="o">=</span><span class="s">&#39;John Doe&#39;</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">AuthorForm</span><span class="p">({</span><span class="s">&#39;publication&#39;</span><span class="p">:</span><span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;full_name&#39;</span><span class="p">:</span><span class="s">&#39;John Doe&#39;</span><span class="p">},</span> <span class="n">instance</span><span class="o">=</span><span class="n">author</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+
+<span class="k">class</span> <span class="nc">ModelChoiceForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">Form</span><span class="p">):</span>
+    <span class="n">person</span> <span class="o">=</span> <span class="n">ModelChoiceField</span><span class="p">(</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+
+
+<span class="k">class</span> <span class="nc">TestTicket11183</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_11183</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">form1</span> <span class="o">=</span> <span class="n">ModelChoiceForm</span><span class="p">()</span>
+        <span class="n">field1</span> <span class="o">=</span> <span class="n">form1</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="s">&#39;person&#39;</span><span class="p">]</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>To allow the widget to change the queryset of field1.widget.choices correctly,
+without affecting other forms, the following must hold:</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">field1</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">ModelChoiceForm</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;person&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">field1</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">choices</span><span class="o">.</span><span class="n">field</span> <span class="ow">is</span> <span class="n">field1</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">HomepageForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Homepage</span>
+
+<span class="k">class</span> <span class="nc">URLFieldTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_url_on_modelform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Check basic URL field validation on model forms&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;foo&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://example&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertFalse</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://com.&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://localhost&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://www.example.com&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://www.example.com:8000&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://www.example.com/test&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://www.example.com:8000/test&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;http://example.com/foo/bar&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">test_http_prefixing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;If the http:// prefix is omitted on form input, the field adds it again. (Refs #13613)&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;example.com&#39;</span><span class="p">})</span>
+        <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>self.assertTrue(form.is<em>valid())
+self.assertEqual(form.cleaned</em>data['url'], 'http://example.com/')</p></td><td class="code"><div class="highlight"><pre>        <span class="n">form</span> <span class="o">=</span> <span class="n">HomepageForm</span><span class="p">({</span><span class="s">&#39;url&#39;</span><span class="p">:</span> <span class="s">&#39;example.com/test&#39;</span><span class="p">})</span>
+        <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>self.assertTrue(form.is<em>valid())
+self.assertEqual(form.cleaned</em>data['url'], 'http://example.com/test')</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">FormFieldCallbackTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">test_baseform_with_widgets_in_meta</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Regression for #13095: Using base forms with widgets defined in Meta should not raise errors.&quot;&quot;&quot;</span>
+        <span class="n">widget</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">Textarea</span><span class="p">()</span>
+
+        <span class="k">class</span> <span class="nc">BaseForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Person</span>
+                <span class="n">widgets</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="n">widget</span><span class="p">}</span>
+
+        <span class="n">Form</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">BaseForm</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">Form</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span> <span class="ow">is</span> <span class="n">widget</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_factory_with_widget_argument</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Regression for #15315: modelform_factory should accept widgets</span>
+<span class="sd">            argument</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">widget</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">Textarea</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>Without a widget should not set the widget to textarea</p></td><td class="code"><div class="highlight"><pre>        <span class="n">Form</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">Form</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span> <span class="n">forms</span><span class="o">.</span><span class="n">Textarea</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>With a widget should not set the widget to textarea</p></td><td class="code"><div class="highlight"><pre>        <span class="n">Form</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">widgets</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span><span class="n">widget</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">Form</span><span class="o">.</span><span class="n">base_fields</span><span class="p">[</span><span class="s">&#39;name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">widget</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span> <span class="n">forms</span><span class="o">.</span><span class="n">Textarea</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_custom_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Test that a custom formfield_callback is used if provided&quot;&quot;&quot;</span>
+
+        <span class="n">callback_args</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">def</span> <span class="nf">callback</span><span class="p">(</span><span class="n">db_field</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">callback_args</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">db_field</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">db_field</span><span class="o">.</span><span class="n">formfield</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+        <span class="n">widget</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">Textarea</span><span class="p">()</span>
+
+        <span class="k">class</span> <span class="nc">BaseForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+            <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                <span class="n">model</span> <span class="o">=</span> <span class="n">Person</span>
+                <span class="n">widgets</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="n">widget</span><span class="p">}</span>
+
+        <span class="n">_</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">BaseForm</span><span class="p">,</span>
+                              <span class="n">formfield_callback</span><span class="o">=</span><span class="n">callback</span><span class="p">)</span>
+        <span class="n">id_field</span><span class="p">,</span> <span class="n">name_field</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">_meta</span><span class="o">.</span><span class="n">fields</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">callback_args</span><span class="p">,</span>
+                         <span class="p">[(</span><span class="n">id_field</span><span class="p">,</span> <span class="p">{}),</span> <span class="p">(</span><span class="n">name_field</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;widget&#39;</span><span class="p">:</span> <span class="n">widget</span><span class="p">})])</span>
+
+    <span class="k">def</span> <span class="nf">test_bad_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>A bad callback provided by user still gives an error</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="n">modelform_factory</span><span class="p">,</span> <span class="n">Person</span><span class="p">,</span>
+                          <span class="n">formfield_callback</span><span class="o">=</span><span class="s">&#39;not a function or callable&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">InvalidFieldAndFactory</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; Tests for #11905 &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">test_extra_field_model_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">class</span> <span class="nc">ExtraPersonForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+                <span class="sd">&quot;&quot;&quot; ModelForm with an extra field &quot;&quot;&quot;</span>
+
+                <span class="n">age</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">()</span>
+
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">model</span> <span class="o">=</span> <span class="n">Person</span>
+                    <span class="n">fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;no-field&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">FieldError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>Make sure the exception contains some reference to the
+field responsible for the problem.</p></td><td class="code"><div class="highlight"><pre>            <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;no-field&#39;</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;Invalid &quot;no-field&quot; field not caught&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_extra_declared_field_model_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">class</span> <span class="nc">ExtraPersonForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+                <span class="sd">&quot;&quot;&quot; ModelForm with an extra field &quot;&quot;&quot;</span>
+
+                <span class="n">age</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">()</span>
+
+                <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+                    <span class="n">model</span> <span class="o">=</span> <span class="n">Person</span>
+                    <span class="n">fields</span> <span class="o">=</span> <span class="p">(</span><span class="s">&#39;name&#39;</span><span class="p">,</span> <span class="s">&#39;age&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">FieldError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&#39;Declarative field raised FieldError incorrectly&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_extra_field_modelform_factory</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">FieldError</span><span class="p">,</span> <span class="n">modelform_factory</span><span class="p">,</span>
+                          <span class="n">Person</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;no-field&#39;</span><span class="p">,</span> <span class="s">&#39;name&#39;</span><span class="p">])</span>
+
+
+<span class="k">class</span> <span class="nc">DocumentForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Document</span>
+
+<span class="k">class</span> <span class="nc">FileFieldTests</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_clean_false</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If the ``clean`` method on a non-required FileField receives False as</span>
+<span class="sd">        the data (meaning clear the field value), it returns False, regardless</span>
+<span class="sd">        of the value of ``initial``.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">FileField</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">(</span><span class="bp">False</span><span class="p">),</span> <span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">(</span><span class="bp">False</span><span class="p">,</span> <span class="s">&#39;initial&#39;</span><span class="p">),</span> <span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_clean_false_required</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If the ``clean`` method on a required FileField receives False as the</span>
+<span class="sd">        data, it has the same effect as None: initial is returned if non-empty,</span>
+<span class="sd">        otherwise the validation catches the lack of a required value.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">FileField</span><span class="p">(</span><span class="n">required</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">(</span><span class="bp">False</span><span class="p">,</span> <span class="s">&#39;initial&#39;</span><span class="p">),</span> <span class="s">&#39;initial&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">,</span> <span class="n">f</span><span class="o">.</span><span class="n">clean</span><span class="p">,</span> <span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_full_clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Integration happy-path test that a model FileField can actually be set</span>
+<span class="sd">        and cleared via a ModelForm.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;name=&quot;myfile&quot;&#39;</span> <span class="ow">in</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;myfile-clear&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">(</span><span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;myfile&#39;</span><span class="p">:</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;something.txt&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;content&#39;</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">myfile</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;something.txt&#39;</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">(</span><span class="n">instance</span><span class="o">=</span><span class="n">doc</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;myfile-clear&#39;</span> <span class="ow">in</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">form</span><span class="p">))</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">(</span><span class="n">instance</span><span class="o">=</span><span class="n">doc</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;myfile-clear&#39;</span><span class="p">:</span> <span class="s">&#39;true&#39;</span><span class="p">})</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">myfile</span><span class="p">),</span> <span class="bp">False</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_clear_and_file_contradiction</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        If the user submits a new file upload AND checks the clear checkbox,</span>
+<span class="sd">        they get a validation error, and the bound redisplay of the form still</span>
+<span class="sd">        includes the current file and the clear checkbox.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">(</span><span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;myfile&#39;</span><span class="p">:</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;something.txt&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;content&#39;</span><span class="p">)})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">commit</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">DocumentForm</span><span class="p">(</span><span class="n">instance</span><span class="o">=</span><span class="n">doc</span><span class="p">,</span>
+                            <span class="n">files</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;myfile&#39;</span><span class="p">:</span> <span class="n">SimpleUploadedFile</span><span class="p">(</span><span class="s">&#39;something.txt&#39;</span><span class="p">,</span> <span class="n">b</span><span class="s">&#39;content&#39;</span><span class="p">)},</span>
+                            <span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;myfile-clear&#39;</span><span class="p">:</span> <span class="s">&#39;true&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="ow">not</span> <span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s">&#39;myfile&#39;</span><span class="p">],</span>
+                         <span class="p">[</span><span class="s">&#39;Please either submit a file or check the clear checkbox, not both.&#39;</span><span class="p">])</span>
+        <span class="n">rendered</span> <span class="o">=</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;something.txt&#39;</span> <span class="ow">in</span> <span class="n">rendered</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="s">&#39;myfile-clear&#39;</span> <span class="ow">in</span> <span class="n">rendered</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">EditionForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="n">author</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">ModelChoiceField</span><span class="p">(</span><span class="n">queryset</span><span class="o">=</span><span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+    <span class="n">publication</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">ModelChoiceField</span><span class="p">(</span><span class="n">queryset</span><span class="o">=</span><span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+    <span class="n">edition</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">IntegerField</span><span class="p">()</span>
+    <span class="n">isbn</span> <span class="o">=</span> <span class="n">forms</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
+
+    <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+        <span class="n">model</span> <span class="o">=</span> <span class="n">Edition</span>
+
+<span class="k">class</span> <span class="nc">UniqueErrorsTests</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">author1</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Author #1&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">author2</span> <span class="o">=</span> <span class="n">Person</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s">&#39;Author #2&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pub1</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&#39;Pub #1&#39;</span><span class="p">,</span> <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2000</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">31</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pub2</span> <span class="o">=</span> <span class="n">Publication</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s">&#39;Pub #2&#39;</span><span class="p">,</span> <span class="n">date_published</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2004</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">EditionForm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;author&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">author1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;publication&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pub1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;edition&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;isbn&#39;</span><span class="p">:</span> <span class="s">&#39;9783161484100&#39;</span><span class="p">})</span>
+        <span class="n">form</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_unique_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">EditionForm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;author&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">author1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;publication&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pub2</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;edition&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;isbn&#39;</span><span class="p">:</span> <span class="s">&#39;9783161484100&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;isbn&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Edition with this Isbn already exists.&#39;</span><span class="p">]})</span>
+
+    <span class="k">def</span> <span class="nf">test_unique_together_error_message</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">EditionForm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;author&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">author1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;publication&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pub1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;edition&#39;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;isbn&#39;</span><span class="p">:</span> <span class="s">&#39;9783161489999&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;__all__&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Edition with this Author and Publication already exists.&#39;</span><span class="p">]})</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">EditionForm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;author&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">author2</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;publication&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">pub1</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="s">&#39;edition&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;isbn&#39;</span><span class="p">:</span> <span class="s">&#39;9783161487777&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;__all__&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Edition with this Publication and Edition already exists.&#39;</span><span class="p">]})</span>
+
+
+<span class="k">class</span> <span class="nc">EmptyFieldsTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="s">&quot;Tests for fields=() cases as reported in #14119&quot;</span>
+    <span class="k">class</span> <span class="nc">EmptyPersonForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+        <span class="k">class</span> <span class="nc">Meta</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">Person</span>
+            <span class="n">fields</span> <span class="o">=</span> <span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_fields_to_fields_for_model</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;An argument of fields=() to fields_for_model should return an empty dictionary&quot;</span>
+        <span class="n">field_dict</span> <span class="o">=</span> <span class="n">fields_for_model</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">field_dict</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_fields_on_modelform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;No fields on a ModelForm should actually result in no fields&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">EmptyPersonForm</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">fields</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_fields_to_construct_instance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;No fields should be set on a model instance if construct_instance receives fields=()&quot;</span>
+        <span class="n">form</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">)({</span><span class="s">&#39;name&#39;</span><span class="p">:</span> <span class="s">&#39;John Doe&#39;</span><span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">form</span><span class="o">.</span><span class="n">is_valid</span><span class="p">())</span>
+        <span class="n">instance</span> <span class="o">=</span> <span class="n">construct_instance</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">Person</span><span class="p">(),</span> <span class="n">fields</span><span class="o">=</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">instance</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CustomMetaclass</span><span class="p">(</span><span class="n">ModelFormMetaclass</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">):</span>
+        <span class="n">new</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">CustomMetaclass</span><span class="p">,</span> <span class="n">cls</span><span class="p">)</span><span class="o">.</span><span class="n">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">attrs</span><span class="p">)</span>
+        <span class="n">new</span><span class="o">.</span><span class="n">base_fields</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="n">new</span>
+
+<span class="k">class</span> <span class="nc">CustomMetaclassForm</span><span class="p">(</span><span class="n">forms</span><span class="o">.</span><span class="n">ModelForm</span><span class="p">):</span>
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">CustomMetaclass</span>
+
+
+<span class="k">class</span> <span class="nc">CustomMetaclassTestCase</span><span class="p">(</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_modelform_factory_metaclass</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">new_cls</span> <span class="o">=</span> <span class="n">modelform_factory</span><span class="p">(</span><span class="n">Person</span><span class="p">,</span> <span class="n">form</span><span class="o">=</span><span class="n">CustomMetaclassForm</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">new_cls</span><span class="o">.</span><span class="n">base_fields</span><span class="p">,</span> <span class="p">{})</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

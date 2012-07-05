@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › transactions_regress › tests.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>tests.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django.core.exceptions</span> <span class="kn">import</span> <span class="n">ImproperlyConfigured</span>
+<span class="kn">from</span> <span class="nn">django.db</span> <span class="kn">import</span> <span class="n">connection</span><span class="p">,</span> <span class="n">connections</span><span class="p">,</span> <span class="n">transaction</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span>
+<span class="kn">from</span> <span class="nn">django.db.transaction</span> <span class="kn">import</span> <span class="n">commit_on_success</span><span class="p">,</span> <span class="n">commit_manually</span><span class="p">,</span> <span class="n">TransactionManagementError</span>
+<span class="kn">from</span> <span class="nn">django.test</span> <span class="kn">import</span> <span class="n">TransactionTestCase</span><span class="p">,</span> <span class="n">skipUnlessDBFeature</span>
+<span class="kn">from</span> <span class="nn">django.test.utils</span> <span class="kn">import</span> <span class="n">override_settings</span>
+<span class="kn">from</span> <span class="nn">django.utils.unittest</span> <span class="kn">import</span> <span class="n">skipIf</span><span class="p">,</span> <span class="n">skipUnless</span>
+
+<span class="kn">from</span> <span class="nn">.models</span> <span class="kn">import</span> <span class="n">Mod</span><span class="p">,</span> <span class="n">M2mA</span><span class="p">,</span> <span class="n">M2mB</span>
+
+
+<span class="k">class</span> <span class="nc">TestTransactionClosing</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests to make sure that transactions are properly closed</span>
+<span class="sd">    when they should be, and aren&#39;t left pending after operations</span>
+<span class="sd">    have been performed in them. Refs #9964.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">test_raw_committed_on_success</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure a transaction consisting of raw SQL execution gets</span>
+<span class="sd">        committed by the commit_on_success decorator.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_on_success</span>
+        <span class="k">def</span> <span class="nf">raw_sql</span><span class="p">():</span>
+            <span class="s">&quot;Write a record using raw sql under a commit_on_success decorator&quot;</span>
+            <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;INSERT into transactions_regress_mod (id,fld) values (17,18)&quot;</span><span class="p">)</span>
+
+        <span class="n">raw_sql</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Rollback so that if the decorator didn't commit, the record is unwritten</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Check that the record is in the DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">obj</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">17</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">fld</span><span class="p">,</span> <span class="mi">18</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">Mod</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;transaction with raw sql not committed&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_commit_manually_enforced</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure that under commit_manually, even &quot;read-only&quot; transaction require closure</span>
+<span class="sd">        (commit or rollback), and a transaction left pending is treated as an error.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">non_comitter</span><span class="p">():</span>
+            <span class="s">&quot;Execute a managed transaction with read-only operations and fail to commit&quot;</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">TransactionManagementError</span><span class="p">,</span> <span class="n">non_comitter</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_commit_manually_commit_ok</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that under commit_manually, a committed transaction is accepted by the transaction</span>
+<span class="sd">        management mechanisms</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">committer</span><span class="p">():</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Perform a database query, then commit the transaction</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">committer</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">TransactionManagementError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;Commit did not clear the transaction state&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_commit_manually_rollback_ok</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that under commit_manually, a rolled-back transaction is accepted by the transaction</span>
+<span class="sd">        management mechanisms</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">roller_back</span><span class="p">():</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Perform a database query, then rollback the transaction</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">roller_back</span><span class="p">()</span>
+        <span class="k">except</span> <span class="n">TransactionManagementError</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;Rollback did not clear the transaction state&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_commit_manually_enforced_after_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Test that under commit_manually, if a transaction is committed and an operation is</span>
+<span class="sd">        performed later, we still require the new transaction to be closed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">fake_committer</span><span class="p">():</span>
+            <span class="s">&quot;Query, commit, then query again, leaving with a pending transaction&quot;</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">_</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">TransactionManagementError</span><span class="p">,</span> <span class="n">fake_committer</span><span class="p">)</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;supports_transactions&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_reuse_cursor_reference</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure transaction closure is enforced even when the queries are performed</span>
+<span class="sd">        through a single cursor reference retrieved in the beginning</span>
+<span class="sd">        (this is to show why it is wrong to set the transaction dirty only when a cursor</span>
+<span class="sd">        is fetched from the connection).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nd">@commit_on_success</span>
+        <span class="k">def</span> <span class="nf">reuse_cursor_ref</span><span class="p">():</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            Fetch a cursor, perform an query, rollback to close the transaction,</span>
+<span class="sd">            then write a record (in a new transaction) using the same cursor object</span>
+<span class="sd">            (reference). All this under commit_on_success, so the second insert should</span>
+<span class="sd">            be committed.</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">cursor</span> <span class="o">=</span> <span class="n">connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;INSERT into transactions_regress_mod (id,fld) values (1,2)&quot;</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;INSERT into transactions_regress_mod (id,fld) values (1,2)&quot;</span><span class="p">)</span>
+
+        <span class="n">reuse_cursor_ref</span><span class="p">()</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Rollback so that if the decorator didn't commit, the record is unwritten</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Check that the record is in the DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">obj</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">fld</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">Mod</span><span class="o">.</span><span class="n">DoesNotExist</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;After ending a transaction, cursor use no longer sets dirty&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_failing_query_transaction_closed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Make sure that under commit_on_success, a transaction is rolled back even if</span>
+<span class="sd">        the first database-modifying operation fails.</span>
+<span class="sd">        This is prompted by http://code.djangoproject.com/ticket/6669 (and based on sample</span>
+<span class="sd">        code posted there to exemplify the problem): Before Django 1.3,</span>
+<span class="sd">        transactions were only marked &quot;dirty&quot; by the save() function after it successfully</span>
+<span class="sd">        wrote the object to the database.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span> <span class="nn">django.contrib.auth.models</span> <span class="kn">import</span> <span class="n">User</span>
+
+        <span class="nd">@transaction.commit_on_success</span>
+        <span class="k">def</span> <span class="nf">create_system_user</span><span class="p">():</span>
+            <span class="s">&quot;Create a user in a transaction&quot;</span>
+            <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create_user</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="s">&#39;system&#39;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s">&#39;iamr00t&#39;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s">&#39;root@SITENAME.com&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Redundant, just makes sure the user id was read back from DB</p></td><td class="code"><div class="highlight"><pre>            <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Create a user</p></td><td class="code"><div class="highlight"><pre>        <span class="n">create_system_user</span><span class="p">()</span>
+
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>The second call to create<em>system</em>user should fail for violating a unique constraint
+(it's trying to re-create the same user)</p></td><td class="code"><div class="highlight"><pre>            <span class="n">create_system_user</span><span class="p">()</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ImproperlyConfigured</span><span class="p">(</span><span class="s">&#39;Unique constraint not enforced on django.contrib.auth.models.User&#39;</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Try to read the database. If the last transaction was indeed closed,
+this should cause no problems</p></td><td class="code"><div class="highlight"><pre>            <span class="n">_</span> <span class="o">=</span> <span class="n">User</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="s">&quot;A transaction consisting of a failed operation was not closed.&quot;</span><span class="p">)</span>
+
+    <span class="nd">@override_settings</span><span class="p">(</span><span class="n">DEBUG</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_failing_query_transaction_closed_debug</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Regression for #6669. Same test as above, with DEBUG=True.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">test_failing_query_transaction_closed</span><span class="p">()</span>
+
+
+<span class="nd">@skipUnless</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;postgresql&#39;</span><span class="p">,</span>
+            <span class="s">&quot;This test only valid for PostgreSQL&quot;</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">TestPostgresAutocommit</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests to make sure psycopg2&#39;s autocommit mode is restored after entering</span>
+<span class="sd">    and leaving transaction management. Refs #16047.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">psycopg2.extensions</span> <span class="kn">import</span> <span class="p">(</span><span class="n">ISOLATION_LEVEL_AUTOCOMMIT</span><span class="p">,</span>
+                                         <span class="n">ISOLATION_LEVEL_READ_COMMITTED</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autocommit</span> <span class="o">=</span> <span class="n">ISOLATION_LEVEL_AUTOCOMMIT</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_committed</span> <span class="o">=</span> <span class="n">ISOLATION_LEVEL_READ_COMMITTED</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>We want a clean backend with autocommit = True, so
+first we need to do a bit of work to have that.</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">_old_backend</span> <span class="o">=</span> <span class="n">connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span>
+        <span class="n">settings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_backend</span><span class="o">.</span><span class="n">settings_dict</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">settings</span><span class="p">[</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">opts</span><span class="p">[</span><span class="s">&#39;autocommit&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">settings</span><span class="p">[</span><span class="s">&#39;OPTIONS&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">opts</span>
+        <span class="n">new_backend</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_backend</span><span class="o">.</span><span class="n">__class__</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">DEFAULT_DB_ALIAS</span><span class="p">)</span>
+        <span class="n">connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_backend</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">connections</span><span class="p">[</span><span class="n">DEFAULT_DB_ALIAS</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_backend</span>
+
+    <span class="k">def</span> <span class="nf">test_initial_autocommit_state</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertTrue</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">uses_autocommit</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autocommit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_transaction_management</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_committed</span><span class="p">)</span>
+
+        <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autocommit</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_transaction_stacking</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+        <span class="n">transaction</span><span class="o">.</span><span class="n">managed</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_committed</span><span class="p">)</span>
+
+        <span class="n">transaction</span><span class="o">.</span><span class="n">enter_transaction_management</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_committed</span><span class="p">)</span>
+
+        <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_committed</span><span class="p">)</span>
+
+        <span class="n">transaction</span><span class="o">.</span><span class="n">leave_transaction_management</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">isolation_level</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_autocommit</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TestManyToManyAddTransaction</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">test_manyrelated_add_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Test for https://code.djangoproject.com/ticket/16818&quot;</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">M2mA</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">()</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="n">M2mB</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+        <span class="n">a</span><span class="o">.</span><span class="n">others</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">b</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>We're in a TransactionTestCase and have not changed transaction
+behavior from default of "autocommit", so this rollback should not
+actually do anything. If it does in fact undo our add, that's a bug
+that the bulk insert was not auto-committed.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">transaction</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">others</span><span class="o">.</span><span class="n">count</span><span class="p">(),</span> <span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">SavepointTest</span><span class="p">(</span><span class="n">TransactionTestCase</span><span class="p">):</span>
+
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;uses_savepoints&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_savepoint_commit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">work</span><span class="p">():</span>
+            <span class="n">mod</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="n">mod</span><span class="o">.</span><span class="n">pk</span>
+            <span class="n">sid</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">savepoint</span><span class="p">()</span>
+            <span class="n">mod1</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">savepoint_commit</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+            <span class="n">mod2</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mod2</span><span class="o">.</span><span class="n">fld</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+
+        <span class="n">work</span><span class="p">()</span>
+
+    <span class="nd">@skipIf</span><span class="p">(</span><span class="n">connection</span><span class="o">.</span><span class="n">vendor</span> <span class="o">==</span> <span class="s">&#39;mysql&#39;</span> <span class="ow">and</span> \
+            <span class="n">connection</span><span class="o">.</span><span class="n">features</span><span class="o">.</span><span class="n">_mysql_storage_engine</span> <span class="o">==</span> <span class="s">&#39;MyISAM&#39;</span><span class="p">,</span>
+            <span class="s">&quot;MyISAM MySQL storage engine doesn&#39;t support savepoints&quot;</span><span class="p">)</span>
+    <span class="nd">@skipUnlessDBFeature</span><span class="p">(</span><span class="s">&#39;uses_savepoints&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">test_savepoint_rollback</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nd">@commit_manually</span>
+        <span class="k">def</span> <span class="nf">work</span><span class="p">():</span>
+            <span class="n">mod</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">pk</span> <span class="o">=</span> <span class="n">mod</span><span class="o">.</span><span class="n">pk</span>
+            <span class="n">sid</span> <span class="o">=</span> <span class="n">transaction</span><span class="o">.</span><span class="n">savepoint</span><span class="p">()</span>
+            <span class="n">mod1</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">fld</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">savepoint_rollback</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+            <span class="n">mod2</span> <span class="o">=</span> <span class="n">Mod</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pk</span><span class="o">=</span><span class="n">pk</span><span class="p">)</span>
+            <span class="n">transaction</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">mod2</span><span class="o">.</span><span class="n">fld</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">work</span><span class="p">()</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

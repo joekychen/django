@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › comments › views › moderation.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>moderation.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">absolute_import</span>
+
+<span class="kn">from</span> <span class="nn">django</span> <span class="kn">import</span> <span class="n">template</span>
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+<span class="kn">from</span> <span class="nn">django.contrib</span> <span class="kn">import</span> <span class="n">comments</span>
+<span class="kn">from</span> <span class="nn">django.contrib.auth.decorators</span> <span class="kn">import</span> <span class="n">login_required</span><span class="p">,</span> <span class="n">permission_required</span>
+<span class="kn">from</span> <span class="nn">django.contrib.comments</span> <span class="kn">import</span> <span class="n">signals</span>
+<span class="kn">from</span> <span class="nn">django.contrib.comments.views.utils</span> <span class="kn">import</span> <span class="n">next_redirect</span><span class="p">,</span> <span class="n">confirmation_view</span>
+<span class="kn">from</span> <span class="nn">django.shortcuts</span> <span class="kn">import</span> <span class="n">get_object_or_404</span><span class="p">,</span> <span class="n">render_to_response</span>
+<span class="kn">from</span> <span class="nn">django.views.decorators.csrf</span> <span class="kn">import</span> <span class="n">csrf_protect</span>
+
+
+
+<span class="nd">@csrf_protect</span>
+<span class="nd">@login_required</span>
+<span class="k">def</span> <span class="nf">flag</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment_id</span><span class="p">,</span> <span class="nb">next</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Flags a comment. Confirmation on GET, action on POST.</span>
+
+<span class="sd">    Templates: `comments/flag.html`,</span>
+<span class="sd">    Context:</span>
+<span class="sd">        comment</span>
+<span class="sd">            the flagged `comments.comment` object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">comment</span> <span class="o">=</span> <span class="n">get_object_or_404</span><span class="p">(</span><span class="n">comments</span><span class="o">.</span><span class="n">get_model</span><span class="p">(),</span> <span class="n">pk</span><span class="o">=</span><span class="n">comment_id</span><span class="p">,</span> <span class="n">site__pk</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">SITE_ID</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Flag on POST</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span>
+        <span class="n">perform_flag</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">next_redirect</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="nb">next</span><span class="p">,</span> <span class="n">flag_done</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Render a form on GET</p></td><td class="code"><div class="highlight"><pre>    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">render_to_response</span><span class="p">(</span><span class="s">&#39;comments/flag.html&#39;</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;comment&#39;</span><span class="p">:</span> <span class="n">comment</span><span class="p">,</span> <span class="s">&quot;next&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">},</span>
+            <span class="n">template</span><span class="o">.</span><span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<span class="nd">@csrf_protect</span>
+<span class="nd">@permission_required</span><span class="p">(</span><span class="s">&quot;comments.can_moderate&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment_id</span><span class="p">,</span> <span class="nb">next</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Deletes a comment. Confirmation on GET, action on POST. Requires the &quot;can</span>
+<span class="sd">    moderate comments&quot; permission.</span>
+
+<span class="sd">    Templates: `comments/delete.html`,</span>
+<span class="sd">    Context:</span>
+<span class="sd">        comment</span>
+<span class="sd">            the flagged `comments.comment` object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">comment</span> <span class="o">=</span> <span class="n">get_object_or_404</span><span class="p">(</span><span class="n">comments</span><span class="o">.</span><span class="n">get_model</span><span class="p">(),</span> <span class="n">pk</span><span class="o">=</span><span class="n">comment_id</span><span class="p">,</span> <span class="n">site__pk</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">SITE_ID</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Delete on POST</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Flag the comment as deleted instead of actually deleting it.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">perform_delete</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">next_redirect</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="nb">next</span><span class="p">,</span> <span class="n">delete_done</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Render a form on GET</p></td><td class="code"><div class="highlight"><pre>    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">render_to_response</span><span class="p">(</span><span class="s">&#39;comments/delete.html&#39;</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;comment&#39;</span><span class="p">:</span> <span class="n">comment</span><span class="p">,</span> <span class="s">&quot;next&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">},</span>
+            <span class="n">template</span><span class="o">.</span><span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<span class="nd">@csrf_protect</span>
+<span class="nd">@permission_required</span><span class="p">(</span><span class="s">&quot;comments.can_moderate&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">approve</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment_id</span><span class="p">,</span> <span class="nb">next</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Approve a comment (that is, mark it as public and non-removed). Confirmation</span>
+<span class="sd">    on GET, action on POST. Requires the &quot;can moderate comments&quot; permission.</span>
+
+<span class="sd">    Templates: `comments/approve.html`,</span>
+<span class="sd">    Context:</span>
+<span class="sd">        comment</span>
+<span class="sd">            the `comments.comment` object for approval</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">comment</span> <span class="o">=</span> <span class="n">get_object_or_404</span><span class="p">(</span><span class="n">comments</span><span class="o">.</span><span class="n">get_model</span><span class="p">(),</span> <span class="n">pk</span><span class="o">=</span><span class="n">comment_id</span><span class="p">,</span> <span class="n">site__pk</span><span class="o">=</span><span class="n">settings</span><span class="o">.</span><span class="n">SITE_ID</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Delete on POST</p></td><td class="code"><div class="highlight"><pre>    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s">&#39;POST&#39;</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Flag the comment as approved.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">perform_approve</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">next_redirect</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">POST</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="nb">next</span><span class="p">,</span> <span class="n">approve_done</span><span class="p">,</span> <span class="n">c</span><span class="o">=</span><span class="n">comment</span><span class="o">.</span><span class="n">pk</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Render a form on GET</p></td><td class="code"><div class="highlight"><pre>    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">render_to_response</span><span class="p">(</span><span class="s">&#39;comments/approve.html&#39;</span><span class="p">,</span>
+            <span class="p">{</span><span class="s">&#39;comment&#39;</span><span class="p">:</span> <span class="n">comment</span><span class="p">,</span> <span class="s">&quot;next&quot;</span><span class="p">:</span> <span class="nb">next</span><span class="p">},</span>
+            <span class="n">template</span><span class="o">.</span><span class="n">RequestContext</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>The following functions actually perform the various flag/aprove/delete
+actions. They've been broken out into separate functions to that they
+may be called from admin actions.</p></td><td class="code"><div class="highlight"><pre><span class="k">def</span> <span class="nf">perform_flag</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Actually perform the flagging of a comment from a request.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">flag</span><span class="p">,</span> <span class="n">created</span> <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_or_create</span><span class="p">(</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">user</span>    <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">SUGGEST_REMOVAL</span>
+    <span class="p">)</span>
+    <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">send</span><span class="p">(</span>
+        <span class="n">sender</span>  <span class="o">=</span> <span class="n">comment</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">flag</span><span class="p">,</span>
+        <span class="n">created</span> <span class="o">=</span> <span class="n">created</span><span class="p">,</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">request</span><span class="p">,</span>
+    <span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">perform_delete</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">):</span>
+    <span class="n">flag</span><span class="p">,</span> <span class="n">created</span> <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_or_create</span><span class="p">(</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">user</span>    <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">MODERATOR_DELETION</span>
+    <span class="p">)</span>
+    <span class="n">comment</span><span class="o">.</span><span class="n">is_removed</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">comment</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+    <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">send</span><span class="p">(</span>
+        <span class="n">sender</span>  <span class="o">=</span> <span class="n">comment</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">flag</span><span class="p">,</span>
+        <span class="n">created</span> <span class="o">=</span> <span class="n">created</span><span class="p">,</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">request</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">perform_approve</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">comment</span><span class="p">):</span>
+    <span class="n">flag</span><span class="p">,</span> <span class="n">created</span> <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">get_or_create</span><span class="p">(</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">user</span>    <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">user</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">comments</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">CommentFlag</span><span class="o">.</span><span class="n">MODERATOR_APPROVAL</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">comment</span><span class="o">.</span><span class="n">is_removed</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">comment</span><span class="o">.</span><span class="n">is_public</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">comment</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+
+    <span class="n">signals</span><span class="o">.</span><span class="n">comment_was_flagged</span><span class="o">.</span><span class="n">send</span><span class="p">(</span>
+        <span class="n">sender</span>  <span class="o">=</span> <span class="n">comment</span><span class="o">.</span><span class="n">__class__</span><span class="p">,</span>
+        <span class="n">comment</span> <span class="o">=</span> <span class="n">comment</span><span class="p">,</span>
+        <span class="n">flag</span>    <span class="o">=</span> <span class="n">flag</span><span class="p">,</span>
+        <span class="n">created</span> <span class="o">=</span> <span class="n">created</span><span class="p">,</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">request</span><span class="p">,</span>
+    <span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>Confirmation views.</p></td><td class="code"><div class="highlight"><pre><span class="n">flag_done</span> <span class="o">=</span> <span class="n">confirmation_view</span><span class="p">(</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="s">&quot;comments/flagged.html&quot;</span><span class="p">,</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="s">&#39;Displays a &quot;comment was flagged&quot; success page.&#39;</span>
+<span class="p">)</span>
+<span class="n">delete_done</span> <span class="o">=</span> <span class="n">confirmation_view</span><span class="p">(</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="s">&quot;comments/deleted.html&quot;</span><span class="p">,</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="s">&#39;Displays a &quot;comment was deleted&quot; success page.&#39;</span>
+<span class="p">)</span>
+<span class="n">approve_done</span> <span class="o">=</span> <span class="n">confirmation_view</span><span class="p">(</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="s">&quot;comments/approved.html&quot;</span><span class="p">,</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="s">&#39;Displays a &quot;comment was approved&quot; success page.&#39;</span>
+<span class="p">)</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>

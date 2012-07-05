@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » tests › regressiontests › templates › loaders.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../index.html"></a><h1>loaders.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Test cases for the template loaders</span>
+
+<span class="sd">Note: This test requires setuptools!</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">django.conf</span> <span class="kn">import</span> <span class="n">settings</span>
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">settings</span><span class="o">.</span><span class="n">configure</span><span class="p">()</span>
+
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">pkg_resources</span>
+<span class="kn">import</span> <span class="nn">imp</span>
+<span class="kn">import</span> <span class="nn">StringIO</span>
+<span class="kn">import</span> <span class="nn">os.path</span>
+
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">TemplateDoesNotExist</span><span class="p">,</span> <span class="n">Context</span>
+<span class="kn">from</span> <span class="nn">django.template.loaders.eggs</span> <span class="kn">import</span> <span class="n">Loader</span> <span class="k">as</span> <span class="n">EggLoader</span>
+<span class="kn">from</span> <span class="nn">django.template</span> <span class="kn">import</span> <span class="n">loader</span>
+<span class="kn">from</span> <span class="nn">django.utils</span> <span class="kn">import</span> <span class="n">unittest</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Mock classes and objects for pkg_resources functions.</p></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">MockProvider</span><span class="p">(</span><span class="n">pkg_resources</span><span class="o">.</span><span class="n">NullProvider</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">):</span>
+        <span class="n">pkg_resources</span><span class="o">.</span><span class="n">NullProvider</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">module</span> <span class="o">=</span> <span class="n">module</span>
+
+    <span class="k">def</span> <span class="nf">_has</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">_resources</span>
+
+    <span class="k">def</span> <span class="nf">_isdir</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="k">def</span> <span class="nf">get_resource_stream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">,</span> <span class="n">resource_name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">_resources</span><span class="p">[</span><span class="n">resource_name</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">_get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">module</span><span class="o">.</span><span class="n">_resources</span><span class="p">[</span><span class="n">path</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+<span class="k">class</span> <span class="nc">MockLoader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">def</span> <span class="nf">create_egg</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">resources</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates a mock egg with a list of resources.</span>
+
+<span class="sd">    name: The name of the module.</span>
+<span class="sd">    resources: A dictionary of resources. Keys are the names and values the data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">egg</span> <span class="o">=</span> <span class="n">imp</span><span class="o">.</span><span class="n">new_module</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">egg</span><span class="o">.</span><span class="n">__loader__</span> <span class="o">=</span> <span class="n">MockLoader</span><span class="p">()</span>
+    <span class="n">egg</span><span class="o">.</span><span class="n">_resources</span> <span class="o">=</span> <span class="n">resources</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">egg</span>
+
+
+<span class="k">class</span> <span class="nc">EggLoaderTest</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">pkg_resources</span><span class="o">.</span><span class="n">_provider_factories</span><span class="p">[</span><span class="n">MockLoader</span><span class="p">]</span> <span class="o">=</span> <span class="n">MockProvider</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">empty_egg</span> <span class="o">=</span> <span class="n">create_egg</span><span class="p">(</span><span class="s">&quot;egg_empty&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">egg_1</span> <span class="o">=</span> <span class="n">create_egg</span><span class="p">(</span><span class="s">&quot;egg_1&quot;</span><span class="p">,</span> <span class="p">{</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="s">&#39;templates/y.html&#39;</span><span class="p">)</span> <span class="p">:</span> <span class="n">StringIO</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="s">&quot;y&quot;</span><span class="p">),</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="s">&#39;templates/x.txt&#39;</span><span class="p">)</span> <span class="p">:</span> <span class="n">StringIO</span><span class="o">.</span><span class="n">StringIO</span><span class="p">(</span><span class="s">&quot;x&quot;</span><span class="p">),</span>
+        <span class="p">})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_old_installed_apps</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_installed_apps</span>
+
+    <span class="k">def</span> <span class="nf">test_empty</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Loading any template on an empty egg should fail&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;egg_empty&#39;</span><span class="p">]</span>
+        <span class="n">egg_loader</span> <span class="o">=</span> <span class="n">EggLoader</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">TemplateDoesNotExist</span><span class="p">,</span> <span class="n">egg_loader</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">,</span> <span class="s">&quot;not-existing.html&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_non_existing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Template loading fails if the template is not in the egg&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;egg_1&#39;</span><span class="p">]</span>
+        <span class="n">egg_loader</span> <span class="o">=</span> <span class="n">EggLoader</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">TemplateDoesNotExist</span><span class="p">,</span> <span class="n">egg_loader</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">,</span> <span class="s">&quot;not-existing.html&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_existing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;A template can be loaded from an egg&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;egg_1&#39;</span><span class="p">]</span>
+        <span class="n">egg_loader</span> <span class="o">=</span> <span class="n">EggLoader</span><span class="p">()</span>
+        <span class="n">contents</span><span class="p">,</span> <span class="n">template_name</span> <span class="o">=</span> <span class="n">egg_loader</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">(</span><span class="s">&quot;y.html&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">contents</span><span class="p">,</span> <span class="s">&quot;y&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">template_name</span><span class="p">,</span> <span class="s">&quot;egg:egg_1:templates/y.html&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_not_installed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Loading an existent template from an egg not included in INSTALLED_APPS should fail&quot;</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">egg_loader</span> <span class="o">=</span> <span class="n">EggLoader</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaises</span><span class="p">(</span><span class="n">TemplateDoesNotExist</span><span class="p">,</span> <span class="n">egg_loader</span><span class="o">.</span><span class="n">load_template_source</span><span class="p">,</span> <span class="s">&quot;y.html&quot;</span><span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">CachedLoader</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_TEMPLATE_LOADERS</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="s">&#39;django.template.loaders.cached.Loader&#39;</span><span class="p">,</span> <span class="p">(</span>
+                    <span class="s">&#39;django.template.loaders.filesystem.Loader&#39;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_LOADERS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_TEMPLATE_LOADERS</span>
+
+    <span class="k">def</span> <span class="nf">test_templatedir_caching</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Check that the template directories form part of the template cache key. Refs #13573&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><p>Retrive a template specifying a template directory to check</p></td><td class="code"><div class="highlight"><pre>        <span class="n">t1</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">find_template</span><span class="p">(</span><span class="s">&#39;test.html&#39;</span><span class="p">,</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;templates&#39;</span><span class="p">,</span> <span class="s">&#39;first&#39;</span><span class="p">),))</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>Now retrieve the same template name, but from a different directory</p></td><td class="code"><div class="highlight"><pre>        <span class="n">t2</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">find_template</span><span class="p">(</span><span class="s">&#39;test.html&#39;</span><span class="p">,</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;templates&#39;</span><span class="p">,</span> <span class="s">&#39;second&#39;</span><span class="p">),))</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>The two templates should not have the same content</p></td><td class="code"><div class="highlight"><pre>        <span class="bp">self</span><span class="o">.</span><span class="n">assertNotEqual</span><span class="p">(</span><span class="n">t1</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">Context</span><span class="p">({})),</span> <span class="n">t2</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">Context</span><span class="p">({})))</span>
+
+<span class="k">class</span> <span class="nc">RenderToStringTest</span><span class="p">(</span><span class="n">unittest</span><span class="o">.</span><span class="n">TestCase</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">setUp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_old_TEMPLATE_DIRS</span> <span class="o">=</span> <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DIRS</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DIRS</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">__file__</span><span class="p">),</span> <span class="s">&#39;templates&#39;</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">tearDown</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">settings</span><span class="o">.</span><span class="n">TEMPLATE_DIRS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_old_TEMPLATE_DIRS</span>
+
+    <span class="k">def</span> <span class="nf">test_basic</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">loader</span><span class="o">.</span><span class="n">render_to_string</span><span class="p">(</span><span class="s">&#39;test_context.html&#39;</span><span class="p">),</span> <span class="s">&#39;obj:&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_basic_context</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">loader</span><span class="o">.</span><span class="n">render_to_string</span><span class="p">(</span><span class="s">&#39;test_context.html&#39;</span><span class="p">,</span>
+                                                 <span class="p">{</span><span class="s">&#39;obj&#39;</span><span class="p">:</span> <span class="s">&#39;test&#39;</span><span class="p">}),</span> <span class="s">&#39;obj:test&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_existing_context_kept_clean</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">Context</span><span class="p">({</span><span class="s">&#39;obj&#39;</span><span class="p">:</span> <span class="s">&#39;before&#39;</span><span class="p">})</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">render_to_string</span><span class="p">(</span><span class="s">&#39;test_context.html&#39;</span><span class="p">,</span> <span class="p">{</span><span class="s">&#39;obj&#39;</span><span class="p">:</span> <span class="s">&#39;after&#39;</span><span class="p">},</span>
+                                         <span class="n">context_instance</span><span class="o">=</span><span class="n">context</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="s">&#39;obj:after&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertEqual</span><span class="p">(</span><span class="n">context</span><span class="p">[</span><span class="s">&#39;obj&#39;</span><span class="p">],</span> <span class="s">&#39;before&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">test_empty_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">TemplateDoesNotExist</span><span class="p">,</span>
+                                <span class="s">&#39;No template names provided$&#39;</span><span class="p">,</span>
+                                <span class="n">loader</span><span class="o">.</span><span class="n">render_to_string</span><span class="p">,</span> <span class="p">[])</span>
+
+
+    <span class="k">def</span> <span class="nf">test_select_templates_from_empty_list</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">assertRaisesRegexp</span><span class="p">(</span><span class="n">TemplateDoesNotExist</span><span class="p">,</span>
+                                <span class="s">&#39;No template names provided$&#39;</span><span class="p">,</span>
+                                <span class="n">loader</span><span class="o">.</span><span class="n">select_template</span><span class="p">,</span> <span class="p">[])</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:3}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../javascript/docco.min.js"></script>
+</html>

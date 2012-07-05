@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html><head><title>joekychen/django » django › contrib › gis › geoip › base.py
+
+</title>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta name="generator" content="Docco">
+<link rel="stylesheet" media="all" href="../../../../stylesheets/docco.min.css" />
+
+
+</head>
+<body>
+<div id="container">
+<div id="background"></div>
+<table cellpadding="0" cellspacing="0">
+<thead><tr><th class="docs"><a id="home" href="../../../../index.html"></a><h1>base.py</h1></th><th class="code"></th></tr></thead>
+<tbody>
+
+
+<tr id="section-1"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-1">&#182;</a></div></td><td class="code"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_char_p</span>
+
+<span class="kn">from</span> <span class="nn">django.core.validators</span> <span class="kn">import</span> <span class="n">ipv4_re</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geoip.libgeoip</span> <span class="kn">import</span> <span class="n">GEOIP_SETTINGS</span>
+<span class="kn">from</span> <span class="nn">django.contrib.gis.geoip.prototypes</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">GeoIPRecord</span><span class="p">,</span> <span class="n">GeoIPTag</span><span class="p">,</span> <span class="n">GeoIP_open</span><span class="p">,</span> <span class="n">GeoIP_delete</span><span class="p">,</span> <span class="n">GeoIP_database_info</span><span class="p">,</span>
+    <span class="n">GeoIP_lib_version</span><span class="p">,</span> <span class="n">GeoIP_record_by_addr</span><span class="p">,</span> <span class="n">GeoIP_record_by_name</span><span class="p">,</span>
+    <span class="n">GeoIP_country_code_by_addr</span><span class="p">,</span> <span class="n">GeoIP_country_code_by_name</span><span class="p">,</span>
+    <span class="n">GeoIP_country_name_by_addr</span><span class="p">,</span> <span class="n">GeoIP_country_name_by_name</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-2"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-2">&#182;</a></div><p>Regular expressions for recognizing the GeoIP free database editions.</p></td><td class="code"><div class="highlight"><pre><span class="n">free_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^GEO-\d{3}FREE&#39;</span><span class="p">)</span>
+<span class="n">lite_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s">r&#39;^GEO-\d{3}LITE&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-3"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-3">&#182;</a></div><h3>GeoIP classes</h3></td><td class="code"><div class="highlight"><pre><span class="k">class</span> <span class="nc">GeoIPException</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span> <span class="k">pass</span>
+
+<span class="k">class</span> <span class="nc">GeoIP</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-4"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-4">&#182;</a></div><p>The flags for GeoIP memory caching.
+GEOIP_STANDARD - read database from filesystem, uses least memory.</p>
+
+<p>GEOIP<em>MEMORY</em>CACHE - load database into memory, faster performance
+       but uses more memory</p>
+
+<p>GEOIP<em>CHECK</em>CACHE - check for updated database.  If database has been
+       updated, reload filehandle and/or memory cache.  This option
+       is not thread safe.</p>
+
+<p>GEOIP<em>INDEX</em>CACHE - just cache the most frequently accessed index
+       portion of the database, resulting in faster lookups than
+       GEOIP<em>STANDARD, but less memory usage than GEOIP</em>MEMORY<em>CACHE -
+       useful for larger databases such as GeoIP Organization and
+       GeoIP City.  Note, for GeoIP Country, Region and Netspeed
+       databases, GEOIP</em>INDEX<em>CACHE is equivalent to GEOIP</em>MEMORY_CACHE</p>
+
+<p>GEOIP<em>MMAP</em>CACHE - load database into mmap shared memory ( not available
+      on Windows).</p></td><td class="code"><div class="highlight"><pre>    <span class="n">GEOIP_STANDARD</span>     <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">GEOIP_MEMORY_CACHE</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">GEOIP_CHECK_CACHE</span>  <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">GEOIP_INDEX_CACHE</span>  <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">GEOIP_MMAP_CACHE</span>   <span class="o">=</span> <span class="mi">8</span>
+    <span class="n">cache_options</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">((</span><span class="n">opt</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">opt</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span></pre></div></td></tr>
+
+
+<tr id="section-5"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-5">&#182;</a></div><p>Paths to the city &amp; country binary databases.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">_city_file</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+    <span class="n">_country_file</span> <span class="o">=</span> <span class="s">&#39;&#39;</span></pre></div></td></tr>
+
+
+<tr id="section-6"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-6">&#182;</a></div><p>Initially, pointers to GeoIP file references are NULL.</p></td><td class="code"><div class="highlight"><pre>    <span class="n">_city</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">_country</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">country</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">city</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Initializes the GeoIP object, no parameters are required to use default</span>
+<span class="sd">        settings.  Keyword arguments may be passed in to customize the locations</span>
+<span class="sd">        of the GeoIP data sets.</span>
+
+<span class="sd">        * path: Base directory to where GeoIP data is located or the full path</span>
+<span class="sd">            to where the city or country data files (*.dat) are located.</span>
+<span class="sd">            Assumes that both the city and country data sets are located in</span>
+<span class="sd">            this directory; overrides the GEOIP_PATH settings attribute.</span>
+
+<span class="sd">        * cache: The cache settings when opening up the GeoIP datasets,</span>
+<span class="sd">            and may be an integer in (0, 1, 2, 4, 8) corresponding to</span>
+<span class="sd">            the GEOIP_STANDARD, GEOIP_MEMORY_CACHE, GEOIP_CHECK_CACHE,</span>
+<span class="sd">            GEOIP_INDEX_CACHE, and GEOIP_MMAP_CACHE, `GeoIPOptions` C API</span>
+<span class="sd">            settings,  respectively.  Defaults to 0, meaning that the data is read</span>
+<span class="sd">            from the disk.</span>
+
+<span class="sd">        * country: The name of the GeoIP country data file.  Defaults to</span>
+<span class="sd">            &#39;GeoIP.dat&#39;; overrides the GEOIP_COUNTRY settings attribute.</span>
+
+<span class="sd">        * city: The name of the GeoIP city data file.  Defaults to</span>
+<span class="sd">            &#39;GeoLiteCity.dat&#39;; overrides the GEOIP_CITY settings attribute.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-7"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-7">&#182;</a></div><p>Checking the given cache option.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">cache</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_options</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span> <span class="o">=</span> <span class="n">cache</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;Invalid GeoIP caching option: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">cache</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-8"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-8">&#182;</a></div><p>Getting the GeoIP data path.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">GEOIP_SETTINGS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;GEOIP_PATH&#39;</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="p">:</span> <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;GeoIP path must be provided via parameter or the GEOIP_PATH setting.&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;Invalid path type: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-9"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-9">&#182;</a></div><p>Constructing the GeoIP database filenames using the settings
+dictionary.  If the database files for the GeoLite country
+and/or city datasets exist, then try and open them.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">country_db</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">country</span> <span class="ow">or</span> <span class="n">GEOIP_SETTINGS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;GEOIP_COUNTRY&#39;</span><span class="p">,</span> <span class="s">&#39;GeoIP.dat&#39;</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">country_db</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_country</span> <span class="o">=</span> <span class="n">GeoIP_open</span><span class="p">(</span><span class="n">country_db</span><span class="p">,</span> <span class="n">cache</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_country_file</span> <span class="o">=</span> <span class="n">country_db</span>
+
+            <span class="n">city_db</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">city</span> <span class="ow">or</span> <span class="n">GEOIP_SETTINGS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;GEOIP_CITY&#39;</span><span class="p">,</span> <span class="s">&#39;GeoLiteCity.dat&#39;</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">city_db</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_city</span> <span class="o">=</span> <span class="n">GeoIP_open</span><span class="p">(</span><span class="n">city_db</span><span class="p">,</span> <span class="n">cache</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_city_file</span> <span class="o">=</span> <span class="n">city_db</span>
+        <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">path</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-10"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-10">&#182;</a></div><p>Otherwise, some detective work will be needed to figure
+out whether the given database path is for the GeoIP country
+or city databases.</p></td><td class="code"><div class="highlight"><pre>            <span class="n">ptr</span> <span class="o">=</span> <span class="n">GeoIP_open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">cache</span><span class="p">)</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="n">GeoIP_database_info</span><span class="p">(</span><span class="n">ptr</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">lite_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">info</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-11"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-11">&#182;</a></div><p>GeoLite City database detected.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">_city</span> <span class="o">=</span> <span class="n">ptr</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_city_file</span> <span class="o">=</span> <span class="n">path</span>
+            <span class="k">elif</span> <span class="n">free_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">info</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-12"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-12">&#182;</a></div><p>GeoIP Country database detected.</p></td><td class="code"><div class="highlight"><pre>                <span class="bp">self</span><span class="o">.</span><span class="n">_country</span> <span class="o">=</span> <span class="n">ptr</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_country_file</span> <span class="o">=</span> <span class="n">path</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;Unable to recognize database edition: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">info</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;GeoIP path must be a valid file or directory.&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-13"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-13">&#182;</a></div><p>Cleaning any GeoIP file handles lying around.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">:</span> <span class="n">GeoIP_delete</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">:</span> <span class="n">GeoIP_delete</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_check_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">country</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">city</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">city_or_country</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="s">&quot;Helper routine for checking the query and database availability.&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-14"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-14">&#182;</a></div><p>Making sure a string was passed in for the query.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="nb">basestring</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&#39;GeoIP query must be a string, not type </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="nb">type</span><span class="p">(</span><span class="n">query</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-15"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-15">&#182;</a></div><p>GeoIP only takes ASCII-encoded strings.</p></td><td class="code"><div class="highlight"><pre>        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s">&#39;ascii&#39;</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-16"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-16">&#182;</a></div><p>Extra checks for the existence of country and city databases.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">if</span> <span class="n">city_or_country</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;Invalid GeoIP country and city data files.&#39;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">country</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;Invalid GeoIP country data file: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country_file</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">city</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">GeoIPException</span><span class="p">(</span><span class="s">&#39;Invalid GeoIP city data file: </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city_file</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-17"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-17">&#182;</a></div><p>Return the query string back to the caller.</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="n">query</span>
+
+    <span class="k">def</span> <span class="nf">city</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictionary of city information for the given IP address or</span>
+<span class="sd">        Fully Qualified Domain Name (FQDN).  Some information in the dictionary</span>
+<span class="sd">        may be undefined (None).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">city</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ipv4_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">query</span><span class="p">):</span></pre></div></td></tr>
+
+
+<tr id="section-18"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-18">&#182;</a></div><p>If an IP address was passed in</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">GeoIP_record_by_addr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">(</span><span class="n">query</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span></pre></div></td></tr>
+
+
+<tr id="section-19"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-19">&#182;</a></div><p>If a FQDN was passed in.</p></td><td class="code"><div class="highlight"><pre>            <span class="k">return</span> <span class="n">GeoIP_record_by_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">,</span> <span class="n">c_char_p</span><span class="p">(</span><span class="n">query</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">country_code</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="s">&quot;Returns the country code for the given IP Address or FQDN.&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">city_or_country</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">ipv4_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">query</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">GeoIP_country_code_by_addr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">GeoIP_country_code_by_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="p">(</span><span class="n">query</span><span class="p">)[</span><span class="s">&#39;country_code&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">country_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="s">&quot;Returns the country name for the given IP Address or FQDN.&quot;</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">city_or_country</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">ipv4_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">query</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">GeoIP_country_name_by_addr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">GeoIP_country_name_by_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="p">(</span><span class="n">query</span><span class="p">)[</span><span class="s">&#39;country_name&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">country</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a dictonary with with the country code and name when given an</span>
+<span class="sd">        IP address or a Fully Qualified Domain Name (FQDN).  For example, both</span>
+<span class="sd">        &#39;24.124.1.80&#39; and &#39;djangoproject.com&#39; are valid parameters.</span>
+<span class="sd">        &quot;&quot;&quot;</span></pre></div></td></tr>
+
+
+<tr id="section-20"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-20">&#182;</a></div><p>Returning the country code and name</p></td><td class="code"><div class="highlight"><pre>        <span class="k">return</span> <span class="p">{</span><span class="s">&#39;country_code&#39;</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">country_code</span><span class="p">(</span><span class="n">query</span><span class="p">),</span>
+                <span class="s">&#39;country_name&#39;</span> <span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">country_name</span><span class="p">(</span><span class="n">query</span><span class="p">),</span>
+                <span class="p">}</span></pre></div></td></tr>
+
+
+<tr id="section-21"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-21">&#182;</a></div><h3>Coordinate retrieval routines</h3></td><td class="code"><div class="highlight"><pre>    <span class="k">def</span> <span class="nf">coords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">ordering</span><span class="o">=</span><span class="p">(</span><span class="s">&#39;longitude&#39;</span><span class="p">,</span> <span class="s">&#39;latitude&#39;</span><span class="p">)):</span>
+        <span class="n">cdict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cdict</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">else</span><span class="p">:</span> <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">cdict</span><span class="p">[</span><span class="n">o</span><span class="p">]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">ordering</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">lon_lat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="s">&quot;Returns a tuple of the (longitude, latitude) for the given query.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">lat_lon</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="s">&quot;Returns a tuple of the (latitude, longitude) for the given query.&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">(</span><span class="s">&#39;latitude&#39;</span><span class="p">,</span> <span class="s">&#39;longitude&#39;</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">geos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">):</span>
+        <span class="s">&quot;Returns a GEOS Point object for the given query.&quot;</span>
+        <span class="n">ll</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lon_lat</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ll</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">django.contrib.gis.geos</span> <span class="kn">import</span> <span class="n">Point</span>
+            <span class="k">return</span> <span class="n">Point</span><span class="p">(</span><span class="n">ll</span><span class="p">,</span> <span class="n">srid</span><span class="o">=</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">None</span></pre></div></td></tr>
+
+
+<tr id="section-22"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-22">&#182;</a></div><h3>GeoIP Database Information Routines</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">country_info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns information about the GeoIP country database.&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">ci</span> <span class="o">=</span> <span class="s">&#39;No GeoIP Country data in &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_country_file</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ci</span> <span class="o">=</span> <span class="n">GeoIP_database_info</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_country</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ci</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">city_info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Retuns information about the GeoIP city database.&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">ci</span> <span class="o">=</span> <span class="s">&#39;No GeoIP City data in &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city_file</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ci</span> <span class="o">=</span> <span class="n">GeoIP_database_info</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ci</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="s">&quot;Returns information about the GeoIP library and databases in use.&quot;</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">GeoIP_lib_version</span><span class="p">:</span>
+            <span class="n">info</span> <span class="o">+=</span> <span class="s">&#39;GeoIP Library:</span><span class="se">\n\t</span><span class="si">%s</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">GeoIP_lib_version</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">info</span> <span class="o">+</span> <span class="s">&#39;Country:</span><span class="se">\n\t</span><span class="si">%s</span><span class="se">\n</span><span class="s">City:</span><span class="se">\n\t</span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">country_info</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">city_info</span><span class="p">)</span></pre></div></td></tr>
+
+
+<tr id="section-23"><td class="docs"><div class="pilwrap"><a class="pilcrow" href="#section-23">&#182;</a></div><h3>Methods for compatibility w/the GeoIP-Python API.</h3></td><td class="code"><div class="highlight"><pre>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">open</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">full_path</span><span class="p">,</span> <span class="n">cache</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">GeoIP</span><span class="p">(</span><span class="n">full_path</span><span class="p">,</span> <span class="n">cache</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_rec_by_arg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_city</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">country</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+    <span class="n">region_by_addr</span> <span class="o">=</span> <span class="n">city</span>
+    <span class="n">region_by_name</span> <span class="o">=</span> <span class="n">city</span>
+    <span class="n">record_by_addr</span> <span class="o">=</span> <span class="n">_rec_by_arg</span>
+    <span class="n">record_by_name</span> <span class="o">=</span> <span class="n">_rec_by_arg</span>
+    <span class="n">country_code_by_addr</span> <span class="o">=</span> <span class="n">country_code</span>
+    <span class="n">country_code_by_name</span> <span class="o">=</span> <span class="n">country_code</span>
+    <span class="n">country_name_by_addr</span> <span class="o">=</span> <span class="n">country_name</span>
+    <span class="n">country_name_by_name</span> <span class="o">=</span> <span class="n">country_name</span>
+
+</pre></div></td></tr>
+
+</tbody>
+</table>
+</div>
+
+</body>
+<script>docas={repo:"joekychen/django",depth:4}</script>
+<script>document.write('<script src=' + ('__proto__' in {} ? 'http://cdnjs.cloudflare.com/ajax/libs/zepto/1.0rc1/zepto.min.js' : 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js')+'><\\/script>')</script>
+<script src="http://baoshan.github.com/moment/min/moment.min.js"></script>
+<script src="../../../../javascript/docco.min.js"></script>
+</html>
