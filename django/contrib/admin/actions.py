@@ -1,3 +1,5 @@
+#    Built-in, globally-available admin actions
+
 """
 Built-in, globally-available admin actions.
 """
